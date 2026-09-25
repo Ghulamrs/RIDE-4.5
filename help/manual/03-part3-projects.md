@@ -66,7 +66,7 @@ project's directory. Here is a complete one:
 
 Field by field:
 
-- **`name`** — the project's name. Shown in the title bar (`RIDE 4.0 -
+- **`name`** — the project's name. Shown in the title bar (`RIDE 4.5 -
   <name> - <file>`).
 - **`toolchain`** — the project-wide compiler choice: `auto` (the file's suffix
   decides), or a named one: `c90`, `cpp11`, `shalimar`, or `msvc` (the host's `cl`).

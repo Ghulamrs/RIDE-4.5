@@ -151,7 +151,7 @@ Two diagnostics worth recognising:
   CodeView only via `cl`.
 
 --------------------------------------------------------------------------------
-*This manual describes RIDE 4.0. RIDE 3.0 is the same editor with three
+*This manual describes RIDE 4.5. RIDE 3.0 is the same editor with three
 languages and three targets — no tms6747, no emulator, no TI build path, and the
 frozen original compilers. Where a chapter is target-specific, 3.0 has the first
 three targets only.*

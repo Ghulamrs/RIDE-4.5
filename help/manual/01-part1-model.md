@@ -1,4 +1,4 @@
-# RIDE 4.0 — The Complete Manual
+# RIDE 4.5 — The Complete Manual
 
 **Part I — What the compilers are, what they eat, and what they make**
 

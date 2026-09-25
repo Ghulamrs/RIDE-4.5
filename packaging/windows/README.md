@@ -1,6 +1,6 @@
 # Windows installers (Inno Setup)
 
-`setup.exe` installer for RIDE 4.0, built on the Windows box with Inno Setup 6
+`setup.exe` installer for RIDE 4.5, built on the Windows box with Inno Setup 6
 (`winget install JRSoftware.InnoSetup`). The 3.x releases are sealed and are
 packaged from their own tree, not this one.
 
@@ -23,9 +23,9 @@ shipped).
    `..\LNK6x` too).
 2. Stage the install tree: `stage.cmd <RIDE> <Compiler-Cppi> <stage40>`
    (sources from `bin\`; ships masm.exe and names it), then copy
-   `EXPRESS-HELP-4.0.md` to the stage root as `EXPRESS-HELP.md`, and
+   `EXPRESS-HELP-4.5.md` to the stage root as `EXPRESS-HELP.md`, and
    `ti-build.cmd`+`ti-link.cmd`+`TI-BUILD.txt` into `stage40\bin\ti\`.
-3. `mkinstaller.cmd RIDE-4.0.iss` → `RIDE-4.0-setup.exe`.
+3. `mkinstaller.cmd RIDE-4.5.iss` → `RIDE-4.5-setup.exe`.
 
 ## One-shot build scripts
 
@@ -33,10 +33,10 @@ shipped).
 whole job in one command: compile every compiler project and the RIDE editor,
 regenerate the HTML docs, stage the tree, and produce the installer.
 
-    build-installer.bat 4.0        REM -> dist\RIDE-4.0-setup.exe (Inno Setup)
-    ./build-installer.sh 4.0       #   -> dist/RIDE-4.0-<os>.tar.gz (no Inno on Unix)
+    build-installer.bat 4.5        REM -> dist\RIDE-4.5-setup.exe (Inno Setup)
+    ./build-installer.sh 4.5       #   -> dist/RIDE-4.5-<os>.tar.gz (no Inno on Unix)
 
-Both take the version as `%1`/`$1` (default 4.0) and honour `CPP` (the C++ clone
+Both take the version as `%1`/`$1` (default 4.5) and honour `CPP` (the C++ clone
 with `include/` and `lib/`) and `OUT` (output dir) as overrides. The `.iss` take
 `/DStage=` and `/DOutDir=` so the stage/output paths are not hard-coded. HTML is
 regenerated with `docs2html.py` when Python is present; otherwise the committed

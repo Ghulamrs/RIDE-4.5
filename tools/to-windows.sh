@@ -34,7 +34,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 BOX="${ED1_WINDOWS_BOX:-windows}"
 ROOT="${ED1_WINDOWS_ROOT:-C:\\Users\\GRA\\source}"
-DIR="$ROOT\\RIDE"
+DIR="$ROOT\\RIDE-4.5"
 # 3.5: the four VM6747 repositories travel with the editor - they have no
 # remote, by that line's rules - laid out on the box as they are here.
 # Compiler-Si joined when shalimar was docked; the Compiler-S beside it on the

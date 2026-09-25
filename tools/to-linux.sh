@@ -48,9 +48,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 KEY="${ED1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}"
 BOX="${ED1_LINUX_BOX:-ec2-user@52.202.164.123}"
-# Its own directory, well away from ~/RIDE, that box's clone, and from
-# ~/ride, the sealed 3.5 tree's relay: this one is this script's to empty.
-DIR="${ED1_LINUX_DIR:-ride}"
+# Its own directory, ~/ride-4.5, well away from ~/RIDE, that box's clone,
+# and from ~/ride (the 3.5 and 4.0 relay): this one is this script's to empty.
+DIR="${ED1_LINUX_DIR:-ride-4.5}"
 WHAT="${1:-check}"
 TMP="${TMPDIR:-/tmp}"
 SSH=(ssh -n -i "$KEY" "$BOX")

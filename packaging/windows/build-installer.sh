@@ -8,7 +8,7 @@
 #  is a relocatable tarball (unpack and run bin/RIDE); use build-installer.bat
 #  on Windows for a real setup.exe.
 #
-#  Usage:   ./build-installer.sh [4.0]
+#  Usage:   ./build-installer.sh [4.5]
 #  Env overrides (optional):
 #     CPP    the C++ compiler clone carrying include/ (C++) and lib/ (C) headers
 #            (default: first of <repo>/../Compiler-Cppi, <repo>/../C++)
@@ -18,9 +18,9 @@
 # =============================================================================
 set -euo pipefail
 
-VER="${1:-4.0}"
+VER="${1:-4.5}"
 # The 3.x releases are sealed and built from their own tree, not this one.
-[ "$VER" = 4.0 ] || { echo "build-installer.sh: this tree builds 4.0 only"; exit 2; }
+[ "$VER" = 4.5 ] || { echo "build-installer.sh: this tree builds 4.5 only"; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 PY="${PY:-python3}"

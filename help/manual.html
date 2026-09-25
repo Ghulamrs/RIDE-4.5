@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.0 — The Complete Manual</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.5 — The Complete Manual</title><style>
 :root{--bg:#fff;--fg:#1a1a1a;--muted:#5a5a5a;--rule:#e2e2e2;--accent:#6a4a2a;
 --codebg:#f5f3ef;--codefg:#3a2a1a;--tableh:#f0ece6;--link:#8a5a2a}
 @media (prefers-color-scheme:dark){:root{--bg:#1b1b1b;--fg:#e6e6e6;--muted:#a5a5a5;
@@ -36,7 +36,7 @@ nav.toc a{color:var(--fg)}
 @media print{body{font-size:11pt}.wrap{max-width:none;padding:0}
 nav.toc{break-after:page}h1,h2{break-after:avoid}pre,table,blockquote{break-inside:avoid}
 a{color:inherit;text-decoration:none}}
-</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.0 — The Complete Manual</h1><div class="sub">C, C++ and Shalimar · four targets · one editor</div></div><nav class="toc"><div class="t">Contents</div><ul>
+</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.5 — The Complete Manual</h1><div class="sub">C, C++ and Shalimar · four targets · one editor</div></div><nav class="toc"><div class="t">Contents</div><ul>
 <li class="l2"><a href="#table-of-the-whole-manual">Table of the whole manual</a></li>
 <li class="l2"><a href="#1-what-ride-is">1. What RIDE is</a></li>
 <li class="l2"><a href="#2-what-a-compiler-takes-as-input">2. What a compiler takes as input</a></li>
@@ -305,7 +305,7 @@ a{color:inherit;text-decoration:none}}
 }</code></pre>
 <p>Field by field:</p>
 <ul>
-<li><strong><code>name</code></strong> — the project's name. Shown in the title bar (<code>RIDE 4.0 - &lt;name&gt; - &lt;file&gt;</code>).</li>
+<li><strong><code>name</code></strong> — the project's name. Shown in the title bar (<code>RIDE 4.5 - &lt;name&gt; - &lt;file&gt;</code>).</li>
 <li><strong><code>toolchain</code></strong> — the project-wide compiler choice: <code>auto</code> (the file's suffix decides), or a named one: <code>c90</code>, <code>cpp11</code>, <code>shalimar</code>, or <code>msvc</code> (the host's <code>cl</code>). <code>auto</code> is almost always right; a named one forces every auto group to that compiler. The Tools menu (and Ctrl-K) writes it while the project is open.</li>
 <li><strong><code>arch</code></strong> — the target the project builds for: one of <code>x86_64-windows</code>, <code>x86_64-linux</code>, <code>arm64-darwin</code>, <code>tms6747</code>. The Target menu (and Ctrl-T) changes it and writes it while the project is open; a project that names none gets this machine's host target, and so does one that names another machine's - a project written on a Mac opens on Windows as <code>x86_64-windows</code>, since a host target is the machine's by nature. <code>tms6747</code> is kept wherever the project goes: the emulator runs it on every machine.</li>
 <li><strong><code>indent</code></strong> / <strong><code>tabs</code></strong> — how the editor lays this project's files out; absent, the installation's <code>settings.json</code> answers, and a new project writes neither.</li>
@@ -558,7 +558,7 @@ vm6747 program.s bin\lib\shmrt-tms6747     (Shalimar: runtime beside it)</code><
 <li><strong>DWARF / CodeView</strong> — the two debug-info formats; DWARF on the GNU targets, CodeView only via <code>cl</code>.</li>
 </ul>
 <hr>
-<p><em>This manual describes RIDE 4.0. RIDE 3.0 is the same editor with three languages and three targets — no tms6747, no emulator, no TI build path, and the frozen original compilers. Where a chapter is target-specific, 3.0 has the first three targets only.</em></p>
+<p><em>This manual describes RIDE 4.5. RIDE 3.0 is the same editor with three languages and three targets — no tms6747, no emulator, no TI build path, and the frozen original compilers. Where a chapter is target-specific, 3.0 has the first three targets only.</em></p>
 <h1 id="part-viii-the-shalimar-ecosystem-and-the-c2s-converter">Part VIII — The Shalimar ecosystem and the c2s converter</h1>
 <p>Shalimar is more than the <code>shalimar</code> compiler inside RIDE. It is a small family of projects that share one language, and the C↔Shalimar converter (<code>c2s</code>) that RIDE ships is the bridge between the C world and the Shalimar one. This part maps the family, then documents <code>c2s</code> in full — because <code>c2s.exe</code> is in your install and its Language-menu items are one keystroke away.</p>
 <hr>

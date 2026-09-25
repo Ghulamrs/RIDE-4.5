@@ -1,4 +1,4 @@
-; Inno Setup script for RIDE 4.0 - three languages (C, C++, Shalimar),
+; Inno Setup script for RIDE 4.5 - three languages (C, C++, Shalimar),
 ; four targets (x86_64-windows, x86_64-linux, arm64-darwin, tms6747), the
 ; VM6747 C6000 emulator, the C<->Shalimar converter, and the project's own
 ; assemblers for both machine targets: asm6x for the C6000 and, new in 4.0,
@@ -10,7 +10,7 @@
 ; {#PRODUCT}Console.exe. The Makefile's PRODUCT, product.props and
 ; src/product.h spell it the same.
 #define PRODUCT "RIDE"
-#define MyVer  "4.0"
+#define MyVer  "4.5"
 #define MyName PRODUCT + " " + MyVer
 #ifndef Stage
 #define Stage "C:\Users\GRA\ride-pkg\stage40"

@@ -1,4 +1,4 @@
-# RIDE 4.0 — Express Help
+# RIDE 4.5 — Express Help
 
 Three languages, four targets, one editor - and, since 4.0, the project's own
 assemblers for both machines. This is the quick reference; the full pages are
@@ -41,7 +41,7 @@ All on the **Project** menu:
 - **Remove File** — takes the open file out of the project (leaves it on disk).
 - **Save** — writes the `.pro` back. (New/Add/Remove save it for you.)
 
-The title bar shows where you are: `RIDE 4.0 - <project> - <file>`. The
+The title bar shows where you are: `RIDE 4.5 - <project> - <file>`. The
 top-right of the menu bar shows the compiler in use (a `*` means the file chose
 it). Every add and remove is reflected immediately in the `.pro` file.
 
