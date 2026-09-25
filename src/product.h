@@ -10,7 +10,7 @@
 namespace editor {
 namespace product {
 
-// As people read it: "RIDE 4.0", the Start menu, a message box's title.
+// As people read it: "RIDE 4.5", the Start menu, a message box's title.
 constexpr const char* kName = "RIDE";
 // As a file name wants it: ride-run.s, ride-parts, .ride.
 constexpr const char* kLower = "ride";

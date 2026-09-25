@@ -149,8 +149,8 @@ protected:
     static String^ ProductName() { return gcnew String(ride_product_name()); }
 
     // The window title: the product and its version, then the project it is in,
-    // then the file in front - "RIDE 4.0 - demo - main.c". With no project it
-    // is "RIDE 4.0 - main.c"; with neither, just "RIDE 4.0". One place, so
+    // then the file in front - "RIDE 4.5 - demo - main.c". With no project it
+    // is "RIDE 4.5 - main.c"; with neither, just "RIDE 4.5". One place, so
     // opening a file, loading or closing a project and saving-as all say it the
     // same way.
     void RefreshTitle() {
