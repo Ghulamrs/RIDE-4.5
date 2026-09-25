@@ -286,11 +286,13 @@ def projects():
             "product": "cpp11.exe",
             "root": os.path.join(SIBLINGS, CXX1_REPO),
             "out": os.path.join(SIBLINGS, CXX1_REPO, "cxx1.xcodeproj"),
-            # SRCS is three wildcards over src/, src/parser and src/backend -
-            # the same shape as cc1's, which it was forked from, plus the
-            # parser directory the fork grew.
+            # SRCS is wildcards over src/, src/parser and src/backend, and in
+            # 4.5 src/optimizer too: C++Optimize, which cpp11 is built from,
+            # keeps its optimizer there. Asked for only where it exists.
             "sources": by_glob(os.path.join(SIBLINGS, CXX1_REPO),
-                               ("src", "src/parser", "src/backend")),
+                               ("src", "src/parser", "src/backend") +
+                               (("src/optimizer",) if os.path.isdir(os.path.join(
+                                   SIBLINGS, CXX1_REPO, "src", "optimizer")) else ())),
             "headers": headers_under(os.path.join(SIBLINGS, CXX1_REPO), ("src",)),
             "include": "$(SRCROOT)/src",
             # Both header directories, compiled in as its Makefile compiles
