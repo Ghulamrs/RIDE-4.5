@@ -89,8 +89,7 @@ public:
     void run();
 
     void console(const std::string& line);
-    // The build's question - the project's own tools failed it, use the
-    // vendor's for this build? - on the status line; y is the only yes.
+    // The build's question - the project's own tools failed it, use the vendor's? - on the status line; y is the only yes.
     bool askNativeTools(const std::string& question);
 
     // **Batch: the project built, and run, from a command line, with no
@@ -273,8 +272,7 @@ private:
 
     Language langChoice_ = LangCount;
     Toolchain tool_;
-    // True until main.cpp has chosen what to open, so that the project
-    // opened at start-up does not open a file the command line will.
+    // True until main.cpp has chosen what to open, so the start-up project does not open a file the command line will.
     bool starting_ = true;
 
     size_t cx_, cy_, rx_;

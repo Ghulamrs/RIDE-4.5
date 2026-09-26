@@ -13,10 +13,9 @@ struct Outcome {
     std::string path;
 };
 
-// A name with no extension is given one, since the extension is what picks
-// the compiler: the chosen compiler's - the one the menu bar's corner shows -
-// or, with the choice on automatic, the one most of the project's sources
-// have, else .c.
+// A name with no extension is given one, since the extension is what picks the compiler: the
+// chosen compiler's - the one the menu bar's corner shows - or, with the choice on automatic,
+// the one most of the project's sources have, else .c.
 std::string withExtension(const Project& project, const std::string& relative,
                           ToolchainKind chosen = ToolAuto);
 
@@ -33,14 +32,10 @@ Outcome moveToGroup(Project& project, const std::string& absolute,
 
 std::string groupForFile(const std::string& name);
 
-// A file saved under the project's root joins the project, in the group its
-// name puts it in, unless it is there already or lies where a project file
-// may not; nothing is said when it does not apply, and the file stays saved.
+// A file saved under the project's root joins it, in the group its name puts it in, unless already there or where a project file may not lie; nothing is said when it does not apply.
 Outcome adoptSaved(Project& project, const std::string& absolute);
 
-// The file in front when the project is closed or left is the one it opens
-// with next time: written into the project when it is one of its files and
-// not already the one recorded. Nothing is said either way.
+// The file in front when the project is closed or left opens next time: written into the project when it is one of its files and not already recorded. Nothing is said either way.
 Outcome rememberOpen(Project& project, const std::string& absolute);
 
 Outcome addExisting(Project& project, const std::string& absolute,

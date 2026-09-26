@@ -10,12 +10,9 @@
 using namespace System;
 using namespace System::Windows::Forms;
 
-// The window's own log, and the fault log beside it, live in %TEMP% - not
-// in the working directory, which is wherever the shortcut said and used to
-// leave RIDEGui.log in bin\ and examples\ and nowhere when the start it
-// records failed before anything could be written there.
-// (Spelled through the environment: <windows.h> is included above, and its
-// GetTempPath macro would rewrite the .NET method's name.)
+// The window's own log, and the fault log beside it, live in %TEMP% - not in the working
+// directory, which is wherever the shortcut said and used to leave RIDEGui.log in bin\ and
+// examples\. (Through the environment: <windows.h>'s GetTempPath macro would rewrite the .NET method's name.)
 static String^ LogPath(String^ leaf) {
     String^ temp = Environment::GetEnvironmentVariable("TEMP");
     if (temp == nullptr || temp->Length == 0) temp = Environment::GetEnvironmentVariable("TMP");
@@ -52,11 +49,9 @@ static void QuietConsoleForChildren() {
 
 [STAThreadAttribute]
 int main(array<String^>^ arguments) {
-    // **`--version` answers and exits before any window.** It is the smoke test
-    // build.bat's check runs on the box, where an ssh session has no desktop:
-    // the mixed-mode start-up is what dies when a native global with a
-    // destructor gets into this program (settings.cpp says how), and that death
-    // comes before main - so reaching this line and leaving is the whole test.
+    // **`--version` answers and exits before any window.** It is the smoke test build.bat runs on
+    // the box, where an ssh session has no desktop: a native global with a destructor kills the
+    // mixed-mode start-up before main (settings.cpp says how), so reaching this line and leaving is the whole test.
     if (arguments->Length == 1 && arguments[0] == "--version") {
         Console::WriteLine(gcnew String(ride_product_name()) + " " + gcnew String(ride_version()));
         return 0;

@@ -137,13 +137,9 @@ size_t shownWidth(const std::string& s) {
     return column;
 }
 
-// **The panel wraps rather than cutting, and that is the whole of why this
-// exists.** A compiler's line runs past ninety columns - c2s's questions
-// about a preprocessor directive are the longest - and the panel is
-// fifty-odd beside an open project pane. Everything past the border used to
-// be unreachable: no key scrolls sideways in there, so the half that said
-// *what* to fix was simply not readable. One line is now one or more rows,
-// which is what every other calculation about the panel has to know.
+// **The panel wraps rather than cutting, and that is why this exists.** A compiler's line runs
+// past ninety columns - c2s's questions about a preprocessor directive are the longest - and the
+// panel is fifty-odd beside an open project pane; nothing scrolls sideways, so the half that said what to fix was unreadable. One line is one or more rows now.
 size_t rowsForLine(const std::string& line, size_t cols) {
     if (cols == 0) return 1;
     const size_t wide = shownWidth(line);
@@ -1352,13 +1348,9 @@ void Editor::resizePanel(int by) {
     say("panel: " + number(panelRows_) + " rows");
 }
 
-// **What About says is meant to be read at once, and it is exactly seven
-// lines.** A seven-row panel held them until the panel began to wrap: the row
-// naming the three compilers is the long one, and where it takes two rows
-// "Islamabad, Pakistan" drops off the bottom of a block nobody thinks to
-// scroll. The Windows suite caught that and the Mac's did not - the row fits
-// in eighty columns and not in what cmd gives an ssh session - which is the
-// argument for asking for the room rather than assuming a height.
+// **What About says is meant to be read at once.** A seven-row panel held its seven lines until
+// the panel began to wrap: where the compilers' row takes two rows the last line drops off a
+// block nobody scrolls. The Windows suite caught it and the Mac's did not - cmd over ssh is narrower than eighty columns - so the room is asked for rather than assumed.
 void Editor::fitPanelTo(const std::vector<std::string>& lines) {
     const size_t cols = static_cast<size_t>(screenCols_ > 2 ? screenCols_ - 2 : 1);
     size_t rows = 0;
@@ -1960,10 +1952,9 @@ void Editor::regroupFile() {
     if (done.ok) refreshTree();
 }
 
-// Which file, then which group. The files under the project's root that are
-// not in it yet are offered, one directory deep as the project allows; the
-// file in front is the answer when nothing is typed. The window's Add File
-// asks the same with an Open dialog.
+// Which file, then which group. The files under the project's root that are not in it yet are
+// offered, one directory deep as the project allows; the file in front is the answer when
+// nothing is typed. The window's Add File asks the same with an Open dialog.
 void Editor::addToProject() {
     if (!project_.loaded()) { say("there is no project - make one first"); return; }
 
@@ -2010,8 +2001,7 @@ void Editor::addToProject() {
     if (done.ok) refreshTree();
 }
 
-// A list of paths is edited as one line, the entries separated by ';' -
-// the one character that is not in a path on any of the three systems.
+// A list of paths is edited as one line, the entries separated by ';' - the one character that is not in a path on any of the three systems.
 namespace {
 
 std::string joined(const std::vector<std::string>& parts) {
@@ -2165,13 +2155,9 @@ void Editor::locateVcvars() {
         say("cannot write " + file);
 }
 
-// The project's own assembler in place of ml64 and clang, for x86_64-windows:
-// named by its path and kept in settings.json; `-` puts the compilers' own
-// choice back. See settings::assembler.
-// TI's C6000 compiler directory (CCS's ti-cgt-c6000_x.y.z), whose lnk6x links
-// what asm6x made of a tms6747 build into a .out; a second directory may hold
-// the exception-handling runtime CCS does not ship. `-` clears it. See
-// settings::ti.
+// TI's C6000 compiler directory (CCS's ti-cgt-c6000_x.y.z), whose lnk6x links what asm6x made of
+// a tms6747 build into a .out; a second directory may hold the exception-handling runtime CCS
+// does not ship. `-` clears it. See settings::ti.
 void Editor::locateTi() {
     std::string file = settings::installFile();
     if (file.empty()) { say("no installation directory to keep this in"); return; }
@@ -2193,6 +2179,8 @@ void Editor::locateTi() {
         say("cannot write " + file);
 }
 
+// The project's own assembler in place of ml64 and clang, for x86_64-windows: named by its path
+// and kept in settings.json; `-` puts the compilers' own choice back. See settings::assembler.
 void Editor::locateAssembler() {
     std::string file = settings::installFile();
     if (file.empty()) { say("no installation directory to keep this in"); return; }
@@ -2224,10 +2212,9 @@ void Editor::locateLinker() {
         say("cannot write " + file);
 }
 
-// The project's own C6000 linker in place of TI's lnk6x, for tms6747: named
-// by its path and kept in settings.json; `-` puts TI's back. The runtime it
-// links against is still TI's, named under Tools > TI compiler. See
-// settings::tilinker.
+// The project's own C6000 linker in place of TI's lnk6x, for tms6747: named by its path and kept
+// in settings.json; `-` puts TI's back. The runtime it links against is still TI's, named under
+// Tools > TI compiler. See settings::tilinker.
 void Editor::locateTilinker() {
     std::string file = settings::installFile();
     if (file.empty()) { say("no installation directory to keep this in"); return; }
@@ -2251,10 +2238,9 @@ void Editor::removeFromProject() {
     if (done.ok) refreshTree();
 }
 
-// Name, then where: the directory offered is the open project's, or the one
-// the editor stands in, and a new name under it is made. The window asks the
-// same two with a folder picker. A project already open is closed first, its
-// files with it, as Project > Close would.
+// Name, then where: the directory offered is the open project's, or the one the editor stands
+// in, and a new name under it is made. The window asks the same two with a folder picker. A
+// project already open is closed first, its files with it, as Project > Close would.
 void Editor::newProject() {
     bool cancelled = false;
     std::string name = prompt("project name: ", cancelled);
@@ -2307,12 +2293,9 @@ void Editor::saveProjectAs() {
     say(name + " written - the project is saved there from now on");
 }
 
-// The target and the compiler are the project's while one is open - written
-// to its .pro, which is what the manual promised and what a project needs to
-// open the same way next time - and the installation's default otherwise.
-// Until 2026-09-19 the Target menu wrote nothing and the Tools menu wrote
-// settings.json whatever was open, so Ctrl-K inside one project changed the
-// compiler of every other.
+// The target and the compiler are the project's while one is open - written to its .pro, as the
+// manual promised - and the installation's default otherwise. Until 2026-09-19 the Target menu
+// wrote nothing and the Tools menu wrote settings.json whatever was open, so Ctrl-K inside one project changed the compiler of every other.
 void Editor::chooseArch(size_t which) {
     arch_ = which;
     resetDebug();
@@ -2564,13 +2547,9 @@ void Editor::convertFile() {
         return;
     }
 
-    // Nothing on disk, so nothing to open. The console holds why - the
-    // questions c2s asks about a preprocessor directive, or a file it could
-    // not read - and its last line is the summary, which is what the status
-    // line can hold. Until 2026-08-27 this branch was reached only for the
-    // unreadable file: a refusal was taken for a conversion, and the editor
-    // opened an empty buffer named after a file that had never been written
-    // and said it was written with parts marked BEYOND.
+    // Nothing on disk, so nothing to open. The console holds why - c2s's questions, or a file it
+    // could not read - and its last line is the summary the status line can hold. Until 2026-08-27
+    // this branch was reached only for the unreadable file: a refusal was taken for a conversion and an empty buffer opened, said to be written with parts marked BEYOND.
     if (result.produced.empty()) {
         const std::string why = console_.empty() ? std::string("see the console")
                                                  : console_.back();
@@ -2829,10 +2808,9 @@ void Editor::buildProject(bool andRun) {
         console_.push_back("");
         // What was built, which for the emulated target is <program>.vm.
         std::vector<std::string> args = project_.absoluteTargetArgs();
-        //  Say what is being run, arguments and all. A project whose program
-        //  is a tool prints its usage when it is handed nothing, and the
-        //  console should show that nothing was handed to it rather than
-        //  leave the usage looking like a fault.
+        //  Say what is being run, arguments and all. A project whose program is a tool prints its
+        //  usage when handed nothing, and the console should show that nothing was handed to it
+        //  rather than leave the usage looking like a fault.
         std::string shown = project_.relative(made.program);
         for (size_t a = 0; a < project_.targetArgs().size(); ++a)
             shown += " " + project_.targetArgs()[a];
@@ -3720,11 +3698,7 @@ void Editor::run() {
         if (term_.eof()) break;
     }
 
-    // Leaving the editor ends a debugging session the way Stop debugging
-    // does. The Debugger's destructor already stopped lldb or gdb; what it
-    // could not do was remove the temporary program F8 built - so a quit in
-    // the middle of a session left ride-run-<pid>, and on a Mac its
-    // .dSYM, in the temporary directory, one pair per session.
+    // Leaving ends a debugging session as Stop debugging does: the destructor stops the debugger but cannot remove the program F8 built, which a quit mid-session left in the temporary directory, .dSYM and all.
     if (debugging()) debugStop();
 
     Terminal::write("\x1b[2J\x1b[H");

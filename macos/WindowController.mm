@@ -705,10 +705,9 @@ static NSScrollView* Scroller(NSRect frame) {
     return ride_language_for(Utf8(current_.path ?: @""));
 }
 
-// The status bar says what the next build will use: the language, debug or
-// release, the compiler that will run (with a * when the file chose it) and
-// the target when it means anything - the terminal's own line, through the
-// same core functions.
+// The status bar says what the next build will use: the language, debug or release, the compiler
+// that will run (with a * when the file chose it) and the target when it means anything - the
+// terminal's own line, through the same core functions.
 - (void)sayBuild {
     int language = [self languageNow];
     int kind = ride_resolve(toolKind_, language);
@@ -761,10 +760,9 @@ static NSColor* ColourOf(unsigned char kind) {
     }
 }
 
-// The whole file, through the core's highlighter a line at a time with the
-// state carried between lines. Colour goes on as the layout manager's
-// temporary attributes, which are not the text: colouring never touches undo
-// and never marks the file changed - the trap Rich Edit set on Windows.
+// The whole file, through the core's highlighter a line at a time with the state carried between
+// lines. Colour goes on as the layout manager's temporary attributes, which are not the text:
+// colouring never touches undo and never marks the file changed - the trap Rich Edit set on Windows.
 - (void)recolour {
     [recolourTimer_ invalidate];
     recolourTimer_ = nil;
@@ -1301,10 +1299,9 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (NSString*)outcomePath { return Str(ride_outcome_path(project_)); }
 
-// Projects and single programs default beside the installation, as on Windows,
-// or in ~/Documents when the editor is not installed anywhere writable.
-// ~/Documents/RIDE/<leaf>, made on demand; missing or empty, it is filled from the
-// install's own projects or programs, which is how the samples reach a new user.
+// Projects and single programs default beside the installation, as on Windows, or in
+// ~/Documents/RIDE/<leaf> when the editor is not installed anywhere writable - made on demand and,
+// missing or empty, filled from the install's own projects or programs, which is how the samples reach a new user.
 - (NSString*)madeUnder:(NSString*)leaf {
     NSFileManager* fm = NSFileManager.defaultManager;
     NSString* base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/RIDE"];

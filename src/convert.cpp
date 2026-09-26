@@ -39,10 +39,9 @@ std::string convertedName(const std::string& sourcePath, bool toShalimar) {
     const std::string stem =
         dot == std::string::npos ? sourcePath : sourcePath.substr(0, dot);
 
-    // .shl, which is the only suffix this editor reads as Shalimar. It
-    // wrote .shm until 2026-08-27 - shc takes either - and the file it made
-    // then opened as plain text in the editor that had just made it, with no
-    // colouring and the wrong compiler behind Build. One suffix that travels.
+    // .shl, the only suffix this editor reads as Shalimar. It wrote .shm until 2026-08-27 - shc
+    // takes either - and the file it made then opened as plain text in the editor that had just
+    // made it, with no colouring and the wrong compiler behind Build. One suffix that travels.
     return stem + (toShalimar ? ".shl" : ".c");
 }
 
@@ -54,14 +53,9 @@ Conversion convert(const std::string& converter, const std::string& sourcePath,
         return result;
     }
 
-    // Written beside the output and moved into place only if it appears,
-    // because c2s's exit status cannot answer whether it wrote anything: 1 is
-    // both "written, with constructs marked BEYOND" and "refused, and nothing
-    // written" - which is what a `#ifndef` gets. Reading the status instead
-    // opened a file that had never been written and called it converted.
-    //
-    // Beside it, so the move cannot cross a device, and removed first, since a
-    // leftover from an interrupted run would be read as this run's work.
+    // Written beside the output and moved into place only if it appears, because c2s's exit status
+    // cannot say whether it wrote anything: 1 is both "written, with constructs marked BEYOND" and
+    // "refused" - what a `#ifndef` gets. Beside it so the move cannot cross a device, and removed first, since a leftover would be read as this run's work.
     const std::string scratch = outputPath + ".new";
     path::remove(scratch);
 

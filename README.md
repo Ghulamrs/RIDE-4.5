@@ -714,6 +714,19 @@ Three tabs:
   One file, compiled into both front ends.
 * **Assembly** - what `-S` produced.
 
+**A line longer than the panel wraps rather than being cut.** A compiler's line
+runs past ninety columns - c2s's questions about a preprocessor directive are
+the longest - and the panel is fifty-odd beside an open project pane. Until
+2026-08-27 everything past the border was unreachable: no key scrolls sideways
+in there, so the half of a diagnostic that said *what* to fix could not be read.
+One line is now one or more rows (`rowsForLine`), which every other calculation
+about the panel has to know. About asks for the room it needs
+(`Editor::fitPanelTo`) rather than assuming a seven-row panel: where the
+compilers' row took two rows, "Islamabad, Pakistan" dropped off the bottom of a
+block nobody thinks to scroll. The Windows suite caught that and the Mac's did
+not - the row fits in eighty columns and not in what cmd gives an ssh session -
+which is the argument for asking rather than assuming a height.
+
 ## Trying it
 
 ```
@@ -821,6 +834,110 @@ else.
 `make check CC1=~/...` - it is an argument, not an assignment - and make hands
 the literal `~/...` to the test process, where nothing expands it. The tell is
 a build failing with a compiler that works perfectly when you run it by hand.
+
+### What the build learned on each machine
+
+These were comments in `src/` and `tests/` until 2026-09-26, when every comment
+group in the editor's source was brought under the house cap of three lines
+(`tools/comment-lines` in the compiler repository is the oracle). Each is a
+measured behaviour of a platform rather than a design of ours, each cost a
+session to find, and the line beside the code now says the rule while this says
+why.
+
+**Nothing a build runs may read the editor's own input.** A child that inherits
+stdin consumes the keystrokes the editor has not read yet. On Windows, `cmd`
+running `vcvars64.bat` to hand back its environment read stdin to the end while
+the editor drained the answer, so the editor's next read saw end of file and it
+quit - every key pressed after the first build was silently the last one. The
+redirect is `( ... ) < NUL` on a parenthesised block, not on the command: in a
+`&&` chain cmd binds `< NUL` to the one command it follows, and the obvious
+spelling left the `call` still reading. The run step always had this; the build
+step did not, and only the build step is a child that might.
+
+**An unwritable directory is refused before any compiler runs.** RIDE 4.0's
+installer started the editor in its own `examples\` under Program Files, where a
+normal user may read and not write, and the build died in the linker with
+`LNK1104: cannot open file ...demo.exe` under a hint about `vcvars64.bat`,
+neither of which was the matter. A directory is writable if a file can be made
+in it; the read-only attribute `_access` answers with is not what UAC withholds.
+
+**On a Mac the DWARF stays in the objects, and a link of objects gets no
+`.dSYM`.** The linker leaves debug information where the compiler wrote it and
+puts a map to those files in the program; lldb follows the map. The driver runs
+`dsymutil` to gather it into a bundle only when it compiled the sources itself.
+A project of two compilers is a link of objects, and the objects are removed
+after the link - so `buildParts` asks for the bundle itself, before the objects
+go, or a breakpoint in such a project stops nowhere and says nothing about why.
+A one-compiler project never saw it because its compiler links the sources
+itself. The `.dSYM` is a directory, which `std::remove` does not take: until
+`path::removeTree` the temporary directory filled with `ride-run-<pid>.dSYM`
+bundles, one per F8, and a quit in the middle of a session left another pair.
+
+**A program is asked for by the name given, and only then with `.exe`.** The
+programs are `c90.exe`, `cpp11.exe`, `shalimar.exe` and `RIDE.exe` on every
+machine, so appending on Windows turned an honest "cc1.exe" into a search for
+`cc1.exe.exe`. The editor survived that by asking twice and About did not,
+reporting all three compilers absent while standing in the directory with them.
+The fallback stays for a bare name, which is what a caller that has never had to
+think about Windows writes.
+
+**cl's `/Fo` wants a separator on the end of a directory**, and on the machine
+where `/Fo` means anything that separator is a backslash sitting immediately
+before a closing quote, where it escapes it. cl then answers `D8003: missing
+source filename`, which reads as a command with no file in it rather than a
+command with a quote in the wrong place. It cost an afternoon on the Windows box;
+`aDirectoryInAQuotedArgument` in `tests/test.cpp` is one check.
+
+**`cmd /c` strips the first and last quote** when a command holds more than two
+quote characters, so `"shc.exe" "in.shl" -o "out.exe"` reaches the shell as
+garbage and runs nothing; an extra pair round the whole command is what cmd then
+eats, leaving the real ones alone (`shellCommand` in the suite, `runCaptured` in
+`src/compile.cpp`). `/dev/null` is not a path there - cmd has `NUL` - and a
+redirect to it fails the whole command, which one case reported as "shc did not
+build it" on the machine where shc had only just been made to exist. And
+`findstr` is not `cat`: it holds its output until it exits, so a marker piped
+through it never comes back, and the wait for it hung the whole suite on that
+box.
+
+**About asks the compilers rather than listing their versions.** Their numbers
+written into the editor would be a second copy and the stale one - the editor
+does not build them and cannot know when one moved - and the question a reader
+of that box has is not "what was this built against" but "what is it driving
+now". A copy standing beside a compiler from another release is exactly the case
+worth seeing, and a missing compiler is a row that says so rather than a row
+that is not there. Three answers shared one row until 3.0, when cxx1's
+`--version` banner - longer than a column - made it one compiler per row, with
+the panel growing to fit.
+
+**Release asks cxx1 for its own `-O2`.** The line passed `-O2` for a long time
+while cxx1 had no optimiser and no `-O` flag at all: it refused the switch
+("unknown option -O2") and every Release C++ build failed, unseen because the
+editor defaults to Debug. cxx1 implements `-O1` and `-O2` on its instruction IR
+now - lea fusion, copy propagation, a register and liveness model; on Compiler++'s
+sixteen units it takes `.text` from +54.6% over cl `/O2` to +20.6%. `-O2` is
+`-O1` today, the favour-space/favour-speed split not being written. Until
+2026-09-26 `-O2` went to the host's `c++` alone, so a Release build with c90 or
+cpp11 was never optimised; both take their own `-O2` now.
+
+**lldb steps nowhere, twice.** On the project the session suite builds, one
+`next` from a breakpoint in `sum.c` does not change the line - the addresses
+climb, and by the third the arguments are rubbish because the frame is coming
+apart - and only the fourth arrives in `main`; gdb on the same DWARF from the
+same compiler answers the first `next` with `main () at main.c:8`.
+`dbg_wentNowhere` is what makes F7 arrive in one press on a Mac as it does on the
+Linux box, and recursion is the case it must not get wrong: `fact` stepping into
+itself is the same file, line and function and a real arrival, and only the
+address - going back to the callee's prologue rather than forward - says so. The
+transcripts are kept verbatim in `tests/test.cpp`, and so is the fact that lldb
+lists locals as declared where gdb lists the innermost block first.
+
+**The session suite drives menus by counting**, so an item added to a menu moves
+every check below it and a column added moves every column to its right. Each
+walk carries the count in the one place that makes it, and three counts have
+moved already - the Project menu twice on 2026-08-24, the Help column when
+Language joined the bar. The menu opens on File every time since the audit of
+2026-09-19; until then it reopened on the column it was left on, which once cost
+an hour of believing the panel was broken.
 
 ### All five programs at once
 
@@ -1164,6 +1281,23 @@ that walks and symbolises its own stack into `RIDEGui-fault.log` (in `%TEMP%`
 since 2026-09-16, beside the window's own `RIDEGui.log`). It printed
 `Json::get -> atexit -> register_onexit_function -> RtlSizeHeap` and named the
 line.
+
+The rule holds for **globals** as much as for function-local statics, and it has
+been found three times. On the day the window was built, `Json::get`. On
+2026-09-11 `ride_group_for_file` arrived with a plain `static std::string
+answer`, and File > New took a name and died in `_onexit`; every string the
+bridge hands back goes through `scratch()` since, made once with `new` and never
+destroyed. On 2026-09-18 three `std::string` globals in `settings.cpp` -
+`pretended` and the two overrides `--assembler` and `--linker` set for one run -
+registered themselves with `atexit` during start-up, and the window died on every
+start with `STATUS_HEAP_CORRUPTION` under `register_onexit_function` until they
+were found on the 19th. They are pointers now; the debugger's marker strings and
+the C6000 linker command file are functions for the same reason. Two guards hold
+it: `theWindowsRuleAboutStatics` in `tests/test.cpp` scans exactly the files
+`RIDEGui.vcxproj` compiles for the shape, read out of that file rather than
+listed twice; and `RIDEGui --version`, which answers and exits before any window,
+is the smoke test `build.bat` runs over ssh where there is no desktop - the death
+is before `main`, so reaching that line and leaving is the whole test.
 
 ### In Xcode
 

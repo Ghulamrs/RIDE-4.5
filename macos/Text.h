@@ -1,7 +1,6 @@
-// The two spellings of text the window deals in: NSString on the AppKit
-// side, UTF-8 char* on the core's (winforms/bridge.h). Every crossing goes
-// through one of these, so an embedded nil or a NULL from the core is
-// handled in one place rather than at every call.
+// The two spellings of text the window deals in: NSString on the AppKit side, UTF-8 char* on the
+// core's (winforms/bridge.h). Every crossing goes through one of these, so an embedded nil or a
+// NULL from the core is handled in one place rather than at every call.
 #ifndef MACOS_TEXT_H
 #define MACOS_TEXT_H
 

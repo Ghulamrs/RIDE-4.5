@@ -32,15 +32,9 @@ extern const char* const kArches[kArchCount];
 
 typedef void (*LineSink)(void* context, const std::string& line);
 
-// **The question a build asks when the project's own tools failed it.**
-// masm, link and lnk6x beside the editor are the tools by default; when one
-// of them did not build something and the compilers found no fault in the
-// source, and settings.json says "askNative": true, the front end puts this
-// question - "use the native tools for this build instead?" - and a yes
-// builds again with ml64 and link.exe, or TI's lnk6x. Each front end
-// installs its own way of asking (the console a prompt, the window a
-// message box); with none installed the build fails as it failed. The
-// question is decided by nativeFallbackWanted, so a test can hold it.
+// **The question a build asks when the project's own tools failed it.** masm, link and lnk6x
+// beside the editor are the tools by default; when one did not build something, the compilers
+// found no fault, and settings.json says "askNative": true, the front end asks and a yes builds again with ml64 and link.exe, or TI's lnk6x. Decided by nativeFallbackWanted, so a test can hold it.
 typedef bool (*AskNative)(void* context, const std::string& question);
 void setAskNative(AskNative ask, void* context);
 // question holds the question when the answer is yes - and, when it is no
@@ -84,14 +78,9 @@ Built buildTarget(const Toolchain& tool, ToolchainKind kind,
                   const std::string& arch, Configuration config,
                   const std::string& program, LineSink sink = 0, void* context = 0);
 
-// **Which C6000 linker a tms6747 build links with, and what it should say
-// about it.** The choice is made here, rather than inside the build, so the
-// suite can hold it to every case: nothing named, one named and there, one
-// named and gone. A linker named in settings.json that has since gone leaves
-// settings::tilinker() empty and TI's would be used with nothing said; `say`
-// is what keeps that from passing unnoticed. `path` empty means the build
-// cannot go on, and `say` is then why - either no lnk6x at all, or one named
-// for this run by --tilinker that is not there.
+// **Which C6000 linker a tms6747 build links with, and what to say about it.** Chosen here so the
+// suite can hold every case: nothing named, one named and there, one named and gone - where TI's
+// would otherwise stand in unsaid. `path` empty means the build cannot go on, and `say` is why.
 struct LinkerChoice {
     std::string path;
     std::string say;

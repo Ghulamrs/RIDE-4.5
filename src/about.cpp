@@ -22,36 +22,23 @@ const char* version() { return "4.5"; }
 
 namespace {
 
-// **The compilers are asked rather than listed.** Writing their numbers here
-// would be writing them twice, and this copy would be the one that went stale:
-// the editor does not build them and has no way to know when one moved.
-//
-// It also answers the question a reader of this box actually has, which is not
-// "what was this built against" but "what is it driving now". A copy standing
-// beside a compiler from another release is exactly the case worth seeing, and
-// a hard-coded string would hide it.
-//
-// Absence is not an error. The editor finds what it drives beside itself, and
-// a copy shipped on its own is an ordinary state - so the row says so rather
-// than disappearing. A missing line is harder to notice than one that reports
-// what is missing.
+// **The compilers are asked rather than listed.** Their numbers written here would be a second
+// copy, and the stale one: the editor does not build them. What the box answers is "what is it
+// driving now", and absence is an ordinary state, so a missing compiler is a row that says so.
 std::string askVersion(const std::string& program) {
     const std::string found = path::besideProgram(program);
     if (found.empty()) return std::string();
 
-    // Quoted, because a path may hold a space. `--version` is the flag all
-    // four answer. cc1, shc and c2s write one line and stop; cxx1 writes its
-    // banner first and its version on the second line, so the line kept is
-    // the last one that names a version - and the first line when none does,
-    // which is what the other three come to.
+    // Quoted, because a path may hold a space. `--version` is the flag all four answer: cc1, shc
+    // and c2s write one line and stop, cxx1 writes its banner first and its version second, so
+    // the line kept is the last one naming a version - and the first when none does.
     const std::string command = "\"" + found + "\" --version 2>&1";
     FILE* pipe = POPEN(command.c_str(), "r");
     if (!pipe) return std::string();
 
-    // The first line is the banner, and the banner is what About shows:
-    // every one of the four opens with one, cxx1's version line beneath is
-    // detail. Its own copyright is taken off, since the box ends with it
-    // once - so a row reads "cpp11 - ISO C++ 11" beside "c90 - ISO C 90".
+    // The first line is the banner, which is what About shows: every one of the four opens with
+    // one, and cxx1's version line beneath is detail. Its own copyright is taken off, since the box
+    // ends with it once - so a row reads "cpp11 - ISO C++ 11" beside "c90 - ISO C 90".
     char buffer[256];
     std::string first;
     while (std::fgets(buffer, sizeof buffer, pipe)) {
@@ -78,13 +65,9 @@ std::string cell(const std::string& program) {
     return stem + " - " + answer;
 }
 
-// **One per line, since 3.0.** Three answers used to share a row, because the
-// box was seven lines before the compilers joined it and a fourth row would
-// have pushed the last one off the panel. Editor::fitPanelTo grows the panel
-// to what About puts in it now, and the window asks for the room it needs -
-// so the row went when cxx1 arrived, rather than four answers being squeezed
-// into eighty columns: cxx1 answers --version with a banner longer than a
-// column, and a row that wraps reads worse than a row per compiler.
+// **One per line, since 3.0.** Three answers shared a row while the box was seven lines and a
+// fourth row would have left the panel; Editor::fitPanelTo grows the panel to what About puts in
+// it now. cxx1's --version banner is longer than a column, and a row that wraps reads worse.
 void tool(std::vector<std::string>& said, const std::string& program) {
     said.push_back("  " + cell(program));
 }
@@ -94,8 +77,7 @@ void tool(std::vector<std::string>& said, const std::string& program) {
 std::vector<std::string> lines() {
     std::vector<std::string> said;
     said.push_back(std::string(name()) + " " + version());
-    // Asked one at a time; the heading is the user's wording. The list says
-    // which compilers are actually here, and which are not.
+    // Asked one at a time; the heading is the user's wording, and the list says which compilers are actually here.
     said.push_back("Compiler's version list as follows:");
     // The VM6747 line since 3.5 - what the editor actually looks for, so
     // that a copy standing beside the sealed originals says so. Shalimar

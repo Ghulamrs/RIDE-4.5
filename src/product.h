@@ -1,11 +1,8 @@
 #pragma once
 
-// **The product's name, once.** Every name the editor shows or leaves on a
-// disk is made from these: the window's title and About, the per-user state
-// directory, the temporary files a build writes, the marker a debugger echoes.
-// The programs' own file names come from the build - PRODUCT in the Makefiles,
-// RideProduct in product.props, Product in the .iss - and are spelled the same.
-// A rename is these lines and those three, and a search of the prose.
+// **The product's name, once.** Every name the editor shows or leaves on a disk is made from
+// these; the programs' own file names come from the build - PRODUCT in the Makefiles, RideProduct
+// in product.props, Product in the .iss - spelled the same. A rename is these lines, those three, and a search of the prose.
 
 namespace editor {
 namespace product {
@@ -20,10 +17,9 @@ constexpr const char* kLower = "ride";
 constexpr const char* kStateDirectory = ".ride";
 constexpr const char* kStateFile = "state.json";
 
-// The three compilers, as a user reads and types them: the Toolchain menu,
-// --toolchain, a .pro's "toolchain", settings.json's "compiler" and the line
-// a build prints. Their programs are these names with .exe; each compiler's
-// own src/Name.h and its Makefile's PROGRAM spell it the same.
+// The three compilers, as a user reads and types them: the Toolchain menu, --toolchain, a .pro's
+// "toolchain", settings.json's "compiler" and the line a build prints. Their programs are these
+// names with .exe; each compiler's own src/Name.h and its Makefile's PROGRAM spell it the same.
 constexpr const char* kCompilerC = "c90";
 constexpr const char* kCompilerCpp = "cpp11";
 constexpr const char* kCompilerShalimar = "shalimar";

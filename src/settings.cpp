@@ -139,12 +139,7 @@ bool rememberIndent(size_t width, bool tabs) {
 
 namespace {
 
-// A pointer and never a std::string: this file is linked into the C++/CLI
-// window, where a native global with a destructor registers itself with
-// atexit during start-up and corrupts the onexit table before main - the
-// window died with STATUS_HEAP_CORRUPTION under register_onexit_function,
-// the same stack the README records for Json::get. `moved` above is a
-// pointer for the same reason.
+// A pointer and never a std::string: in the C++/CLI window a native global with a destructor corrupts the onexit table before main (STATUS_HEAP_CORRUPTION under register_onexit_function); `moved` above is a pointer for the same reason.
 std::string* pretended = 0;
 
 // **On macOS settings.json is the user's, in ~/.ride beside state.json**: a file
@@ -217,10 +212,9 @@ std::string installedDir(const char* key) {
     return path::isDirectory(dir) ? dir : std::string();
 }
 
-// A program named in the file, made absolute against it the same way: the
-// installer writes "bin/masm.exe" for the assembler, which is beside the
-// editor wherever the installation was put; a full path is taken as
-// written. What is not there counts for nothing, as before.
+// A program named in the file, made absolute against it the same way: the installer writes
+// "bin/masm.exe" for the assembler, which is beside the editor wherever the installation was
+// put; a full path is taken as written. What is not there counts for nothing, as before.
 std::string installedFile(const char* key) {
     std::string said = readInstall().get(key).text(std::string());
     if (said.empty()) return std::string();
@@ -252,10 +246,9 @@ std::string vcvars() {
     return (!said.empty() && path::exists(said)) ? said : std::string();
 }
 
-// **Pointers, never std::string globals** - the trap `pretended` above names:
-// linked into the C++/CLI window, a native global with a destructor corrupted
-// the onexit table before main, and the window died with STATUS_HEAP_CORRUPTION
-// on every start from 2026-09-18 until these three were found on the 19th.
+// **Pointers, never std::string globals** - the trap `pretended` above names: linked into the
+// C++/CLI window, a native global with a destructor corrupted the onexit table before main, and
+// the window died on every start from 2026-09-18 until these three were found on the 19th.
 static std::string* assemblerForThisRun = 0;
 static std::string* linkerForThisRun = 0;
 static std::string* tiForThisRun = 0;

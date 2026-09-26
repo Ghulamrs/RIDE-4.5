@@ -13,8 +13,7 @@ std::string fileName();
 std::string lastProject();
 
 bool rememberProject(const std::string& directory);
-// The last three projects opened, most recent first, as the Project menu
-// lists them; lastProject() is the first of them.
+// The last three projects opened, most recent first, as the Project menu lists them; lastProject() is the first.
 std::vector<std::string> recentProjects();
 // The last three files opened on their own, most recent first, for the
 // File menu the same way.
@@ -38,21 +37,16 @@ bool rememberIndent(size_t width, bool tabs);
 std::string setAside();
 bool rememberPlainFrame(bool plain);
 
-// **The installation's settings.json**, one directory above the editor's
-// bin/ - beside include/ and lib/ - and read for every compile, whether or
-// not a project is open. It says where the shipped headers are (include/ is
-// cxx1's, lib/ is cc1's, each relative to the file when not absolute) and,
-// when a person has had to name it, the batch file that sets up Visual
-// Studio's tools. Empty answers mean the directory of that name beside the
-// file, if it is there; failing that the compilers look for their own.
+// **The installation's settings.json**, one directory above the editor's bin/ and read for every
+// compile, project or not. It says where the shipped headers are (include/ is cxx1's, lib/ is
+// cc1's, relative to the file when not absolute) and, when named, Visual Studio's batch file. Empty answers mean the directory of that name beside the file, else the compilers look for their own.
 std::string installFile();
 std::string includeDir();
 std::string libDir();
 std::string vcvars();
-// **The assembler for x86_64-windows**, the project's own (Ghulamrs/MASM's
-// asm) named by its path: c90 and cpp11 then assemble through it instead of
-// ml64 and clang - C90_AS and CPP11_AS in their environment, and cpp11 told
-// -masm=masm. Empty, and the compilers choose as they always did.
+// **The assembler for x86_64-windows**, the project's own (Ghulamrs/MASM's asm) named by its
+// path: c90 and cpp11 then assemble through it instead of ml64 and clang - C90_AS and CPP11_AS in
+// their environment, and cpp11 told -masm=masm. Empty, and the compilers choose as they always did.
 std::string assembler();
 void overrideAssembler(const std::string& path);   // --assembler, for this run only
 // **The linker for x86_64-windows**, the project's own (Ghulamrs/LINK's
@@ -60,44 +54,30 @@ void overrideAssembler(const std::string& path);   // --assembler, for this run 
 // Microsoft's link.exe. Empty, and link.exe (or C90_LD) as always.
 std::string linker();
 void overrideLinker(const std::string& path);      // --linker, for this run only
-// **TI's C6000 compiler directory**, for tms6747: CCS's ti-cgt-c6000 root,
-// whose bin\lnk6x links what asm6x - the project's own assembler, beside the
-// editor - made of a tms6747 build into a real .out, against the runtime in
-// its lib\ (and in "tilib", a second directory, for the exception-handling
-// build of it that CCS does not ship). Empty, and a tms6747 build stops at
-// the objects; without asm6x beside the editor it stops at the assembly the
-// emulator runs, as it always did.
+// **TI's C6000 compiler directory**, for tms6747: CCS's ti-cgt-c6000 root, whose bin\lnk6x links
+// what asm6x made into a real .out against the runtime in its lib\ ("tilib" is a second directory,
+// for the exception-handling build CCS does not ship). Empty, and a tms6747 build stops at the objects - at the assembly, without asm6x.
 std::string ti();
 std::string tilib();
 void overrideTi(const std::string& dir);           // --ti, for this run only
 void overrideTilib(const std::string& dir);        // --tilib, for this run only
-// **The linker for tms6747**, the project's own (Ghulamrs/LNK6X's lnk6x)
-// named by its path: a tms6747 build then links its .out through it instead
-// of TI's bin\lnk6x - still against TI's runtime, which "ti" and "tilib"
-// name. Empty, and TI's lnk6x as always.
+// **The linker for tms6747**, the project's own (Ghulamrs/LNK6X's lnk6x) named by its path: a
+// tms6747 build then links its .out through it instead of TI's bin\lnk6x - still against TI's
+// runtime, which "ti" and "tilib" name. Empty, and TI's lnk6x as always.
 std::string tilinker();
 void overrideTilinker(const std::string& path);    // --tilinker, for this run only
-// **What was named for tms6747, there or not.** tilinker() answers nothing
-// for a path that has gone, so a build would quietly use TI's lnk6x instead;
-// this answers what was asked for either way, so the build can say that it
-// did. Empty when nothing was named.
+// **What was named for tms6747, there or not.** tilinker() answers nothing for a path that has gone; this answers what was asked for either way, so the build can say TI's stood in. Empty when nothing was named.
 std::string namedTilinker();
-// **Whether a build that the project's own tools failed asks to go native.**
-// "askNative" in settings.json, true by default: when masm, link or lnk6x of
-// the project's own did not build something and the compilers found no
-// fault in the source, the front end asks - "use the native tools (ml64 and
-// link.exe / TI's lnk6x) for this build instead?" - and a yes builds again
-// through them. false, and the build fails as it failed, never asking. The
-// user's design, 2026-09-20: ours by default, the vendor's by consent.
+// **Whether a build the project's own tools failed asks to go native.** "askNative", true by
+// default: when masm, link or lnk6x did not build something and the compilers found no fault, the
+// front end asks and a yes builds again through the vendor's; false never asks. The user's design, 2026-09-20: ours by default, the vendor's by consent.
 bool askNative();
 bool rememberAskNative(bool ask);
 // For the build a yes was given to: the four above answer as if nothing of
 // the project's own were named, so every recipe reaches for the vendor's.
 void forceNative(bool on);
 bool nativeForced();
-// The compiler chosen when the editor starts and no project or command
-// line says otherwise: auto, cc1, cxx1, shc, msvc or c++ - "compiler" in
-// the installation's settings.json. Choosing one from the menu writes it.
+// The compiler chosen at start when nothing says otherwise: auto, cc1, cxx1, shc, msvc or c++ - "compiler" in the installation's settings.json, which the menu writes.
 std::string defaultCompiler();
 // Header directories every compile searches after a project's own, and
 // libraries every host link takes - "includes" and "libraries" in the
@@ -113,11 +93,9 @@ bool rememberAssembler(const std::string& file);
 bool rememberLinker(const std::string& file);
 bool rememberTi(const std::string& dir, const std::string& lib);
 bool rememberTilinker(const std::string& file);
-// Writes the file with the two directories when there is none yet, so that a
-// person opening the installation sees what is in force.
+// Writes the file with the two directories when there is none yet, so a person opening the installation sees what is in force.
 bool writeInstallFileIfAbsent();
-// For the suite: take this directory for the installation's, in place of
-// the one above the running binary. Empty puts it back.
+// For the suite: take this directory for the installation's, in place of the one above the running binary. Empty puts it back.
 void pretendInstalledAt(const std::string& directory);
 
 }

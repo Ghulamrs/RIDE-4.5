@@ -44,10 +44,9 @@ const char* const kCppTypes[] = {
     "exception", "runtime_error", "logic_error", "bad_alloc",
     "function", "thread", "mutex", "atomic", "chrono", 0};
 
-// No `elseif`: the language dropped it and did not keep it reserved, so it is
-// an ordinary identifier now and colouring it as a keyword would be the exact
-// lie this list exists to avoid. A branch is `else` then `if`, and both are
-// already here.
+// No `elseif`: the language dropped it and did not keep it reserved, so it is an ordinary
+// identifier now and colouring it as a keyword would be the exact lie this list exists to
+// avoid. A branch is `else` then `if`, and both are already here.
 const char* const kShalimarKeywords[] = {
     "if", "else", "while", "for", "to", "step", "fun", "return",
     "break", "continue", "uses", 0};
@@ -269,10 +268,9 @@ void markShalimar(const std::string& line, std::vector<unsigned char>& kind) {
 
 }
 
-// .shl is the editor's one spelling of a Shalimar file (decided 2026-08-23:
-// .shm, the phone app's, is not taken everywhere a Shalimar file has to go, so
-// the Language menu is what opens one of those); the audit of 2026-09-19
-// weighed reopening that and kept it.
+// .shl is the editor's one spelling of a Shalimar file (decided 2026-08-23: .shm, the phone
+// app's, is not taken everywhere a Shalimar file has to go, so the Language menu is what opens
+// one of those); the audit of 2026-09-19 weighed reopening that and kept it.
 Language sourceLanguageFor(const std::string& path) {
     if (endsWith(path, ".shl")) return LangShalimar;
     if (endsWith(path, ".c")) return LangC;
