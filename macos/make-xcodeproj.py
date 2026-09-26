@@ -125,7 +125,9 @@ def main():
               "res=\\\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\\\"; mkdir -p \\\"$res\\\"\\n"
               "if [ -d \\\"$SRCROOT/../bin/lib\\\" ]; then rm -rf \\\"$dest/lib\\\" \\\"$res/lib\\\"; cp -Rp \\\"$SRCROOT/../bin/lib\\\" \\\"$res/lib\\\"; ln -s ../Resources/lib \\\"$dest/lib\\\"; fi\\n"
               "res=\\\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\\\"\\n"
-              "mkdir -p \\\"$res\\\" && rm -rf \\\"$res/help\\\" && cp -R \\\"$SRCROOT/../help\\\" \\\"$res/help\\\"\\n")
+              "mkdir -p \\\"$res\\\" && rm -rf \\\"$res/help\\\" && cp -R \\\"$SRCROOT/../help\\\" \\\"$res/help\\\"\\n"
+              "# Re-signed here too: when only ../bin changed, Xcode skips its own CodeSign.\\n"
+              "if [ \\\"$CODE_SIGNING_ALLOWED\\\" = YES ]; then codesign --force --deep --sign \\\"${EXPANDED_CODE_SIGN_IDENTITY:--}\\\" \\\"$TARGET_BUILD_DIR/$WRAPPER_NAME\\\"; fi\\n")
     w("\n/* Begin PBXShellScriptBuildPhase section */\n")
     w("\t\t%s /* Dock the compilers and the manual */ = {\n\t\t\tisa = PBXShellScriptBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n\t\t\t);\n\t\t\tinputPaths = (\n\t\t\t);\n\t\t\tname = \"Dock the compilers and the manual\";\n\t\t\toutputPaths = (\n\t\t\t);\n\t\t\talwaysOutOfDate = 1;\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t\tshellPath = /bin/sh;\n\t\t\tshellScript = \"%s\";\n\t\t};\n" % (bundle_phase, script))
     w("/* End PBXShellScriptBuildPhase section */\n")
