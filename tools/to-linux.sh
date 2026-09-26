@@ -52,7 +52,10 @@ BOX="${ED1_LINUX_BOX:-ec2-user@52.202.164.123}"
 # and from ~/ride (the 3.5 and 4.0 relay): this one is this script's to empty.
 DIR="${ED1_LINUX_DIR:-ride-4.5}"
 WHAT="${1:-check}"
-TMP="${TMPDIR:-/tmp}"
+# A directory of its own: to-windows.sh and to-linux.sh name their archives
+# alike, and run at once they overwrote each other's (a truncated tar).
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/to-linux.XXXXXX") || exit 2
+trap 'rm -rf "$TMP"' EXIT
 SSH=(ssh -n -i "$KEY" "$BOX")
 
 say() { printf '%s\n' "$*"; }
