@@ -319,6 +319,14 @@ void editingAndLayout(const std::string& ride) {
                "    case 1:\n        break;\n    }\n}\n",
                "a function typed flat is saved laid out");
 
+    // A line typed as `std::` is a qualified name, not the label `std:` its first colon made.
+    file::path typedCpp = dir / "src" / "typed.cpp";
+    drive(ride, "\"" + typedCpp.string() + "\" --project \"" + dir.string() + "\"",
+          "int main()\n{\nstd::printf(\"x\");\nagain:\nreturn 0;\n}" + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(typedCpp),
+               "int main()\n{\n    std::printf(\"x\");\nagain:\n    return 0;\n}\n",
+               "a line typed as std:: is laid out as a statement, and a label still is not");
+
     // Ctrl-F lays out a file that arrived with no layout of its own.
     file::path flat = dir / "src" / "flat.c";
     writeFile(flat, "int main(void)\n{\nif (x)\nreturn 1;\nreturn 0;\n}\n");

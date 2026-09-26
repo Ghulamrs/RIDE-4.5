@@ -3674,8 +3674,10 @@ void Editor::processKey(int key) {
 
             insertChar(c);
 
+            // The second colon of `std::` undoes what the first did: `std:` read as a label.
             if ((c == '}' && atHead) || (c == '#' && atHead) ||
-                (c == ':' && endsALabel(before)))
+                (c == ':' && (endsALabel(before) ||
+                              (!before.empty() && before[before.size() - 1] == ':'))))
                 realign();
             return;
         }
