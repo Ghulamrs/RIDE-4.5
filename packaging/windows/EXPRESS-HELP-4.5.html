@@ -36,93 +36,122 @@ nav.toc a{color:var(--fg)}
 @media print{body{font-size:11pt}.wrap{max-width:none;padding:0}
 nav.toc{break-after:page}h1,h2{break-after:avoid}pre,table,blockquote{break-inside:avoid}
 a{color:inherit;text-decoration:none}}
-</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.5 — Express Help</h1><div class="sub">Quick reference</div></div><nav class="toc"><div class="t">Contents</div><ul>
-<li class="l2"><a href="#1-languages-versions-and-scope">1. Languages, versions and scope</a></li>
-<li class="l2"><a href="#2-making-and-updating-a-project">2. Making and updating a project</a></li>
-<li class="l2"><a href="#3-the-project-file-pro-architecture">3. The project file (<code>.pro</code>) architecture</a></li>
-<li class="l2"><a href="#4-compiling-and-building-running-a-project">4. Compiling, and building/running a project</a></li>
-<li class="l2"><a href="#5-the-toolchain-behind-a-build-new-in-4-0">5. The toolchain behind a build (new in 4.0)</a></li>
-<li class="l2"><a href="#where-things-are">Where things are</a></li>
+</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.5 — Express Help</h1><div class="sub">Windows, macOS and Linux</div></div><nav class="toc"><div class="t">Contents</div><ul>
+<li class="l2"><a href="#1-what-is-installed-and-where">1. What is installed, and where</a></li>
+<li class="l2"><a href="#2-languages-and-targets">2. Languages and targets</a></li>
+<li class="l2"><a href="#3-debug-and-release-optimization">3. Debug and Release: optimization</a></li>
+<li class="l2"><a href="#4-where-your-work-goes-and-the-samples">4. Where your work goes, and the samples</a></li>
+<li class="l2"><a href="#5-making-and-building-a-project">5. Making and building a project</a></li>
+<li class="l2"><a href="#6-the-project-file-pro">6. The project file (<code>.pro</code>)</a></li>
+<li class="l2"><a href="#7-a-third-party-library-include-path-and-binaries">7. A third-party library: include path and binaries</a></li>
+<li class="l2"><a href="#8-windows-the-assembler-and-clang">8. Windows: the assembler and clang</a></li>
+<li class="l2"><a href="#9-where-things-are">9. Where things are</a></li>
+<li class="l2"><a href="#10-removing-ride">10. Removing RIDE</a></li>
 <li class="l2"><a href="#the-full-manual">The full manual</a></li>
-</ul></nav><p>Three languages, four targets, one editor - and, since 4.0, the project's own assemblers for both machines. This is the quick reference; the full pages are under <code>help\</code>.</p>
+</ul></nav><p>Three languages, four targets, one editor on three systems - a window on Windows and on macOS, a console editor on all three, and the project's own compilers, assemblers, linkers and C6000 emulator behind them. This is the quick reference; the full pages are under <code>help/</code>.</p>
 <hr>
-<h2 id="1-languages-versions-and-scope">1. Languages, versions and scope</h2>
-<table><thead><tr><th>Language</th><th>Files</th><th>Compiler</th><th>Standard / version</th><th>Debug info</th></tr></thead><tbody><tr><td>C</td><td><code>.c</code> <code>.h</code></td><td><code>c90</code></td><td>ISO C 90</td><td>DWARF (2 of 4)</td></tr><tr><td>C++</td><td><code>.cpp</code> <code>.hpp</code></td><td><code>cpp11</code></td><td>ISO C++ 11</td><td>DWARF (2 of 4)</td></tr><tr><td>Shalimar</td><td><code>.shl</code></td><td><code>shalimar</code></td><td>Shalimar 1.2</td><td>none, by design</td></tr></tbody></table>
-<p>The suffix picks the language; <strong>Language</strong> menu overrides it for a file whose name says otherwise. Each compiler announces itself at the start of a compile (e.g. <code>©2026 G. R. Akhtar - ISO C++ 11</code>).</p>
-<p><strong>The four targets</strong> (Target menu, or Ctrl-T to cycle):</p>
-<table><thead><tr><th>Target</th><th>Runs here?</th></tr></thead><tbody><tr><td><code>x86_64-windows</code></td><td>yes, on this machine (host)</td></tr><tr><td><code>x86_64-linux</code></td><td>assembly only (<code>-S</code>) on Windows</td></tr><tr><td><code>arm64-darwin</code></td><td>assembly only (<code>-S</code>) on Windows</td></tr><tr><td><code>tms6747</code></td><td>yes, on the <strong>vm6747 emulator</strong></td></tr></tbody></table>
-<p>Scope of a compiler: <code>c90</code> compiles C only (a <code>.cpp</code> is refused with a message, not a cryptic error); <code>cpp11</code> compiles C++ only (a <code>.c</code> is refused); <code>shalimar</code> compiles Shalimar only. The host compiler (<code>cl</code>) is still reachable per group.</p>
+<h2 id="1-what-is-installed-and-where">1. What is installed, and where</h2>
+<table><thead><tr><th>System</th><th>Installer</th><th>Window (GUI)</th><th>Console editor</th></tr></thead><tbody><tr><td>Windows</td><td><code>RIDE-4.5-setup.exe</code></td><td><code>RIDE.exe</code></td><td><code>RIDEConsole.exe</code></td></tr><tr><td>macOS</td><td><code>RIDE-4.5-macos.pkg</code> (macOS 12+, Apple silicon)</td><td><strong>RIDE</strong> in Applications</td><td><code>ride</code> (in <code>/usr/local/bin</code>)</td></tr><tr><td>Linux</td><td><code>RIDE-4.5-linux-x86_64.run</code> (Ubuntu 22.04+, Debian 12, RHEL 9, Amazon Linux 2023)</td><td>-</td><td><code>ride</code></td></tr></tbody></table>
+<p>The programs RIDE drives, the same on all three:</p>
+<table><thead><tr><th>Program</th><th>What it is</th></tr></thead><tbody><tr><td><code>c90</code></td><td>the C compiler - ISO C 90</td></tr><tr><td><code>cpp11</code></td><td>the C++ compiler - ISO C++ 11 (the subset in <code>docs/EXCLUSIONS.md</code>)</td></tr><tr><td><code>shalimar</code></td><td>the Shalimar compiler - Shalimar 1.2</td></tr><tr><td><code>masm</code></td><td>x86-64 assembler (answers ml64's command line too)</td></tr><tr><td><code>asm6x</code></td><td>TMS320C6000 assembler</td></tr><tr><td><code>link</code></td><td>x86-64 linker (Windows objects)</td></tr><tr><td><code>lnk6x</code></td><td>TMS320C6000 linker</td></tr><tr><td><code>vm6747</code></td><td>the TMS320C6747 emulator</td></tr><tr><td><code>c2s</code></td><td>C-to-Shalimar converter</td></tr></tbody></table>
+<p>On Windows they are <code>.exe</code> files in <code>bin\</code>; on macOS and Linux they are in <code>/usr/local/ride/bin</code> (<code>/opt/ride/bin</code> on Linux) and on <code>PATH</code> by name. RIDE.app on macOS carries its own copy of every one inside the app.</p>
 <hr>
-<h2 id="2-making-and-updating-a-project">2. Making and updating a project</h2>
-<p>All on the <strong>Project</strong> menu:</p>
+<h2 id="2-languages-and-targets">2. Languages and targets</h2>
+<table><thead><tr><th>Language</th><th>Files</th><th>Compiler</th><th>Debug info</th></tr></thead><tbody><tr><td>C</td><td><code>.c</code> <code>.h</code></td><td><code>c90</code></td><td>DWARF on Linux and macOS</td></tr><tr><td>C++</td><td><code>.cpp</code> <code>.hpp</code></td><td><code>cpp11</code></td><td>DWARF on Linux and macOS</td></tr><tr><td>Shalimar</td><td><code>.shl</code></td><td><code>shalimar</code></td><td>none; its debugger stops by line</td></tr></tbody></table>
+<p>The suffix picks the language; the <strong>Language</strong> menu overrides it for a file whose name says otherwise. Each compiler announces itself on every compile (<code>©2026 G. R. Akhtar - ISO C++ 11</code>).</p>
+<p><strong>The four targets</strong> (Target menu, or Ctrl-T to cycle). A target the machine is not builds to assembly only (<code>-S</code>) and says so; tms6747 runs everywhere, on the emulator:</p>
+<table><thead><tr><th>Target</th><th>Runs on</th></tr></thead><tbody><tr><td><code>x86_64-windows</code></td><td>Windows</td></tr><tr><td><code>x86_64-linux</code></td><td>Linux</td></tr><tr><td><code>arm64-darwin</code></td><td>macOS (Apple silicon)</td></tr><tr><td><code>tms6747</code></td><td>the <strong>vm6747</strong> emulator, on every system</td></tr></tbody></table>
+<p><strong>Shalimar assigns with <code>:</code></strong>, never <code>=</code>: <code>x : 2</code>, <code>int n : 5</code>. <code>=</code> compares. Writing <code>int x = 2</code> is answered <code>Unexpected &#x27;=&#x27; use &#x27;:&#x27;</code>.</p>
+<hr>
+<h2 id="3-debug-and-release-optimization">3. Debug and Release: optimization</h2>
+<p><strong>Build ▸ Debug Configuration / Release Configuration</strong> (Ctrl-D in the console editor) chooses how everything is compiled. The status bar shows which.</p>
+<table><thead><tr><th>Compiler</th><th>Debug</th><th>Release</th></tr></thead><tbody><tr><td><code>c90</code>, <code>cpp11</code></td><td><code>-g -D_DEBUG=1</code></td><td><strong><code>-O2 -DNDEBUG=1</code></strong></td></tr><tr><td>host <code>c++</code> group</td><td><code>-g -D_DEBUG=1</code></td><td><code>-O2 -DNDEBUG=1</code></td></tr><tr><td><code>cl</code> group</td><td><code>/Od /Zi</code></td><td><code>/O2</code></td></tr><tr><td><code>shalimar</code></td><td><code>--debug</code></td><td>(no <code>-O</code>)</td></tr></tbody></table>
 <ul>
-<li><strong>New…</strong> — pick a folder and a name; writes <code>&lt;name&gt;.pro</code> and opens it.</li>
-<li><strong>New File</strong> (Ctrl-N) — names a new file, creates it, adds it to the project.</li>
-<li><strong>Add File</strong> — adds the file in front of you to a group you name.</li>
-<li><strong>Remove File</strong> — takes the open file out of the project (leaves it on disk).</li>
-<li><strong>Save</strong> — writes the <code>.pro</code> back. (New/Add/Remove save it for you.)</li>
+<li>Debug is <code>-O0</code> - no optimisation - and carries debug information.</li>
+<li>Release optimises: <code>cpp11 -O2</code> runs its optimizer (register allocation, copy propagation, loop alignment, inlining); for <strong>tms6747</strong> it also schedules the C6000's instructions to their delay slots. <code>-O1</code> and <code>-O2</code> are the same passes today.</li>
+<li><strong>The choice belongs to the machine, not the project</strong>: it is kept in <code>~/.ride/state.json</code>, and a <code>&quot;config&quot;</code> key in a <code>.pro</code> is ignored - a project that travels does not put everyone who opens it into Release.</li>
+<li>On the command line: <code>cpp11 -O2 prog.cpp -o prog</code> (or <code>-O1</code>, or <code>-O0</code>, the default); <code>c90 -O2</code> the same.</li>
 </ul>
-<p>The title bar shows where you are: <code>RIDE 4.5 - &lt;project&gt; - &lt;file&gt;</code>. The top-right of the menu bar shows the compiler in use (a <code>*</code> means the file chose it). Every add and remove is reflected immediately in the <code>.pro</code> file.</p>
 <hr>
-<h2 id="3-the-project-file-pro-architecture">3. The project file (<code>.pro</code>) architecture</h2>
-<p>A <code>.pro</code> is one JSON object:</p>
+<h2 id="4-where-your-work-goes-and-the-samples">4. Where your work goes, and the samples</h2>
+<table><thead><tr><th>Menu</th><th>Starts in</th></tr></thead><tbody><tr><td>Project ▸ New / Open / Save As</td><td><code>Documents/RIDE/projects</code></td></tr><tr><td>File ▸ Open / Save As (a new file's first Save too)</td><td><code>Documents/RIDE/programs</code></td></tr></tbody></table>
+<p>Both folders are made the first time they are needed, and <strong>filled with samples</strong> when they are new or empty - nothing already there is ever replaced:</p>
+<ul>
+<li><strong>projects</strong> - <code>c-bank</code>, <code>c-stats</code> (C); <code>cpp-inventory</code>, <code>cpp-shapes</code>, <code>compilerpp</code> (C++); <code>shl-primes</code>, <code>shl-matrix</code> (Shalimar, where a program calls functions from the project's other file with nothing to declare); and <code>thirdparty-mathx</code>, the third-party library template (section 7).</li>
+<li><strong>programs</strong> - <code>hello.c</code>, <code>fibonacci.c</code>, <code>hello.cpp</code>, <code>words.cpp</code>, <code>hello.shl</code>, <code>table.shl</code>: open one and <strong>Run File</strong>.</li>
+</ul>
+<hr>
+<h2 id="5-making-and-building-a-project">5. Making and building a project</h2>
+<p><strong>Project</strong> menu: New Project…, Open Project…, Recent Projects, Save Project As…, Close Project, New File…, Add Current File, Add Files…, Remove File from Project, Rename File…, Move File to Group…, Delete File…, Project Include Paths…, Project Libraries….</p>
+<p><strong>Build</strong> menu: Compile File (Ctrl-B), Run File (F5), Build Project (F4), Run Project, Debug / Release Configuration, Convert C ⇄ Shalimar, Jump to Next Issue, Clear Issues.</p>
+<p>The bottom panel shows <strong>Errors</strong>, <strong>Progress</strong> and <strong>Output</strong>. The title bar shows <code>RIDE 4.5 - &lt;project&gt; - &lt;file&gt;</code>, the status bar the language, the configuration, the compiler (<code>*</code> when the file chose it) and the target.</p>
+<p>On macOS the menus are in the menu bar at the top of the screen <strong>and</strong> in a row inside the window; About RIDE is in the RIDE menu, as on every Mac app.</p>
+<hr>
+<h2 id="6-the-project-file-pro">6. The project file (<code>.pro</code>)</h2>
+<p>One JSON object; <code>//</code> comments are allowed.</p>
 <pre><code>{
   &quot;name&quot;: &quot;demo&quot;,
-  &quot;toolchain&quot;: &quot;auto&quot;,           // auto | c90 | cpp11 | shalimar | msvc
-  &quot;arch&quot;: &quot;x86_64-windows&quot;,      // one of the four targets
-  &quot;indent&quot;: 4,
+  &quot;toolchain&quot;: &quot;auto&quot;,           // auto | c90 | cpp11 | shalimar | c++ | cl
+  &quot;arch&quot;: &quot;x86_64-windows&quot;,      // the target: one of the four
+  &quot;include&quot;: [&quot;third_party/x/include&quot;],      // extra header directories
+  &quot;libraries&quot;: [&quot;third_party/x/libs/x.lib&quot;], // extra objects and libraries
   &quot;groups&quot;: {
-    &quot;Sources&quot;: [&quot;greet.c&quot;, &quot;main.c&quot;],
+    &quot;Sources&quot;: [&quot;main.c&quot;, &quot;greet.c&quot;],
     &quot;Headers&quot;: [&quot;greet.h&quot;]
   },
   &quot;build&quot;: { &quot;target&quot;: &quot;demo&quot;, &quot;groups&quot;: [&quot;Sources&quot;] }
 }</code></pre>
 <ul>
-<li><strong>groups</strong> name the files, in headings shown in the left pane. A group may set its own <code>&quot;toolchain&quot;</code>.</li>
-<li><strong>build</strong> names the program (<code>target</code>) and which groups compile into it; headers and un-named groups are passed over. A group holding C <em>and</em> C++ is split — the C to <code>c90</code>, the C++ to <code>cpp11</code> — and the objects are linked.</li>
-<li>Say no <code>build</code> and nothing is built (Ctrl-B still compiles the open file).</li>
+<li><strong>groups</strong> name the files shown in the left pane; a group may set its own <code>&quot;toolchain&quot;</code> (e.g. <code>&quot;c++&quot;</code> for the host's compiler).</li>
+<li><strong>build</strong> names the program the build makes (<code>target</code> - <code>demo</code>, or <code>demo.exe</code> on Windows) and which groups go into it.</li>
+<li><strong>Shalimar</strong>: every file has a <code>main()</code>; <code>target</code> names the file whose <code>main()</code> is the program, and a call to a function another project file defines is found there.</li>
+<li>No <code>build</code>: nothing is built, and Ctrl-B still compiles the open file.</li>
 </ul>
 <hr>
-<h2 id="4-compiling-and-building-running-a-project">4. Compiling, and building/running a project</h2>
+<h2 id="7-a-third-party-library-include-path-and-binaries">7. A third-party library: include path and binaries</h2>
+<p>A library usually arrives as a header directory and prebuilt binaries. The project file carries the whole provision:</p>
 <ul>
-<li><strong>Ctrl-B</strong> — compile the file in front of you.</li>
-<li><strong>F5</strong> — compile and run that file.</li>
-<li><strong>F4</strong> — build the project's program (from <code>build</code>).</li>
-<li><strong>Run project</strong> (Build menu) — build it and run it.</li>
-<li><strong>Ctrl-T</strong> / <strong>Target</strong> — choose the target; <strong>Ctrl-D</strong> — debug/release.</li>
-<li>The bottom panel has <strong>Console</strong>, <strong>Debug</strong> and <strong>Assembly</strong> (Ctrl-1/2/3). The Assembly tab shows the compiler's output for any target.</li>
+<li><code>&quot;include&quot;</code> - its header directories; every compile gets each as <code>-I</code>.</li>
+<li><code>&quot;libraries&quot;</code> - its binary files (<code>.a</code> / <code>.o</code> on macOS and Linux, <code>.lib</code> / <code>.obj</code> on Windows); each is handed to the link. Name each file.</li>
 </ul>
-<p><strong>tms6747:</strong> F5 / Run project builds with <code>-S</code> and runs on the <strong>vm6747</strong> emulator (<code>counted to three</code>, <code>[program returned 3]</code>). Foreign targets (<code>x86_64-linux</code>, <code>arm64-darwin</code>) reach assembly only and say so.</p>
-<p><strong>Real C674x silicon (.out / .hex):</strong> the emulator is enough to run and test. To produce a genuine linked <code>.out</code> and Intel <code>.hex</code>, use:</p>
-<pre><code>bin\ti\ti-build.cmd  &lt;program.c|.cpp|.shl&gt;</code></pre>
-<p>It uses a Texas Instruments Code Generation Tools install already on the machine (none of TI's tools ship here); see <code>bin\ti\TI-BUILD.txt</code>.</p>
+<p>Both lists are relative to the project, and <strong>Project ▸ Project Include Paths… / Project Libraries…</strong> edit them. <strong>Option ▸ Shared Include Paths… / Shared Libraries…</strong> hold the same two lists for every project, in <code>settings.json</code>.</p>
+<p><strong><code>thirdparty-mathx</code></strong> is the worked template: <code>third_party/mathx/include</code>, a <code>libmathx.a</code> built by clang for macOS and a <code>mathx.lib</code> built by Visual Studio for Windows. Open <code>mathx-macos.pro</code> on a Mac and <code>mathx-windows.pro</code> on Windows - they differ only in <code>&quot;arch&quot;</code> and the one library. A library made by another compiler links when its interface is C (<code>extern &quot;C&quot;</code>); one that passes <code>std::string</code> or <code>std::vector</code> across its interface does not, since RIDE's C++ library is its own.</p>
 <hr>
-<h2 id="5-the-toolchain-behind-a-build-new-in-4-0">5. The toolchain behind a build (new in 4.0)</h2>
-<p>Everything that turns your source into a program is this project's own code, except the two links - for now:</p>
-<table><thead><tr><th>Step</th><th>x86_64-windows</th><th>tms6747</th></tr></thead><tbody><tr><td>compile</td><td><code>c90</code> / <code>cpp11</code> / <code>shalimar</code> (ours)</td><td><code>c90</code> / <code>cpp11</code> / <code>shalimar</code> (ours)</td></tr><tr><td>assemble</td><td><strong><code>masm</code></strong> (ours, in place of ml64)</td><td><strong><code>asm6x</code></strong> (ours, in place of TI's)</td></tr><tr><td>link</td><td><strong><code>link</code></strong> (ours; a failure asks for link.exe)</td><td><strong><code>lnk6x</code></strong> (ours; a failure asks for TI's)</td></tr><tr><td>run</td><td>this machine</td><td><strong><code>vm6747</code></strong> (ours), or real silicon</td></tr></tbody></table>
-<p><code>settings.json</code> names <code>masm</code> as the assembler for x86_64-windows out of the box (<code>&quot;assembler&quot;: &quot;bin/masm.exe&quot;</code>, relative to that file). Tools &gt; Assembler for x86_64-windows... changes it, or clears it to go back to ml64; <code>masm</code> also answers ml64's own command line (<code>masm /nologo /c /Fo x.obj x.asm</code>), so a script that ran ml64 can run it instead. The two linkers are named the same way - <code>&quot;linker&quot;: &quot;bin/link.exe&quot;</code> (LINK, held to Microsoft's byte for byte on its probe bed) and <code>&quot;tilinker&quot;: &quot;bin/lnk6x.exe&quot;</code> (LNK6x, held to TI's) - so the project's own tools are the tools by default. When one of them fails a build and the compilers found no fault in the source, RIDE asks: <em>"The project's own masm and link did not build it. Use Visual Studio's ml64 and link.exe for this build instead?"</em> (or TI's lnk6x). <strong>Yes</strong> builds again through the vendor's tools, which RIDE finds itself - Visual Studio through vswhere, TI's lnk6x under the directory Tools names; nothing has to be on PATH. <code>&quot;askNative&quot;: false</code> in settings.json never asks and lets the build fail. Today the question comes up on every real link: neither linker yet takes its vendor's runtime (Microsoft's C runtime on one side, TI's archive and cinit on the other); each says so and stops rather than guess.</p>
+<h2 id="8-windows-the-assembler-and-clang">8. Windows: the assembler and clang</h2>
+<p>Inside RIDE, <code>settings.json</code> names <strong>masm</strong> as the x86_64-windows assembler, so RIDE builds need nothing from Microsoft to assemble. On the <strong>command line</strong>, <code>cpp11</code> writes the GNU spelling by default, which <strong>clang</strong> assembles</p>
+<ul>
+<li>the only spelling that lets a program of several C++ files share inline</li>
+</ul>
+<p>functions (COMDAT). <code>cpp11</code> finds clang in any Visual Studio 2022 edition that has the <strong>C++ Clang tools</strong> component (Visual Studio Installer ▸ Individual components), in a standalone LLVM, or on <code>PATH</code>; with none, it assembles with <code>masm</code> instead and says so - enough for a one-file program.</p>
+<p>To use <code>masm</code> yourself, ask for its spelling:</p>
+<pre><code>cpp11 -S -masm=masm hello.cpp -o hello.asm
+masm -t x64 hello.asm -o hello.obj          (or masm /c /nologo /Fo hello.obj hello.asm)</code></pre>
+<p>A <code>.s</code> from plain <code>cpp11 -S</code> is clang's spelling and <code>masm</code> will not read it.</p>
+<p><strong>The link</strong>: <code>link</code> and <code>lnk6x</code> are RIDE's own. When one of them fails a build the source did not cause, RIDE asks whether to use Visual Studio's <code>link.exe</code> (or TI's <code>lnk6x</code>) for that build - found through vswhere or the directory <strong>Option ▸ Linker for tms6747…</strong> names; <code>&quot;askNative&quot;: false</code> in <code>settings.json</code> never asks.</p>
+<p><strong>Real C674x silicon (.out / .hex)</strong>: <code>bin\ti\ti-build.cmd &lt;program&gt;</code> builds a linked <code>.out</code> and Intel <code>.hex</code> with a Texas Instruments Code Generation Tools install already on the machine (none of TI's tools ship with RIDE); see <code>bin\ti\TI-BUILD.txt</code>.</p>
 <hr>
-<h2 id="where-things-are">Where things are</h2>
-<pre><code>bin\      the editor (RIDE.exe), the console editor, the compilers
-          c90 cpp11 shalimar, the assemblers masm (x86-64) and asm6x (C6000),
-          the linkers link (x86-64) and lnk6x (C6000), the vm6747
-          emulator, the c2s converter
-bin\lib\  the Shalimar runtime (shmrt-x86_64-windows[-debug].lib) and the
-          C6000 runtime (shmrt-tms6747\*.s)
-bin\ti\   ti-build.cmd — the real-silicon TI build path
-include\  cpp11&#x27;s headers: C++ (&lt;vector&gt;, &lt;new&gt;, &lt;typeinfo&gt;, …) and the
-          C ones they wrap, in one directory
-lib\      c90&#x27;s headers: the C standard headers (&lt;stdio.h&gt;, &lt;string.h&gt;, …)
-settings.json  the installation&#x27;s settings: where include\ and lib\ are,
-          the default compiler (the Tools menu writes it), the assembler
-          (bin/masm.exe), the linkers (bin/link.exe, bin/lnk6x.exe),
-          &quot;askNative&quot; - whether a failure of ours asks for the vendor&#x27;s
-          tools - and a
-          vcvars64.bat when Visual Studio had to be named by hand
-          (Tools &gt; Header directories..., Tools &gt; Locate vcvars64.bat...)
-examples\ worked programs and a demo project (demo.pro)
-help\     the full help pages</code></pre>
-<p>Include paths and libraries for every compile are in settings.json (Tools &gt; Include paths..., Tools &gt; Libraries...); a project's own .pro may add its own <code>&quot;include&quot;: [dirs]</code> and <code>&quot;libraries&quot;: [files]</code>, relative to the project. The last three projects opened are at the end of the Project menu; none is opened on its own at start.</p>
+<h2 id="9-where-things-are">9. Where things are</h2>
+<p><strong>Windows</strong> (<code>C:\Program Files\RIDE</code> by default)</p>
+<pre><code>bin\           RIDE.exe, RIDEConsole.exe, and the nine programs of section 1
+bin\lib\       the Shalimar runtimes (x86-64 and tms6747)
+bin\ti\        ti-build.cmd - the real-silicon TI path
+include\       cpp11&#x27;s headers: C++ (&lt;vector&gt;, &lt;string&gt;, &lt;new&gt;, …) and the C ones
+lib\           c90&#x27;s headers (&lt;stdio.h&gt;, &lt;string.h&gt;, …)
+projects\, programs\   the samples copied into Documents\RIDE
+examples\, help\       worked programs; the full help pages
+settings.json  the installation&#x27;s settings (next section)</code></pre>
+<p><strong>macOS</strong>: RIDE.app in Applications holds everything the window needs; <code>/usr/local/ride</code> holds the console editor and the same <code>bin</code>, <code>include</code>, <code>lib</code>, <code>help</code>, <code>projects</code> and <code>programs</code>, with the commands linked into <code>/usr/local/bin</code>. <strong>Linux</strong>: <code>/opt/ride</code> (or <code>--prefix</code>), laid out the same.</p>
+<p><strong>settings.json</strong> - the include paths and libraries every project gets, the default compiler, the assembler and linkers, <code>&quot;askNative&quot;</code>, the code font:</p>
+<table><thead><tr><th>System</th><th>settings.json</th></tr></thead><tbody><tr><td>Windows</td><td>beside <code>bin\</code>, in the install folder</td></tr><tr><td>macOS</td><td><code>~/.ride/settings.json</code> (made on first launch)</td></tr><tr><td>Linux</td><td><code>/opt/ride/settings.json</code></td></tr></tbody></table>
+<p>What you were last doing - recent files and projects, Debug or Release - is in <code>~/.ride/state.json</code> on every system.</p>
+<hr>
+<h2 id="10-removing-ride">10. Removing RIDE</h2>
+<ul>
+<li><strong>Windows</strong>: Settings ▸ Apps ▸ RIDE ▸ Uninstall.</li>
+<li><strong>macOS</strong>: <code>sudo rm -rf /Applications/RIDE.app /usr/local/ride</code>, the links in <code>/usr/local/bin</code> (<code>ride c90 cpp11 shalimar c2s vm6747 asm6x masm lnk6x</code>), and <code>sudo pkgutil --forget com.ghulamrs.ride</code>.</li>
+<li><strong>Linux</strong>: <code>/opt/ride/uninstall.sh</code> (or <code>&lt;prefix&gt;/uninstall.sh</code>).</li>
+</ul>
+<p><code>Documents/RIDE</code> is yours and is never removed.</p>
 <hr>
 <h2 id="the-full-manual">The full manual</h2>
-<p>This is the quick reference. The complete manual — the compilation model, every language feature and non-feature, the project-file architecture, the full command-line reference, the targets and the native tools, and troubleshooting — is in <code>help\manual\</code> (Part I begins in <code>01-part1-model.md</code>), with the full Shalimar language spec in <code>help\appendix-a-shalimar-language.md</code>.</p></div></body></html>
+<p>This is the quick reference. The complete manual - the compilation model, every language feature and non-feature, the project file, the command-line reference, the targets and native tools, troubleshooting - is in <code>help/manual/</code> (Part I begins in <code>01-part1-model.md</code>); the Shalimar language is specified in <code>help/appendix-a-shalimar-language.md</code>, and calling C from Shalimar in <code>help/mixing-c-and-shalimar.md</code>.</p></div></body></html>
