@@ -120,6 +120,7 @@ enum { kPanelErrors = 0, kPanelProgress = 1, kPanelOutput = 2 };
 
 static const CGFloat kStatusHeight = 24;
 static const CGFloat kJumpBarHeight = 26;
+static const CGFloat kMenuRowHeight = 26;
 
 @interface WindowController ()
 @end
@@ -156,6 +157,7 @@ static const CGFloat kJumpBarHeight = 26;
     NSString* projectDirectory_;
 
     // Views.
+    NSView* menuRow_;         // the menus again, inside the window, as on Windows
     NSSplitView* across_;     // navigator | the right-hand side
     NSSplitView* down_;       // editor | bottom panel
     NSView* navigatorPane_;
@@ -391,8 +393,19 @@ static NSScrollView* Scroller(NSRect frame) {
     [status addSubview:statusWhere_];
     [content addSubview:status];
 
+    // The menu row under the title bar, filled by makeMainMenu once the menus exist.
+    menuRow_ = [[NSView alloc] initWithFrame:NSMakeRect(0, NSHeight(bounds) - kMenuRowHeight,
+                                                        NSWidth(bounds), kMenuRowHeight)];
+    menuRow_.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    NSBox* under = [[NSBox alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(bounds), 1)];
+    under.boxType = NSBoxSeparator;
+    under.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    [menuRow_ addSubview:under];
+    [content addSubview:menuRow_];
+
     // Navigator | (editor over panel).
-    NSRect rest = NSMakeRect(0, kStatusHeight, NSWidth(bounds), NSHeight(bounds) - kStatusHeight);
+    NSRect rest = NSMakeRect(0, kStatusHeight, NSWidth(bounds),
+                             NSHeight(bounds) - kStatusHeight - kMenuRowHeight);
     across_ = [[NSSplitView alloc] initWithFrame:rest];
     across_.vertical = YES;
     across_.dividerStyle = NSSplitViewDividerStyleThin;
@@ -2986,7 +2999,33 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     [self add:[@"About " stringByAppendingString:product] to:help action:@selector(showAbout:) key:@""];
     NSApp.helpMenu = help;
 
+    [self fillMenuRow:bar];
     return bar;
+}
+
+// **One button per menu, popping up the menu bar's own NSMenu**, so the row and the
+// bar cannot disagree about an item, its key or whether it is enabled.
+- (void)fillMenuRow:(NSMenu*)bar {
+    CGFloat x = 6;
+    NSInteger tag = 0;
+    for (NSMenuItem* top in bar.itemArray) {
+        if (tag++ == 0 || top.submenu == nil) continue;  // the application menu stays in the bar
+        NSButton* button = [NSButton buttonWithTitle:top.title target:self
+                                              action:@selector(menuRowPressed:)];
+        button.bordered = NO;
+        button.font = [NSFont menuBarFontOfSize:13];
+        button.tag = tag - 1;
+        [button sizeToFit];
+        button.frame = NSMakeRect(x, 3, NSWidth(button.frame) + 14, kMenuRowHeight - 6);
+        [menuRow_ addSubview:button];
+        x += NSWidth(button.frame);
+    }
+}
+
+- (void)menuRowPressed:(NSButton*)sender {
+    NSMenu* menu = [NSApp.mainMenu itemAtIndex:sender.tag].submenu;
+    CGFloat below = sender.isFlipped ? NSHeight(sender.bounds) + 3 : -3;
+    [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, below) inView:sender];
 }
 
 @end
