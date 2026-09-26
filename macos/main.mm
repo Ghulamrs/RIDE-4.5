@@ -29,7 +29,13 @@
     [self.window showWindow:nil];
     [self.window.window makeKeyAndOrderFront:nil];
     [self.window startWithProject:self.project files:self.files];
-    [NSApp activateIgnoringOtherApps:YES];
+    // Come to the front, so the menu bar at the top of the screen is RIDE's
+    // (File, Edit, View, Project, Build, Target, Option, Help) and not the
+    // menus of whatever launched it. Since macOS 14 activation is
+    // cooperative and activateIgnoringOtherApps: is ignored; activate is
+    // what asks for it now.
+    if (@available(macOS 14.0, *)) [NSApp activate];
+    else [NSApp activateIgnoringOtherApps:YES];
 }
 
 // Files dropped on the Dock icon, or opened with RIDE from Finder.
