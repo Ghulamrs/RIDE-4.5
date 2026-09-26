@@ -2995,8 +2995,7 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     [self add:[product stringByAppendingString:@" Help"] to:help action:@selector(showHelp:) key:@"?"];
     [self add:@"Keys" to:help action:@selector(showKeys:) key:@""];
     [self add:@"Shalimar Language Reference" to:help action:@selector(showShalimarReference:) key:@""];
-    [help addItem:[NSMenuItem separatorItem]];
-    [self add:[@"About " stringByAppendingString:product] to:help action:@selector(showAbout:) key:@""];
+    // About RIDE lives in the application menu, where macOS puts it, and not here too.
     NSApp.helpMenu = help;
 
     [self fillMenuRow:bar];

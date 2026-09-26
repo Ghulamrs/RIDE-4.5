@@ -520,9 +520,10 @@ void routing() {
               std::string::npos,
           "and release asks for -g nowhere");
     check(linuxDebug.find("-O") == std::string::npos &&
-              darwinDebug.find("-O") == std::string::npos &&
-              cc1Release.find("-O") == std::string::npos,
-          "no configuration passes a -O, which cc1 still has not got");
+              darwinDebug.find("-O") == std::string::npos,
+          "debug passes no -O");
+    check(cc1Release.find("-O2") != std::string::npos,
+          "and release passes c90 its own -O2");
 
     check(editor::emitsDebugInfo(editor::ToolCc1, kLinux) &&
               editor::emitsDebugInfo(editor::ToolCc1, kDarwin),
@@ -623,13 +624,16 @@ void routing() {
           "and that C++ here means C++14");
 
     check(editor::optimises(editor::ToolMsvc), "cl optimises");
-    check(!editor::optimises(editor::ToolCc1), "cc1 does not, and does not pretend to");
+    check(editor::optimises(editor::ToolCc1) && editor::optimises(editor::ToolCxx1),
+          "and so do c90 and cpp11, with their own -O2");
+    check(!editor::optimises(editor::ToolShc), "shalimar has no -O and does not pretend to");
 
     std::string release = editor::shownCommand(tool, editor::ToolCc1, "a.c",
                                                editor::LangC, kDarwin,
                                                editor::ConfigRelease);
     check(release.find("-DNDEBUG=1") != std::string::npos,
           "and the define reaches the command line");
+    check(release.find("-O2") != std::string::npos, "and Release asks c90 for -O2");
 
     // The flag has to survive the whole way to what is actually run, not just
     // to what is shown.

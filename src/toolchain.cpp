@@ -326,7 +326,9 @@ const char* configName(Configuration config) {
     return config == ConfigRelease ? "release" : "debug";
 }
 
-bool optimises(ToolchainKind kind) { return kind == ToolMsvc || kind == ToolCxx; }
+bool optimises(ToolchainKind kind) {
+    return kind == ToolMsvc || kind == ToolCxx || kind == ToolCc1 || kind == ToolCxx1;
+}
 
 bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
 
@@ -357,6 +359,8 @@ std::string configFlags(ToolchainKind kind, Configuration config,
     // Compiler++'s sixteen units it takes .text from +54.6% over cl /O2 to
     // +20.6%, and compiles faster than -O0 for having less assembly to write.
     // -O2 is -O1 today; the favour-space/favour-speed split is not written yet.
+    // That -O2 went to the host's c++ alone until 2026-09-26, so a Release build
+    // with c90 or cpp11 was never optimised; both take their own -O2 now.
     if (kind == ToolCxx)
         return config == ConfigRelease ? " -O2 -DNDEBUG=1" : " -g -D_DEBUG=1";
 
@@ -365,7 +369,7 @@ std::string configFlags(ToolchainKind kind, Configuration config,
     if (kind == ToolMsvc)
         return config == ConfigRelease ? " /O2 /DNDEBUG" : " /Od /Zi /D_DEBUG";
 
-    if (config == ConfigRelease) return " -DNDEBUG=1";
+    if (config == ConfigRelease) return " -O2 -DNDEBUG=1";
     return emitsDebugInfo(kind, arch) ? " -g -D_DEBUG=1" : " -D_DEBUG=1";
 }
 
