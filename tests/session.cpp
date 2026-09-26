@@ -1,13 +1,6 @@
-// Drives the editor itself, the way a person does: keystrokes in, and what
-// landed on the screen and on the disk checked afterwards.
-//
-// tests/test.cpp checks the pieces that never see a terminal. This checks the
-// other half - editing, laying out, the menu, and the file commands - which
-// until now had only ever been tried by hand, once, and never again. One
-// program for both machines rather than a shell script and a PowerShell script
-// that would drift apart.
-//
-//   usage: session [path-to-the-editor] [path-to-cc1]
+// Drives the editor itself, the way a person does: keystrokes in, and what landed on the screen
+// and on the disk checked afterwards - the half tests/test.cpp cannot see, which had only ever
+// been tried by hand. One program for both machines. Usage: session [path-to-the-editor] [path-to-cc1]
 
 #include <cstdio>
 #include <cstdlib>
@@ -18,10 +11,7 @@
 #include <vector>
 
 
-// What this harness used of <filesystem>, which is C++17 and so not available
-// here: a path that can be joined with /, and five operations. It is spelled
-// out rather than imported, over src/path.cpp - the same code the editor uses,
-// so a test that passes has exercised the thing being shipped.
+// What this harness used of <filesystem>, which is C++17 and so not here, spelled out over src/path.cpp - the code the editor uses, so a passing test has exercised what is shipped.
 namespace file {
 
 struct path {
@@ -112,16 +102,9 @@ struct Screen {
     std::vector<std::string> rows;    // the last screen, escape codes replayed
 };
 
-// Replays the whole session onto a grid, as the terminal it was written for
-// would. It cannot be done by reading the last screen alone any more: the
-// editor writes only the rows that have changed since the one before, which is
-// what stops it flickering, so the last thing written is a handful of rows and
-// not a screen. What is checked is therefore what a person would have been
-// looking at when the editor stopped.
-//
-// Four things move or clear the grid - absolute positioning, carriage return,
-// newline and the two erases - and everything else the editor writes is
-// colours, which take no room and are stepped over.
+// Replays the whole session onto a grid, as the terminal would: the editor writes only the rows
+// that changed, so the last screen alone is a handful of rows, and what is checked is what a person
+// was looking at when it stopped. Positioning, CR, NL and the two erases move or clear the grid; colours take no room and are stepped over.
 std::vector<std::string> lastScreen(const std::string& raw) {
     std::string all = raw;
     // The editor clears the screen on its way out; the picture wanted is the
@@ -170,19 +153,9 @@ std::vector<std::string> lastScreen(const std::string& raw) {
     return rows;
 }
 
-// A home directory of the run's own, so that one drive cannot change what the
-// next one sees.
-//
-// The editor keeps per-machine settings - which project was last open, the
-// font, the frame, and since 2026-08-23 debug or release - in the user's own
-// directory. That is right for a person and wrong for a suite: a case that
-// presses Ctrl-D leaves the editor in release, and every case after it starts
-// there. It made a test that had passed for weeks fail the moment the
-// configuration moved out of the project file, and the case it broke was three
-// hundred lines away from the one that changed it.
-//
-// Named for the run rather than shared, and never cleaned up between drives:
-// some cases *want* what the last drive remembered.
+// A home directory of the run's own, so one drive cannot change what the next sees: the editor
+// keeps per-machine settings - the last project, the font, debug or release - in the user's own
+// directory, and a case pressing Ctrl-D left every case after it in release. Never cleaned between drives: some cases want what the last remembered.
 std::string ownHome(const file::path& where) {
     std::string home = (where / ".home").string();
     editor::path::makeDirectories(home);
@@ -217,16 +190,9 @@ Screen drive(const std::string& ride, const std::string& arguments,
     return screen;
 }
 
-// The same, run *from* a directory rather than from wherever the suite is.
-//
-// Needed because a relative filename is the whole of one bug: the editor is
-// given `src/alpha.c`, and what it can work out about which project that
-// belongs to depends on the directory it is standing in. Handing it an
-// absolute path instead would test a path the bug never took.
-//
-// The editor is named absolutely for the same reason - `./RIDE.exe` and a
-// bare `RIDEConsole.exe` both stop resolving the moment the shell changes
-// directory.
+// The same, run *from* a directory rather than from wherever the suite is: a relative filename is
+// the whole of one bug - which project `src/alpha.c` belongs to depends on where the editor stands,
+// and an absolute path would test a path the bug never took. The editor is named absolutely for the same reason.
 Screen driveIn(const std::string& ride, const std::string& arguments,
                const std::string& keys, const file::path& where, const file::path& from) {
     file::path keyFile = where / "keys.in";
@@ -380,13 +346,9 @@ void addAndRemoveFile(const std::string& ride) {
     check(readFile(dir / "project.pro").find("src/loose.c") == std::string::npos,
           "the file starts outside the project");
 
-    // Project menu: right twice from File, then down to the item wanted. New
-    // File is the sixth selectable item, Add File the seventh and Remove File
-    // the eighth - the rule above them costs nothing to walk past, stepTo
-    // skipping whatever is not selectable. These counts moved twice on
-    // 2026-08-24, when Rename..., Move to group... and Delete... came off this
-    // menu and when New File was put back at the head of the three, which is
-    // what this comment is here to make findable the next time one moves.
+    // Project menu: right twice from File, then down to the item wanted. New File is the sixth
+    // selectable item, Add File the seventh and Remove File the eighth; stepTo skips the rule above
+    // them. These counts moved twice on 2026-08-24, which is what this comment is here to make findable the next time one moves.
     const std::string toProject = kF10 + times(kRight, 2);
     const std::string newFile = toProject + times(kDown, 4) + kEnter;
     // Add File asks which file first, and the empty answer is the one in front
@@ -534,8 +496,7 @@ void leavingWithChanges(const std::string& ride) {
 
     std::string common = "\"" + one.string() + "\" --project \"" + dir.string() + "\"";
 
-    // Type into one.c, then open two.c from the pane so that the changed file
-    // is the one behind. Ctrl-W moves the focus; Ctrl-P would toggle the pane.
+    // Type into one.c, then open two.c from the pane so the changed file is the one behind; Ctrl-W moves the focus, Ctrl-P would toggle the pane.
     const std::string behind = "X" + ctrl('w') + times(kDown, 2) + kEnter;
 
     Screen left = drive(ride, common, behind + ctrl('q'), dir);
@@ -544,10 +505,9 @@ void leavingWithChanges(const std::string& ride) {
     checkEqual(readFile(one), "int one(void) { return 1; }\n",
                "and nothing was written behind your back");
 
-    // A file opened twice, spelled two ways, is one file. Opened by the name
-    // given on the command line and then from the pane, which counts paths
-    // from the project's root - the tab strip must hold one of it, and the
-    // changes must still be in it.
+    // A file opened twice, spelled two ways, is one file. Opened by the name given on the command
+    // line and then from the pane, which counts paths from the project's root - the tab strip must
+    // hold one of it, and the changes must still be in it.
     Screen once = drive(ride, "\"src/one.c\" --project \"" + dir.string() + "\"",
                         "X" + ctrl('w') + kEnter + ctrl('q'), dir);
     check(rowsSaying(once, "one.c") >= 1, "the file is open");
@@ -558,10 +518,9 @@ void leavingWithChanges(const std::string& ride) {
     Screen front = drive(ride, common, "X" + ctrl('q'), dir);
     check(wasShown(front, "unsaved changes in one.c"), "and it says so for the one in front");
 
-    // Twice leaves anyway, which is what the message promises. Proved by what
-    // comes after it: keys typed once it has gone are typed at nothing, so a
-    // ZZZZ that never appears is an editor that had already left. Exiting on
-    // its own would prove nothing here - a driven run ends when the keys do.
+    // Twice leaves anyway, which is what the message promises. Proved by what comes after: keys
+    // typed once it has gone are typed at nothing, so a ZZZZ that never appears is an editor that
+    // had already left. Exiting on its own would prove nothing - a driven run ends when the keys do.
     Screen gone = drive(ride, common, "X" + ctrl('q') + ctrl('q') + "ZZZZ", dir);
     check(!wasShown(gone, "ZZZZ"), "and pressing it twice leaves, before the next key");
     checkEqual(readFile(one), "int one(void) { return 1; }\n", "still without saving");
@@ -583,8 +542,7 @@ void reindenting(const std::string& ride) {
 
     // Nothing selected: the whole file, as Ctrl-A has always done.
     Screen all = drive(ride, common, ctrl('a') + ctrl('s') + ctrl('q'), dir);
-    // wasShown, not onScreen: saving comes after, and the message line is
-    // one line - what it says at the end is that the file was written.
+    // wasShown, not onScreen: saving comes after, and what the one message line says at the end is that the file was written.
     check(wasShown(all, "laid out - 11 lines"), "with nothing selected it lays the file out");
     // "  int d = 4;" laid out becomes "    int d = 4;", so the crooked spelling
     // is gone from the file - and looking for its absence has to allow for the
@@ -718,13 +676,9 @@ void findingAndReplacing(const std::string& ride) {
     file::remove_all(dir);
 }
 
-// Closing a project, and what the pane is when there is none.
-//
-// The pane used to have two states and now has three, and the third is the
-// one this is about: with no project it shows the files you have open, and
-// when none are open it shows nothing. It used to fall back to listing
-// whichever directory the editor was standing in, which looked exactly like a
-// project that had not been closed at all.
+// Closing a project, and what the pane is when there is none. The pane has three states now, and
+// the third is the one this is about: with no project it shows the files open, and with none open
+// nothing - it used to list the directory the editor stood in, which looked like a project never closed.
 void closingTheProject(const std::string& ride) {
     std::printf("closing the project, and the pane with no project\n");
 
@@ -759,8 +713,7 @@ void closingTheProject(const std::string& ride) {
     check(readFile(dir / "project.pro").find("src/two.c") != std::string::npos,
           "and project.pro still says everything it said before");
 
-    // File menu, fifth item - Close. The menu opens on File every time since
-    // the audit of 2026-09-19; it used to reopen on the column it was left on.
+    // File menu, fifth item - Close. The menu opens on File every time since the audit of 2026-09-19; it used to reopen on the column it was left on.
     const std::string closeFile = kF10 + times(kDown, 4) + kEnter;
 
     Screen empty = drive(ride, opened, closeProject + closeFile + ctrl('q'), dir);
@@ -771,11 +724,9 @@ void closingTheProject(const std::string& ride) {
     file::remove_all(dir);
 }
 
-// Opening by picking from a list, rather than typing a name blind.
-//
-// The question used to be a bare line: you typed a filename and found out
-// afterwards whether it was there. What is under it now is what is actually in
-// the directory, narrowed by whatever has been typed.
+// Opening by picking from a list, rather than typing a name blind. The question used to be a bare
+// line: you typed a filename and found out afterwards whether it was there. What is under it now
+// is what is actually in the directory, narrowed by whatever has been typed.
 void thePicker(const std::string& ride) {
     std::printf("picking a file, and picking a project\n");
 
@@ -851,16 +802,9 @@ void pickingAProject(const std::string& ride) {
     file::remove_all(parent);
 }
 
-// Which project a named file belongs to, which is not the same question as
-// which directory it is in.
-//
-// A project keeps its sources a directory down, so the file named on the
-// command line is almost never beside the project file. Looking only beside it
-// meant `RIDE src/alpha.c`, run from the project's own root, found no
-// project there - and then fell through to whatever project was last open, or
-// to the demo. The pane filled with somebody else's files while the edit view
-// held yours, and nothing you did to the file changed the pane, because the
-// pane was not showing your project at all. That is what this is here to stop.
+// Which project a named file belongs to, which is not which directory it is in. A project keeps
+// its sources a directory down, so looking only beside the file meant `RIDE src/alpha.c` found no
+// project and fell through to the last one opened, or the demo: the pane filled with somebody else's files while the edit view held yours.
 void whichProjectAFileBelongsTo(const std::string& ride) {
     std::printf("the project a named file belongs to\n");
 
@@ -881,22 +825,9 @@ void whichProjectAFileBelongsTo(const std::string& ride) {
     file::remove_all(dir);
 }
 
-// The pane following what is open, which is the half a project pane cannot do
-// on its own.
-//
-// A project says what the work *is* and does not move when a file is opened;
-// The pane draws one of two things, and which one is the whole of this.
-//
-// A loaded project draws the project: its own groups and nothing else. There
-// was an "Open files" heading above them until 2026-08-24, which meant a file
-// that was open *and* in the project - the ordinary case - was listed twice,
-// once under each heading, and the pane read as though it had lost track of
-// itself. What is open is said by the tabs.
-//
-// File > New and File > Open leave that view: they are questions about files,
-// so the pane answers with a flat list of what is open and no headings at all.
-// Opening a file *from the pane* is not such a question and leaves the project
-// showing, which is the distinction the mode keeps.
+// The pane draws one of two things, which is the half a project pane cannot do on its own. A
+// loaded project draws the project - its groups and nothing else; an "Open files" heading above
+// them listed the ordinary file twice until 2026-08-24. File > New and File > Open are questions about files, so the pane answers with a flat list of what is open; opening from the pane is not, and leaves the project showing.
 void thePaneDrawsOneOfTwoThings(const std::string& ride) {
     std::printf("the pane: a project, or what is open\n");
 
@@ -934,13 +865,9 @@ void thePaneDrawsOneOfTwoThings(const std::string& ride) {
     file::remove_all(dir);
 }
 
-// The same .pro, opened two ways, and it has to be two different things.
-//
-// From the Project menu it is a project: its groups appear on the pane. From
-// the File menu it is a file: its text appears in the editor and the pane goes
-// to the flat list, because asking the File menu for something is asking about
-// files. Nothing in Editor::open looks at the suffix, which is what makes this
-// true - and this is the check that keeps anyone from adding such a look.
+// The same .pro, opened two ways, has to be two different things. From the Project menu it is a
+// project: its groups appear on the pane. From the File menu it is a file: its text appears and
+// the pane goes flat. Nothing in Editor::open looks at the suffix, and this check keeps anyone from adding such a look.
 void aProjectFileOpenedTwoWays(const std::string& ride) {
     std::printf("a .pro is a project from one menu and a file from the other\n");
 
@@ -1140,12 +1067,9 @@ void compilingCpp(const std::string& ride, const std::string& cxx1) {
     file::remove_all(dir);
 }
 
-// **The fourth target, tms6747, runs on the VM6747 emulator** - vm6747, found
-// beside the editor like the compilers. F5 on a file builds it with c90 -S
-// and runs the assembly; F4 on a project writes one .s per source into
-// <target>.vm and Run project hands the directory to vm6747; and Debug is
-// turned away with the reason, since the emulator is not a debugger. The
-// project file names the target, which is how the editor opens on it.
+// **The fourth target, tms6747, runs on the VM6747 emulator** - vm6747, found beside the editor
+// like the compilers. F5 builds a file with c90 -S and runs the assembly; F4 writes one .s per
+// source into <target>.vm and Run project hands the directory to vm6747; Debug is turned away with the reason. The project file names the target.
 void emulatedTarget(const std::string& ride, const std::string& cc1,
                     const std::string& cxx1) {
     std::printf("the tms6747 target, run on the VM6747 emulator\n");
@@ -1209,10 +1133,9 @@ void emulatedTarget(const std::string& ride, const std::string& cc1,
                         kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
     check(wasShown(ran2, "answer 42"), "and Run project hands it to vm6747, which runs it");
 
-    // **asm6x beside the editor turns that assembly into TI objects** - the
-    // project's own C6000 assembler, built with the editor - and with TI's
-    // compiler directory named, lnk6x links them into a .out. Without one
-    // named, the objects are made and the console says what is missing.
+    // **asm6x beside the editor turns that assembly into TI objects** - the project's own C6000
+    // assembler, built with the editor - and with TI's compiler directory named, lnk6x links them
+    // into a .out. Without one named, the objects are made and the console says what is missing.
     if (editor::path::exists(editor::path::parent(ride) + "/asm6x.exe")) {
         check(wasShown(built, "$ asm6x 2 sources"), "and with asm6x beside the editor the two .s are assembled");
         check(editor::path::exists((dir / "sums.vm" / "main.obj").string()) &&
@@ -1327,10 +1250,9 @@ void buildingTheProject(const std::string& ride, const std::string& cc1,
     // the editor says so rather than failing quietly.
     std::printf("  (x86_64-windows carries no line table, so the project's debugger is not tried)\n");
 #else
-    // Open sum.c, put the caret on the line that adds, break there, and ask
-    // the Debug menu for the project rather than F8 for the file. The
-    // breakpoint is in the file that has no main in it, which is the point:
-    // one program, two sources, and the line has to be found in the right one.
+    // Open sum.c, put the caret on the line that adds, break there, and ask the Debug menu for the
+    // project rather than F8 for the file. The breakpoint is in the file that has no main in it,
+    // which is the point: one program, two sources, and the line has to be found in the right one.
     Screen stopped = drive(ride, "\"" + (dir / "src" / "sum.c").string() + "\" " + arguments,
                            times(kDown, 2) + kF9 +
                                kF10 + times(kRight, 4) + kDown + kEnter + ctrl('q'),
@@ -1343,10 +1265,9 @@ void buildingTheProject(const std::string& ride, const std::string& cc1,
     check(onScreen(stopped, "a = 2"), "with the argument it was called with");
     check(onScreen(stopped, "b = 40"), "and the other one");
 
-    // Stepping out of the file it stopped in opens the file it arrives in.
-    // Nothing had main.c open here, so the tab and the status bar naming it
-    // are the whole check - it used to say "stopped at main.c:9" while showing
-    // sum.c, which is a stranger thing to say than saying nothing.
+    // Stepping out of the file it stopped in opens the file it arrives in. Nothing had main.c open
+    // here, so the tab and the status bar naming it are the whole check - it used to say "stopped
+    // at main.c:9" while showing sum.c, which is a stranger thing to say than saying nothing.
     Screen stepped = drive(ride, "\"" + (dir / "src" / "sum.c").string() + "\" " + arguments,
                            times(kDown, 2) + kF9 +
                                kF10 + times(kRight, 4) + kDown + kEnter + kF7 + ctrl('q'),
@@ -1364,22 +1285,12 @@ void buildingTheProject(const std::string& ride, const std::string& cc1,
     Screen broken = drive(ride, arguments, kF4 + ctrl('q'), dir);
     check(onScreen(broken, "error"), "an error in the project build is reported");
     check(onScreen(broken, "main.c"), "naming the file it is in");
-    // Line 8, not 7: a missing semicolon is reported where the next thing was
-    // found, which is the line after the one that is missing it.
+    // Line 8, not 7: a missing semicolon is reported where the next thing was found, the line after the one missing it.
     check(onScreen(broken, "8/10"), "and the caret goes there, in a file nothing had opened");
 
-    // Both languages in one target, which used to be refused with "this project
-    // holds both C and C++, which cannot make one program" and now is not: the
-    // group is split by language, cc1 takes the C and cl takes the C++, and the
-    // objects meet at the linker.
-    //
-    // The main.c above was left broken on purpose by the case before this one,
-    // so it is written again - this case is about the mixture and a syntax
-    // error would stop it before the mixture was reached.
-    //
-    // The C++ half goes to cxx1 since 3.0, so this needs a cxx1 as well as a
-    // cc1; without one the mixture is not tried and the case says so, the
-    // way every case that needs a compiler does.
+    // Both languages in one target, once refused as "cannot make one program" and now split by
+    // language: cc1 takes the C, cxx1 the C++ (since 3.0), and the objects meet at the linker. The
+    // main.c the case before left broken is written again, so a syntax error cannot stop this before the mixture is reached; without a cxx1 the case says so.
     if (cxx1.empty()) {
         std::printf("  (no cxx1 named, so the mixed target is not built)\n");
     } else {
@@ -1397,18 +1308,11 @@ void buildingTheProject(const std::string& ride, const std::string& cc1,
               "    \"Sources\": [\"src/sum.c\", \"src/main.c\", \"src/extra.cpp\"]\n  },\n"
               "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
     Screen mixed = drive(ride, mixedArguments, kF4 + ctrl('q'), dir);
-    // wasShown, not onScreen: the console panel holds nine rows and a build
-    // that runs two compilers and a linker writes more than that, so the first
-    // compiler's line has scrolled off by the time it is over. What is being
-    // checked is that the editor said it, not that it is still visible.
+    // wasShown, not onScreen: the nine-row console has scrolled past the first compiler's line by the time two compilers and a linker are done - the check is that the editor said it.
     check(wasShown(mixed, "Sources (c90)"), "a group of two languages sends the C to cc1");
-    // cxx1 on every machine, and the point is that nothing in the project
-    // file said so. Until 3.0 this was cl where there is one and c++ where
-    // there is not - the host's compiler, which is now the one a group has
-    // to ask for by name. Written out rather than asked of the editor's own
-    // resolve(): this harness links src/path.cpp and nothing else on purpose
-    // - it drives the editor as a program, and a test that shares the
-    // editor's opinion cannot catch the editor being wrong.
+    // cxx1 on every machine, and nothing in the project file said so: until 3.0 this was the host's
+    // compiler, which a group now has to ask for by name. Written out rather than asked of the
+    // editor's resolve(): this harness links src/path.cpp only, since a test sharing the editor's opinion cannot catch it being wrong.
     check(wasShown(mixed, "Sources (cpp11)"),
           "and the C++ to cxx1, without being told to");
     check(!wasShown(mixed, "cannot make one program"),
@@ -1424,11 +1328,9 @@ void buildingTheProject(const std::string& ride, const std::string& cc1,
     check(wasShown(ranMixed, "answer 42"), "and runs, C calling into what cxx1 made");
     }
 
-    // Debugging the project is the same choice again: the program under the
-    // debugger is the one the project builds, not the file in front of you.
-    // The breakpoint goes in a file that has no main in it, which is the whole
-    // point - one program, three sources, and the debugger has to find the
-    // line in the right one.
+    // Debugging the project is the same choice again: the program under the debugger is the one the
+    // project builds, not the file in front of you. The breakpoint goes in a file that has no main
+    // in it - one program, three sources, and the debugger has to find the line in the right one.
     writeFile(dir / "src" / "main.c",
               "#include <stdio.h>\n\n#include \"sum.h\"\n\n"
               "int main(void)\n{\n    printf(\"answer %d\\n\", addUp(2, 40));\n    return 0;\n}\n");
@@ -1473,11 +1375,9 @@ void configurations(const std::string& ride, const std::string& cc1) {
     Screen shownDebug = drive(ride, common, ctrl('q'), dir);
     check(onScreen(shownDebug, "debug"), "and debug is what it starts in");
 
-    // **The project file does not remember it, and that is the point.** Which
-    // of the two you are building is what you are doing today, not a property
-    // of the program - and a project file travels, so one arriving with
-    // "config": "release" in it would put everyone who opened it into release.
-    // A "config" key in a project is read by nothing now.
+    // **The project file does not remember it, and that is the point.** Debug or release is what
+    // you are doing today, not a property of the program - and a project file travels, so one with
+    // "config": "release" would put everyone who opened it into release. A "config" key is read by nothing now.
     writeFile(dir / "Conf.pro",
               "{\n  \"name\": \"Conf\",\n  \"config\": \"release\",\n"
               "  \"groups\": { \"Sources\": [] }\n}\n");
@@ -1527,14 +1427,9 @@ void configurations(const std::string& ride, const std::string& cc1) {
     file::remove_all(dir);
 }
 
-// What the Debug panel says depends on the target: cc1 writes DWARF for two of
-// the three and nothing for the one it generates MASM for. Both answers are the
-// editor's own words about a compiler it has not run, so this needs no cc1 and
-// runs on every machine.
-//
-// The menu opens on File every time (since the audit of 2026-09-19; it used to
-// reopen on the column it was left on, which once cost an hour of believing
-// the panel was broken), so every walk here starts from File.
+// What the Debug panel says depends on the target: cc1 writes DWARF for two of the three and
+// nothing for the one it generates MASM for. Both answers are the editor's own words about a
+// compiler it has not run, so this needs no cc1. The menu opens on File every time since 2026-09-19, so every walk starts from File.
 void debugPanelPerTarget(const std::string& ride) {
     std::printf("what the Debug panel says about each target\n");
 
@@ -1543,11 +1438,9 @@ void debugPanelPerTarget(const std::string& ride) {
     writeFile(file, "int main(void) { return 0; }\n");
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
-    // Menus are reached by counting, so anything added to one moves everything
-    // after it - a column added moves the columns to its right, and an item
-    // added moves the items below it. Build is the fourth column, its Debug
-    // panel the sixth item, and Target is two columns further on now that
-    // Debug sits between them.
+    // Menus are reached by counting, so anything added to one moves everything after it - a column
+    // added moves the columns to its right, an item added the items below. Build is the fourth
+    // column, its Debug panel the sixth item, and Target is two columns further on now that Debug sits between them.
     const int kBuildColumn = 5;      // View, since 2026-09-19: the panel's tabs are there
     const int kTargetColumn = 8;
     // Fourth in View: Project pane, Bottom panel, a rule, Console, Debug.
@@ -1581,8 +1474,7 @@ void debugPanelPerTarget(const std::string& ride) {
     check(onScreen(switched, "no debug information") && !onScreen(switched, "DWARF"),
           "and switching target changes what the open panel already said");
 
-    // The flag itself, in the status bar, with no compiler run. Ctrl-D is the
-    // toggle, so twice from debug is release and back to debug again.
+    // The flag itself, in the status bar, with no compiler run; Ctrl-D toggles, so twice from debug is release and back.
     const std::string sayConfig = ctrl('d') + ctrl('d');
 
     Screen debugOnLinux = drive(ride, common,
@@ -1611,20 +1503,15 @@ const char* const kPrintsAndReturns =
     "    return 3;\n"
     "}\n";
 
-// F5 compiles, links and runs, which is three things that can each go their own
-// way. What the console has to keep apart is a compiler that refused and a
-// program that ran and returned something other than zero: only the program
-// knows what its number meant, and a build that failed never got one.
+// F5 compiles, links and runs, three things that can each go their own way. What the console has
+// to keep apart is a compiler that refused and a program that ran and returned something other than
+// zero: only the program knows what its number meant, and a build that failed never got one.
 void runningTheProgram(const std::string& ride, const std::string& cc1) {
     std::printf("building it, and running what came out\n");
 
-    // A target this machine cannot run is turned away before anything is built,
-    // so this case needs no compiler at all. x86_64-windows is the one nothing
-    // here is, except on Windows, where x86_64-linux is.
-    //
-    // It gets a project of its own because a chosen target is remembered in the
-    // project file, and a second editor started on the same one would open on
-    // the target this left behind rather than on the host.
+    // A target this machine cannot run is turned away before anything is built, so this needs no
+    // compiler: x86_64-windows is the one nothing here is, except on Windows, where x86_64-linux is.
+    // A project of its own, because a chosen target is remembered in the project file and a second editor on the same one would open on it.
     const int kTargetColumn = 8;   // File, Edit, Project, Build, Debug, View, Language, Tools, Target
 #ifdef _WIN32
     const std::string toElsewhere = kF10 + times(kRight, kTargetColumn) + kDown + kEnter;
@@ -1708,15 +1595,12 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     // set, seen and taken away with nothing installed at all.
     Screen marked = drive(ride, common, toLoopBody + kF9 + ctrl('q'), dir);
     check(wasShown(marked, "breakpoint on line 11"), "F9 puts a breakpoint on the line");
-    // The number is right-aligned with a gap after it, so the marker sits in
-    // the column before the first digit and nothing moves when it appears.
+    // The number is right-aligned with a gap after it, so the marker sits in the column before the first digit and nothing moves.
     check(onScreen(marked, "*11"), "and marks it in the gutter, beside the number");
 
-    // Ctrl with an arrow, which is a key the console has to send and the
-    // decoder has to read before anything can be done with it. Asked here,
-    // with nothing stopped, because that answer needs no debugger and so is
-    // asked on all three machines - including the one where cc1's own target
-    // cannot be debugged at all and every check below this is skipped.
+    // Ctrl with an arrow, a key the console has to send and the decoder read before anything can
+    // be done with it. Asked with nothing stopped, because that answer needs no debugger and so is
+    // asked on all three machines - including the one where cc1's target cannot be debugged and every check below is skipped.
     Screen noStack = drive(ride, common, kCtrlUp + ctrl('q'), dir);
     check(wasShown(noStack, "no stack to walk"),
           "Ctrl-Up arrives as Ctrl-Up, and says there is nothing stopped");
@@ -1725,23 +1609,12 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(wasShown(unmarked, "breakpoint off line 11"), "and F9 again takes it away");
     check(!onScreen(unmarked, "*11"), "leaving the gutter as it was");
 
-    // Two blocks stood here until 2026-08-24: a breakpoint following its file
-    // through Rename..., and a deleted file's breakpoints not coming back when
-    // the name is used again. Both were driven through the Project menu, and
-    // Rename... and Delete... were taken off it that day - so there is no
-    // longer a way to ask the editor to do either, and nothing left to drive.
-    //
-    // Editor::renameFile and deleteFile still carry the breakpoints across, and
-    // breaks_/breakNames_ are still keyed the way those two blocks proved. What
-    // is gone is the check, not the behaviour. If either command is ever given
-    // a menu item again, both blocks are in this file's history at the commit
-    // that removed them, and should come back with it.
+    // Two blocks stood here until 2026-08-24 - a breakpoint following its file through Rename...,
+    // and a deleted file's breakpoints not returning with the name - and went with those menu items.
+    // Editor::renameFile and deleteFile still carry them; the blocks are in this file's history at the commit that removed them, and should return with the items.
 
 #ifdef _WIN32
-    // cc1 generates MASM for this machine's own target, which carries no line
-    // table, so there is nothing here for a debugger to read - and so nothing
-    // for the compiler named here to do. Said out loud because MSVC at /W4 /WX
-    // treats an untouched parameter as an error, where clang and gcc do not.
+    // cc1 generates MASM for this machine's target, which carries no line table, so the compiler named here has nothing to do; said out loud because MSVC at /W4 /WX treats an untouched parameter as an error.
     (void)cc1;
     // The reason is about this compiler and this target rather than about the
     // machine: the C file here goes to cc1, and what cc1 writes for Windows is
@@ -1780,18 +1653,9 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(onScreen(inside, "main   stepped.c:11"),
           "naming what called it and the line waiting for it to come back");
 
-    // And going to that frame, driven the way a person drives it: Ctrl-W twice
-    // to reach the panel - the first press is the project pane - then down to
-    // the frame and enter on it. The panel's top line is the line the cursor
-    // is on, so six presses put the frame there:
-    //
-    //   stopped at stepped.c:3 in twice     the locals are n and doubled,
-    //                                       which both debuggers list
-    //     n = 1   [int]
-    //     doubled = ...
-    //
-    //   called from
-    //     main   stepped.c:11
+    // And going to that frame, driven as a person does: Ctrl-W twice to reach the panel - the first
+    // press is the project pane - then down to the frame and enter. The panel's top line is the
+    // cursor's, so six presses put the frame there: "stopped at", the two locals n and doubled, a blank, "called from", then main stepped.c:11.
     const std::string toTheFrame = ctrl('w') + ctrl('w') + times(kDown, 6) + kEnter;
     Screen went = drive(ride, withCc1, toLoopBody + kF9 + kF8 + kF6 + toTheFrame + ctrl('q'), dir);
     check(wasShown(went, "where the call came from"), "enter on a frame goes to it");
@@ -1815,11 +1679,7 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(!onScreen(backAgain, "the variables are main's"),
           "with nothing said about whose they are, the top line saying it");
 
-    // The program has not moved: going to a line is not stepping, and the
-    // arrow in the gutter still marks where it is standing.
-    // "> 3", not ">3": the number is right-aligned in the gutter and the marker
-    // sits in the column before its first digit, so a one-digit line has a
-    // space between them where an eleven has none.
+    // The program has not moved: going to a line is not stepping. "> 3", not ">3" - the number is right-aligned in the gutter, so a one-digit line has a space before it where an eleven has none.
     check(onScreen(went, "> 3"), "while the program is still standing where it stopped");
 
     // The same walk with a key, from the text, without going near the panel -
@@ -1829,13 +1689,9 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(onScreen(up, "total = 0"), "with that frame's variables");
     check(onScreen(up, "11/14"), "and the caret on the line waiting for the call");
 
-    // And the gutter says which line that is, in the code rather than only in
-    // the panel. It outranks the breakpoint that is on the same line - the
-    // mark is about now, and the breakpoint is about every run of the program.
-    //
-    // With the line's own text after it, because "stepped.c:11" in the panel
-    // holds ":11" as well and a check that matches that is a check that passes
-    // whatever the gutter does.
+    // And the gutter says which line that is, in the code and not only the panel; it outranks the
+    // breakpoint on the same line - the mark is about now, the breakpoint about every run. With the
+    // line's own text after it, because "stepped.c:11" in the panel holds ":11" too and a check matching that passes whatever the gutter does.
     const std::string markedLine = ":11         total = total + twice(i);";
     const std::string breakLine = "*11         total = total + twice(i);";
     check(onScreen(up, markedLine), "the gutter marks the line the frame is waiting on");
@@ -1859,16 +1715,9 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     Screen bottom = drive(ride, withCc1, toLoopBody + kF9 + kF8 + kF6 + kCtrlDown + ctrl('q'), dir);
     check(wasShown(bottom, "nothing below it"), "and says so at the bottom of it");
 
-    // Setting a variable: the cursor on its line in the panel, enter, and the
-    // value typed into the box that asks for filenames. Stopped in main here,
-    // where there is no stack to walk and variables all the same.
-    //
-    // Which variable that line holds is the debugger's business and not the
-    // same on two machines: lldb lists them as they were declared and gdb
-    // lists the innermost block first, so under gdb the loop's own i is above
-    // total. The check is that the one on that line was set, whichever it is -
-    // the same keystrokes naming a different variable is not this feature
-    // going wrong.
+    // Setting a variable: the cursor on its line in the panel, enter, and the value typed into the
+    // box that asks for filenames. Which variable that line holds is the debugger's: lldb lists them
+    // as declared and gdb the innermost block first, so the check is that the one on that line was set, whichever it is.
     const std::string toTheVariable = ctrl('w') + ctrl('w') + times(kDown, 2) + kEnter;
     Screen written = drive(ride, withCc1,
                            toLoopBody + kF9 + kF8 + toTheVariable + "7" + kEnter + ctrl('q'), dir);
@@ -1883,10 +1732,9 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(!onScreen(refused, "= nosuch"), "a value it will not take is not written into the tab");
     check(onScreen(refused, "total = 0"), "and the variable is left as it was");
 
-    // A watch, added from the Debug menu and then left alone: what makes it a
-    // watch is that it is read again at the next stop without being asked for.
-    // Nine items down that menu - Start, Debug project, breakpoint, over,
-    // into, out, up, down, and then Watch expression.
+    // A watch, added from the Debug menu and then left alone: what makes it a watch is that it is
+    // read again at the next stop without being asked for. Nine items down that menu - Start, Debug
+    // project, breakpoint, over, into, out, up, down, and then Watch expression.
     const std::string toWatch = kF10 + times(kRight, 4) + times(kDown, 8) + kEnter;
     Screen watching = drive(ride, withCc1,
                             toLoopBody + kF9 + kF8 + toWatch + "total + i" + kEnter + ctrl('q'),
@@ -1901,10 +1749,9 @@ void stoppingAndStepping(const std::string& ride, const std::string& cc1) {
     check(onScreen(followed, "total + i = 4"),
           "and it follows the stepping - 2 plus 2 the next time round");
 
-    // A line that is neither says so rather than doing something. Six down
-    // from the top of that tab is the "called from" heading, which names a
-    // frame without being one - the likeliest line to press enter on by
-    // mistake.
+    // A line that is neither says so rather than doing something. Six down from the top of that
+    // tab is the "called from" heading, which names a frame without being one - the likeliest line
+    // to press enter on by mistake.
     const std::string toTheHeading = ctrl('w') + ctrl('w') + times(kDown, 5) + kEnter;
     Screen neither = drive(ride, withCc1,
                            toLoopBody + kF9 + kF8 + kF6 + toTheHeading + ctrl('q'), dir);
@@ -1948,12 +1795,9 @@ void aDirectoryWithNoProject(const std::string& ride) {
     check(onScreen(again, "one.c"), "and reads back what was written");
     check(wasShown(again, "ready"), "and says it is ready, having nothing to do first");
 
-    // Help is the last column, and About is under it. Checked from here as
-    // well as in the window, since the two show the same lines from the core.
-    // Eight rights rather than seven since Language joined the bar, and two
-    // downs rather than one since Contents joined this menu above About - a
-    // count of the columns and of the items, written down in the one place
-    // that walks them.
+    // Help is the last column, and About is under it. Checked here as well as in the window, since
+    // both show the core's lines. Eight rights rather than seven since Language joined the bar, two
+    // downs rather than one since Contents joined this menu above About - the columns and items counted in the one place that walks them.
     Screen about = drive(ride, "--project \"" + dir.string() + "\"",
                          kF10 + times(kRight, 9) + times(kDown, 2) + kEnter + ctrl('q'), dir);
     check(onScreen(about, "RIDE 4.5"), "About names the product and version");
@@ -1973,16 +1817,12 @@ void aDirectoryWithNoProject(const std::string& ride) {
 
 }  // namespace
 
-// The third language, driven rather than described. Everything below asks the
-// editor to do something with a .shl and looks at what came back on the
-// screen; nothing here reaches into the core.
-// The Language menu's Convert, which runs c2s over the open file.
-//
-// One item and not two: which way round it goes is what the file already is,
-// and the column it sits in is what says so. That is the part worth driving
-// from the keyboard rather than unit-testing, because the direction is taken
-// from the editor's idea of the language and not from the file name - which
-// is exactly what a .txt holding C is for.
+// The third language, driven rather than described. Everything below asks the editor to do
+// something with a .shl and looks at what came back on the screen; nothing here reaches into the core.
+
+// The Language menu's Convert, which runs c2s over the open file. One item and not two: which way
+// round it goes is what the file already is, and the column it sits in says so - worth driving from
+// the keyboard because the direction is taken from the editor's idea of the language, not the file name, which is what a .txt holding C is for.
 void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
     std::printf("converting between C and Shalimar from the Language menu\n");
 
@@ -1991,11 +1831,9 @@ void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
         return;
     }
 
-    // Language is the sixth column, and Convert the seventh selectable item
-    // in it - By extension, C, C++, Shalimar, JSON, Plain text, then this.
-    // The separator above it costs nothing to walk past, stepTo skipping
-    // whatever cannot be landed on. These counts move if the column does,
-    // which is what this comment is here to make findable.
+    // Language is the sixth column, and Convert the seventh selectable item in it - By extension,
+    // C, C++, Shalimar, JSON, Plain text, then this; stepTo skips the separator. These counts move
+    // if the column does, which is what this comment is here to make findable.
     const std::string toLanguage = kF10 + times(kRight, 6);
     const std::string convert = toLanguage + times(kDown, 6) + kEnter;
     const std::string asC = toLanguage + times(kDown, 1) + kEnter;
@@ -2024,19 +1862,15 @@ void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
           "and what was written is Shalimar");
     check(onScreen(made, "adder.shl"), "and the converted file is opened");
 
-    // **.shl and not .shm, and the screen is what says why.** The editor
-    // reads only .shl as Shalimar, so a written .shm opened as plain text in
-    // the editor that had just written it - no colouring, and Build behind
-    // the wrong compiler. Nothing else notices a suffix; this does.
+    // **.shl and not .shm, and the screen is what says why.** The editor reads only .shl as
+    // Shalimar, so a written .shm opened as plain text in the editor that had just written it - no
+    // colouring, and Build behind the wrong compiler. Nothing else notices a suffix; this does.
     check(onScreen(made, "Shalimar"),
           "and it is Shalimar to the editor, not text with a suffix");
 
-    // And back again, from the .shl this time - so the round trip is driven
-    // entirely from the menu, with the direction never named on either leg.
-    // The .c is removed first: it already held `int main`, so leaving it
-    // there let this pass without the second leg running at all, which is
-    // what it did from 2026-08-23 - when .shm stopped being read as Shalimar
-    // - until 2026-08-27.
+    // And back again, from the .shl this time - the round trip driven entirely from the menu, the
+    // direction never named. The .c is removed first: it already held `int main`, so leaving it let
+    // this pass without the second leg running at all, which it did from 2026-08-23 until 2026-08-27.
     file::path back = dir / "src" / "adder.shl";
     file::remove(dir / "src" / "adder.c");
     arguments = "\"" + back.string() + "\" --c2s \"" + c2s + "\"";
@@ -2069,18 +1903,9 @@ void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
     check(file::exists(dir / "src" / "hidden.shl"),
           "but the same file read as C converts");
 
-    // **What c2s refuses outright, which is not the same as what it converts
-    // badly.** A preprocessor directive stops the conversion before it
-    // starts: c2s writes no file and exits 1 - the same 1 it uses for a file
-    // it *did* write with constructs marked BEYOND. Believing that status
-    // opened an empty buffer named after a file that was never written and
-    // said it had been converted, which is the report this case exists to
-    // keep honest.
-    // #ifdef with an #else, and not the #ifndef guard that used to be here:
-    // c2s drops a guard round its own #define since 2026-08-27, so that file
-    // converts now and this case stopped testing a refusal at all. This one
-    // picks between two programs and nothing says which, which is what c2s
-    // will not decide for anybody.
+    // **What c2s refuses outright, which is not what it converts badly.** A preprocessor directive
+    // stops it before it starts: no file, exit 1 - the same 1 as a file written with BEYOND marks,
+    // and believing it once opened an empty buffer as converted. #ifdef with an #else, since c2s drops a guard round its own #define since 2026-08-27 and the old #ifndef converts now.
     file::path asks = dir / "src" / "asks.c";
     writeFile(asks,
               "#ifdef LIMIT\n"
@@ -2102,14 +1927,9 @@ void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
     check(!onScreen(questions, "BEYOND"),
           "and does not offer the message for a file that was written");
 
-    // **The panel wraps, and this is the case that made it matter.** c2s's
-    // questions run past ninety columns and the panel is fifty-odd beside an
-    // open project pane, so what the message *asks for* sat past the border
-    // with no key in the editor able to reach it - nothing scrolls sideways
-    // in there.
-    // Proved on the grown screen below rather than here: what shows a wrap is
-    // the *tail* of a line, and the tail of the longest line here is off the
-    // bottom of seven rows.
+    // **The panel wraps, and this is the case that made it matter.** c2s's questions run past ninety
+    // columns and the panel is fifty-odd beside an open project pane, so what the message asks for
+    // sat past the border with no key able to reach it. Proved on the grown screen below: a wrap shows in a line's tail, which here is off the bottom of seven rows.
 
     // And taller when it is asked for: Ctrl-W twice puts the cursor in the
     // panel - past the project pane - and shift-up grows it, which shows more
@@ -2127,11 +1947,9 @@ void convertingFromTheMenu(const std::string& ride, const std::string& c2s) {
     check(onScreen(grown, "remove both the #define"),
           "and eleven do, which is what the taller panel is for");
 
-    // That hint runs past 120 characters and the panel is 78 wide, so its
-    // last words are on screen only because the line wrapped. Cut at the
-    // border - which is what the panel did until 2026-08-27 - they were
-    // unreachable by any key, and it is the end of a diagnostic that says
-    // what to do about it.
+    // That hint runs past 120 characters and the panel is 78 wide, so its last words are on screen
+    // only because the line wrapped. Cut at the border - the panel did until 2026-08-27 - they were
+    // unreachable by any key, and it is the end of a diagnostic that says what to do about it.
     check(onScreen(grown, "the #if that reads it"),
           "and the end of a line too long for the panel, which is wrapped now");
 }
@@ -2207,10 +2025,9 @@ void compilingShalimar(const std::string& ride, const std::string& shc) {
     file::remove_all(dir);
 }
 
-// A project made of Shalimar, which is not the same shape as one made of C.
-// The language has no include and no separate compilation, so several .shl in
-// a group are several programs rather than the parts of one - and the project
-// has to say which it builds instead of taking whichever came first.
+// A project made of Shalimar, which is not the shape of one made of C: the language has no include
+// and no separate compilation, so several .shl in a group are several programs rather than the
+// parts of one - and the project has to say which it builds instead of taking whichever came first.
 void aShalimarProject(const std::string& ride, const std::string& shc) {
     std::printf("a project made of Shalimar\n");
 
@@ -2263,14 +2080,11 @@ void aShalimarProject(const std::string& ride, const std::string& shc) {
     check(wasShown(refusedIt, "programs and builds one"),
           "a target named after none of them is refused, not guessed at");
 
-    // Two files, one program. Shalimar has no include: shc looks for what the
-    // program calls and does not define in the other files it was given, and
-    // the project is what says which files those are.
+    // Two files, one program: Shalimar has no include, so shc looks for what the program calls in the other files it was given, and the project says which those are.
     writeFile(dir / "src" / "shapes.shl",
-              // `uses abs` belongs to THIS file, not to the one that calls
-              // area(). That is what per-file borrowing buys: a file pulled
-              // into somebody else's program brings what it needs with it,
-              // and the caller does not have to know what it reaches for.
+              // `uses abs` belongs to THIS file, not to the one that calls area(). That is what
+              // per-file borrowing buys: a file pulled into somebody else's program brings what it
+              // needs with it, and the caller does not have to know what it reaches for.
               "uses abs\n"
               "\n"
               "real tolerance : 1e-9\n"
@@ -2303,11 +2117,9 @@ void aShalimarProject(const std::string& ride, const std::string& shc) {
     check(wasShown(two, "also compiled shapes.shl"),
           "and the compiler says which file it went to, so nothing is silent");
 
-    // Shalimar beside C is still refused, and it is the one refusal that did
-    // not go away when a group got its own compiler - it is not about the
-    // editor at all. Refused twice over, and the two say different things.
-    //
-    // In one group: no compiler takes both, so naming one cannot help.
+    // Shalimar beside C is still refused - the one refusal that did not go away when a group got
+    // its own compiler, since it is not about the editor. Refused twice over, saying different
+    // things. In one group: no compiler takes both, so naming one cannot help.
     writeFile(dir / "src" / "bit.c", "int bit(void) { return 1; }\n");
     writeFile(dir / "project.pro",
               "{\n"
@@ -2319,11 +2131,9 @@ void aShalimarProject(const std::string& ride, const std::string& shc) {
     check(wasShown(together, "Shalimar and C or C++ in one group"),
           "Shalimar and C in one group is refused, naming the group");
 
-    // In two groups, where every other pair of languages now works: this is
-    // about what a Shalimar object is. Whichever file it came from it exports
-    // the same three startup symbols, so two of them collide - and the
-    // language has no declarations, so a call across a link could not be
-    // checked. Compiler-S/docs/LINKING.md has it in full.
+    // In two groups, where every other pair of languages works: this is about what a Shalimar
+    // object is. Whichever file it came from it exports the same three startup symbols, so two
+    // collide - and the language has no declarations to check a call across a link. Compiler-S/docs/LINKING.md has it in full.
     writeFile(dir / "project.pro",
               "{\n"
               "  \"name\": \"hello\",\n"
@@ -2340,11 +2150,9 @@ void aShalimarProject(const std::string& ride, const std::string& shc) {
     file::remove_all(dir);
 }
 
-// Stopping a Shalimar program from the Debug menu, which is a different thing
-// from stopping a C one and not a second copy of it. There is no gdb, no lldb
-// and no cdb here: the program stops itself, so this runs on every machine the
-// suite runs on - including Windows, where cc1's own target cannot be debugged
-// at all and every check in stoppingAndStepping is skipped.
+// Stopping a Shalimar program from the Debug menu, a different thing from stopping a C one. There
+// is no gdb, lldb or cdb here: the program stops itself, so this runs on every machine the suite
+// does - including Windows, where cc1's target cannot be debugged and every check in stoppingAndStepping is skipped.
 void stoppingShalimar(const std::string& ride, const std::string& shc) {
     std::printf("stopping a Shalimar program from the editor\n");
 
@@ -2393,20 +2201,16 @@ void stoppingShalimar(const std::string& ride, const std::string& shc) {
     Screen back = drive(ride, arguments, toTheCall + kF9 + kF8 + kF6 + kF7 + kF7 + ctrl('q'), dir);
     check(onScreen(back, "steps.shl:9"), "and stepping on comes back past the call");
 
-    // The program's own printing reaches the console, which is the point of
-    // the channel keeping the two streams apart: a #stop in the middle of a
-    // half-written line would have been unreadable and would have changed what
-    // the program appeared to print.
+    // The program's own printing reaches the console, which is the point of the channel keeping the
+    // two streams apart: a #stop in the middle of a half-written line would have been unreadable
+    // and would have changed what the program appeared to print.
     Screen printed = drive(ride, arguments,
                            toTheCall + kF9 + kF8 + kF8 + ctrl('q'), dir);
     check(wasShown(printed, "returned"), "carrying on to the end says so");
 
-    // Release links a runtime with no debugger in it, so F8 has nothing to
-    // stop. That is the boundary, and the message says the true reason rather
-    // than "built without -g", which shc has never had.
-    //
-    // Ctrl-D is the toggle rather than the debug half of a pair, and debug is
-    // where a project starts - so one press is release.
+    // Release links a runtime with no debugger in it, so F8 has nothing to stop; the message says
+    // that rather than "built without -g", which shc has never had. Ctrl-D is a toggle and debug is
+    // where a project starts, so one press is release.
     Screen release = drive(ride, arguments, ctrl('d') + toTheCall + kF9 + kF8 + ctrl('q'), dir);
     check(wasShown(release, "no debugger in it"),
           "and a release build says what it has not got, not what shc has never had");
@@ -2414,21 +2218,16 @@ void stoppingShalimar(const std::string& ride, const std::string& shc) {
     file::remove_all(dir);
 }
 
-// A compiler per group, and one link at the end.
-//
-// This is the shape that used to be refused: a target whose groups do not all
-// go to the same compiler. Each group compiles to objects with its own, and the
-// editor names the linker itself, because no compiler here takes an object as
-// an input - hand cc1 a .o and it reads it as C and complains about a stray
-// byte on line 1.
+// A compiler per group, and one link at the end - the shape that used to be refused: a target
+// whose groups do not all go to one compiler. Each compiles to objects with its own and the editor
+// names the linker, because no compiler here takes an object - hand cc1 a .o and it reads it as C and complains about a stray byte on line 1.
 void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
                        const std::string& cxx1) {
     std::printf("a compiler per group, and one link\n");
 
-    // The machine's real C++ compiler, by name. Written out rather than asked
-    // of the editor: this harness links src/path.cpp and nothing else on
-    // purpose - a test that shares the editor's opinion cannot catch the
-    // editor being wrong about it.
+    // The machine's real C++ compiler, by name. Written out rather than asked of the editor: this
+    // harness links src/path.cpp and nothing else on purpose - a test that shares the editor's
+    // opinion cannot catch the editor being wrong about it.
 #if defined(_WIN32)
     const char* cpp = "cl";
 #elif defined(__APPLE__)
@@ -2450,10 +2249,9 @@ void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
               "    return 0;\n}\n");
     writeFile(dir / "lib" / "helper.c", "int helper(int n) { return n * 7; }\n");
 
-    // Two groups, and the second names its compiler by hand. Both go to cc1
-    // here, which is the point: it is two *parts* rather than two languages,
-    // so the object-and-link path is what runs, on a machine where the whole
-    // of it can be checked.
+    // Two groups, and the second names its compiler by hand. Both go to cc1 here, which is the
+    // point: it is two *parts* rather than two languages, so the object-and-link path is what runs,
+    // on a machine where the whole of it can be checked.
     writeFile(dir / "project.pro",
               "{\n  \"name\": \"two\",\n  \"indent\": 4,\n"
               "  \"groups\": {\n"
@@ -2465,12 +2263,9 @@ void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
     std::string arguments = "--project \"" + dir.string() + "\" --c90 \"" + cc1 + "\"";
 
     Screen built = drive(ride, arguments, kF4 + ctrl('q'), dir);
-    // wasShown, not onScreen: each compile now opens with the compiler's
-    // banner (cc1, cxx1 and shc all print one, and -nologo is not passed for a
-    // project build), so the nine-row console has scrolled past the first
-    // group's header by the time the build is over - the same reason the mixed
-    // target below reads its headers with wasShown. "built two" is the last
-    // line and is still on screen.
+    // wasShown, not onScreen: each compile opens with the compiler's banner (-nologo is not passed
+    // for a project build), so the nine-row console has scrolled past the first group's header by
+    // the end - the mixed target below reads its headers the same way. "built two" is the last line and still on screen.
     check(wasShown(built, "Sources (c90)"), "each group is compiled under its own name");
     check(wasShown(built, "Library (c90)"), "including the one that named its compiler");
     check(wasShown(built, "linking with"), "and the editor says what it linked with");
@@ -2487,12 +2282,9 @@ void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
                        kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
     check(wasShown(ran, "helper 42"), "running it runs what the two groups made together");
 
-    // Three groups and three routings, which is the shape the whole thing was
-    // for. C++ names nothing and goes to cxx1; the group that names a
-    // compiler is a group of C that wants the host's C++ compiler instead.
-    // Since 3.0 C and C++ have the same shape - the editor's own compiler
-    // by default, the machine's by name - and cxx1 has to be here for the
-    // C++ group to build at all.
+    // Three groups and three routings, the shape the whole thing was for. C++ names nothing and
+    // goes to cxx1; the group that names a compiler is C wanting the host's C++ compiler. Since 3.0
+    // C and C++ have the same shape - ours by default, the machine's by name - and cxx1 has to be here for the C++ group to build.
     if (cxx1.empty()) {
         std::printf("  (no cxx1 named, so the three-routing project is not built)\n");
     } else {
@@ -2503,13 +2295,9 @@ void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
                   "int main(void)\n{\n    printf(\"total %d\\n\", spin(3) + legacy(4));\n"
                   "    return 0;\n}\n");
         writeFile(three / "src" / "legacy.c", "int legacy(int n) { return n * 10; }\n");
-        // std::vector on purpose: if the C++ runtime did not reach the link,
-        // this is what says so, and it says it at link time rather than by
-        // going wrong later.
-        // <cstddef> and std::size_t, spelled out. Apple's libc++ drags size_t
-        // into scope through <vector> and libstdc++ does not, so the bare name
-        // compiled on the Mac and stopped the build on the Linux box - which
-        // is the third machine earning its keep on the day it was added.
+        // std::vector on purpose: if the C++ runtime did not reach the link, this says so at link
+        // time. <cstddef> and std::size_t spelled out: Apple's libc++ drags size_t in through
+        // <vector> and libstdc++ does not, so the bare name stopped the Linux box on the day it was added.
         writeFile(three / "engine" / "engine.cpp",
                   "#include <cstddef>\n#include <vector>\n\n"
                   "extern \"C\" int spin(int n)\n{\n"
@@ -2556,13 +2344,9 @@ void aCompilerPerGroup(const std::string& ride, const std::string& cc1,
     file::remove_all(dir);
 }
 
-// Which item you are already on, marked in the menu that offers it.
-//
-// The status bar carries some of this - cc1* means the language chose it - but
-// not all: a .c file reads "C" whether that came from its name or from
-// somebody picking Language > C by hand, and there is nowhere else that says
-// which. A menu that lists five compilers without saying which one you are on
-// is a menu that sends you to the other end of the screen to find out.
+// Which item you are already on, marked in the menu that offers it. The status bar carries some of
+// this - cc1* means the language chose it - but a .c reads "C" whether from its name or from
+// Language > C by hand, and nowhere else says which. A menu of five compilers that does not say which you are on sends you across the screen to find out.
 void theMenuSaysWhereYouAre(const std::string& ride) {
     std::printf("the menu marks what you are already on\n");
 
@@ -2578,10 +2362,9 @@ void theMenuSaysWhereYouAre(const std::string& ride) {
     check(onScreen(fresh, "\xe2\x80\xa2 By language"), "the compiler nobody chose is marked");
     check(onScreen(fresh, "  c90"), "and the ones nobody is on are not");
 
-    // Choose cc1 - one down from By language - and the mark moves with it.
-    // The second F10 is bare. A menu reopens on the column it was left on, so
-    // walking right again from Tools lands somewhere else entirely - which is
-    // the hazard this suite has been caught by more than once.
+    // Choose cc1 - one down from By language - and the mark moves with it. The second F10 is bare:
+    // a menu reopens on the column it was left on, so walking right again from Tools lands
+    // somewhere else - the hazard this suite has been caught by more than once.
     Screen chose = drive(ride, arguments, toTools + kDown + kEnter + toTools + ctrl('q'), dir);
     check(onScreen(chose, "\xe2\x80\xa2 c90"), "choosing one marks it");
     check(!onScreen(chose, "\xe2\x80\xa2 By language"), "and unmarks what it replaced");
@@ -2623,8 +2406,7 @@ void theDebugMenuGroups(const std::string& ride, const std::string& shc) {
     const std::string toDebug = kF10 + times(kRight, 4);
     Screen grouped = drive(ride, arguments, toDebug + ctrl('q'), dir);
     check(onScreen(grouped, "Start / continue"), "the Debug menu opens");
-    // A rule joins the sides of the box, so its ends are the tee characters
-    // the panel's own rules use - which is how it is told from a plain row.
+    // A rule joins the sides of the box, so its ends are the tee characters the panel's own rules use - how it is told from a plain row.
     check(onScreen(grouped, "\xe2\x94\x9c"), "and is grouped by a rule across it");
 
     // Down from Start / continue reaches Debug project and then, stepping over
@@ -2672,21 +2454,16 @@ void theHelpMenu(const std::string& ride) {
     check(onScreen(shown, "three languages"), "and a line saying what that page is about");
     check(wasShown(shown, "help/"), "and says where the pages themselves are");
 
-    // The version is not written out twice: help::contents() asks
-    // about::version() for it. A contents and an About that disagreed about
-    // which version this is would be the sort of thing nobody notices for a
-    // year.
+    // The version is not written out twice: help::contents() asks about::version() for it. A
+    // contents and an About that disagreed about which version this is would be the sort of thing
+    // nobody notices for a year.
     Screen about = drive(ride, arguments, kF10 + times(kRight, 9) + times(kDown, 2) + kEnter +
                                              ctrl('q'), dir);
     check(onScreen(about, "RIDE"), "Help > About still names the product");
 
-    // F1 is the keys and is not the same thing as the contents.
-    // The keys are longer than the seven rows the panel shows and it opens at
-    // the top, so what is checked has to be near the top of the listing.
-    // wasShown does not help either: the editor writes only the rows the panel
-    // is showing, so a line below the fold never reaches the terminal at all -
-    // which is what stops it flickering and is also why it cannot be checked
-    // from out here without scrolling to it first.
+    // F1 is the keys and is not the contents. The keys run past the seven rows the panel shows and
+    // it opens at the top, so what is checked has to be near the top; wasShown does not help, since
+    // the editor writes only the rows the panel shows and a line below the fold never reaches the terminal at all.
     Screen keys = drive(ride, arguments, kF1 + ctrl('q'), dir);
     check(onScreen(keys, "these keys"), "F1 shows the keys");
     check(!onScreen(keys, "the manual"), "which is a different screen from the contents");
@@ -2695,11 +2472,9 @@ void theHelpMenu(const std::string& ride) {
 }
 
 
-// The audit of 2026-09-19, and what it mended: a Shalimar file made in the
-// editor builds (F9); Rename, Delete and Move to group are on the Project
-// menu (F8); the Target and Tools choices are the project's while one is
-// open and reach its .pro (F1, F2); Ctrl-Q leaves the way File > Quit does,
-// the front file remembered (F10).
+// The audit of 2026-09-19, and what it mended: a Shalimar file made in the editor builds (F9);
+// Rename, Delete and Move to group are on the Project menu (F8); the Target and Tools choices are
+// the project's while one is open and reach its .pro (F1, F2); Ctrl-Q leaves as File > Quit does, the front file remembered (F10).
 void theAuditMends(const std::string& ride, const std::string& shc) {
     std::printf("the audit's mends: Shalimar in the build, the three file operations, "
                 "the project's target and compiler\n");
@@ -2767,10 +2542,9 @@ int main(int argc, char** argv) {
     std::string shc;
 
     if (argc > 1) ride = argv[1];
-    // Named in the environment rather than positionally: an empty CC1 on a
-    // make line collapses, and the compiler after it then arrives as the one
-    // before - which reads as fifty debugger failures and is nothing of the
-    // kind.
+    // Named in the environment rather than positionally: an empty CC1 on a make line collapses,
+    // and the compiler after it then arrives as the one before - which reads as fifty debugger
+    // failures and is nothing of the kind.
     if (argc > 2) cc1 = argv[2];
     if (cc1.empty()) {
         const char* fromEnv = std::getenv("CC1");
@@ -2814,10 +2588,9 @@ int main(int argc, char** argv) {
         c2s.clear();
     }
 
-    // A compiler named but not there is worse than none named: every case that
-    // needs it fails, and none of them says why. Dropped with a word, so the
-    // cases skip themselves as they do when nothing was named at all. A path
-    // with a ~ in it is the way this happens - make does not expand one.
+    // A compiler named but not there is worse than none named: every case that needs it fails, and
+    // none says why. Dropped with a word, so the cases skip themselves as they do when nothing was
+    // named. A path with a ~ in it is the way this happens - make does not expand one.
     if (!cc1.empty() && !editor::path::exists(cc1)) {
         std::printf("no cc1 at %s - the cases that need one are not tried\n\n", cc1.c_str());
         cc1.clear();

@@ -177,12 +177,9 @@ std::string temporaryDirectory(const char* what) {
 
 int runCaptured(const std::string& command, std::string& output,
                 LineSink sink, void* context) {
-    // Nothing run from here has any business reading the editor's own input.
-    // A compiler that inherits it consumes the keystrokes the editor has not
-    // read yet, and on Windows that ended the session: the editor's next read
-    // saw end of file and it quit, so every key pressed after a build was
-    // silently the last one. The run step always said this; the build step
-    // did not, and only the build step is a child that might.
+    // Nothing run from here may read the editor's own input: a compiler that inherits it eats the
+    // keystrokes not yet read, and on Windows the editor's next read saw end of file and quit, so
+    // every key after a build was silently the last. The run step said this; the build step did not.
 #ifdef _WIN32
     const char* noInput = " < NUL";
 #else
@@ -225,15 +222,9 @@ int runCaptured(const std::string& command, std::string& output,
 
 namespace {
 
-// A build whose program cannot be written where it would go - the project's
-// own directory, as a rule - is refused before any compiler runs, and the
-// refusal names the directory and what to do about it. Found the hard way:
-// RIDE 4.0's installer starts the editor in its own examples\ under Program
-// Files, where a normal user may read and not write, and the build then died
-// in the linker with "LNK1104: cannot open file ...demo.exe" under a hint
-// about vcvars64.bat, neither of which is the matter. A directory is
-// writable if a file can be made in it; the read-only attribute _access
-// answers with is not what UAC withholds.
+// A build whose program cannot be written where it would go - the project's own directory, as a
+// rule - is refused before any compiler runs, and the refusal names the directory and what to do.
+// A directory is writable if a file can be made in it; the read-only attribute _access answers with is not what UAC withholds.
 std::string unwritable(const std::string& program) {
     if (program.empty()) return std::string();
     std::string dir = path::parent(program);
@@ -281,10 +272,9 @@ void setAskNative(AskNative ask, void* context) {
     askNativeContext = context;
 }
 
-// Whether a failed build is one the native tools might make: it failed, the
-// compilers found no fault in the source (a fault of the user's is not the
-// tools'), one of the project's own tools was in play for this target, and
-// the settings say to ask. What the question names is what was in play.
+// Whether a failed build is one the native tools might make: it failed, the compilers found no
+// fault in the source (a fault of the user's is not the tools'), one of the project's own tools
+// was in play for this target, and the settings say to ask. The question names what was in play.
 bool nativeFallbackWanted(bool ok, bool sourceFault, const std::string& arch,
                           std::string& question) {
     question.clear();
@@ -314,10 +304,9 @@ bool nativeFallbackWanted(bool ok, bool sourceFault, const std::string& arch,
 
 namespace {
 
-// The build again through the native tools, when the front end says yes to
-// the question; the answer to the first build stands otherwise. The
-// recipes read the settings as they go, so forcing native for the retry is
-// the whole switch: assembler(), linker() and tilinker() answer nothing.
+// The build again through the native tools, when the front end says yes to the question; the
+// first build's answer stands otherwise. The recipes read the settings as they go, so forcing
+// native for the retry is the whole switch: assembler(), linker() and tilinker() answer nothing.
 template <class Again>
 Built withNativeFallback(Built first, const std::string& arch, LineSink sink, void* context,
                          Again again) {
@@ -482,11 +471,9 @@ bool copyText(const std::string& from, const std::string& to) {
     return ok;
 }
 
-// The linker command file lnk6x needs: one flat memory for the C6747 with
-// every section the compilers and TI's runtime write placed in it - the
-// same file VM6747/Emulator/tests/ti.sh links the corpus with.
-// A function and not a std::string global: see debugger.cpp - the window is
-// mixed-mode, and a native global with a destructor killed it before main.
+// The linker command file lnk6x needs: one flat memory for the C6747 with every section the
+// compilers and TI's runtime write placed in it - the file VM6747/Emulator/tests/ti.sh links with.
+// A function and not a std::string global: see debugger.cpp - a native global with a destructor killed the mixed-mode window before main.
 std::string tiLinkCmd() {
     return
     std::string("/* one flat memory for the C6747 and every section in it - written by ") + product::kName + " */\n" +
@@ -510,15 +497,9 @@ std::vector<std::string> assemblyIn(const std::string& dir) {
     return found;
 }
 
-// **A tms6747 build made a real TI program too.** What the emulator runs is
-// the assembly in <program>.vm; with asm6x beside the editor each .s of it
-// becomes a TI object, and with TI's compiler directory named under Tools
-// lnk6x links them - the Shalimar runtime's objects beside a Shalimar
-// program's - against TI's runtime into <program>.out, the file CCS would
-// load onto a C6747. Neither step is needed to run on the emulator, which
-// reads the assembly, and neither runs here: the .out is for the board. An
-// assembler that refuses, or a link that fails, fails the build - what the
-// emulator runs must be a TI program, or the emulator is proving nothing.
+// **A tms6747 build makes a real TI program too.** The emulator runs the assembly in <program>.vm;
+// with asm6x beside the editor each .s becomes a TI object, and with TI's compiler directory named
+// under Tools lnk6x links them into <program>.out for the board. A refusal or a failed link fails the build: what the emulator runs must be a TI program.
 void makeTiProgram(Built& result, const std::string& program, LineSink sink, void* context) {
     if (!result.ok) return;
     std::string as = c6xAssembler();
@@ -560,10 +541,9 @@ void makeTiProgram(Built& result, const std::string& program, LineSink sink, voi
         if (sink) sink(context, "[" + std::to_string(objects.size()) + " TI objects made; a .out needs TI's linker, named under Tools]");
         return;
     }
-    // The project's own C6000 linker where one is named, TI's otherwise;
-    // the runtime and the command file are TI's either way - see
-    // settings::tilinker and tiLinker, which also says when a linker that was
-    // named has gone, so that TI's standing in for it is never silent.
+    // The project's own C6000 linker where one is named, TI's otherwise; the runtime and the
+    // command file are TI's either way. See settings::tilinker and tiLinker, which also says when
+    // a linker that was named has gone, so that TI's standing in for it is never silent.
     LinkerChoice choice = tiLinker(settings::tilinker(), settings::namedTilinker(), ti);
     if (choice.path.empty()) {
         result.ok = false;
@@ -613,10 +593,9 @@ void makeTiProgram(Built& result, const std::string& program, LineSink sink, voi
 LinkerChoice tiLinker(const std::string& chosen, const std::string& named,
                       const std::string& tiDir) {
     LinkerChoice choice;
-    // --tilinker skips the check settings::tilinker() makes, so a path typed
-    // wrong arrives here whole. It is a choice stated for this run: say that
-    // it is not there, rather than falling through to TI's and failing with
-    // TI's directory named, which is not what went wrong.
+    // --tilinker skips the check settings::tilinker() makes, so a path typed wrong arrives here
+    // whole. It is a choice stated for this run: say that it is not there, rather than falling
+    // through to TI's and failing with TI's directory named, which is not what went wrong.
     if (!chosen.empty() && !path::exists(chosen)) {
         choice.say = "the linker named for tms6747 is not there: " + chosen;
         return choice;
@@ -714,10 +693,9 @@ Built buildPartsOnce(const Toolchain& tool, const std::vector<Part>& parts,
     }
     if (refusedUnwritable(program, result, sink, context)) return result;
 
-    // One part is its compiler's own link - unless the project names
-    // libraries, which cc1 and cxx1 do not take: those go to the host's
-    // linker below, with the objects. The emulated target links nothing and
-    // a Shalimar program links its own runtime, so those two stay.
+    // One part is its compiler's own link - unless the project names libraries, which cc1 and
+    // cxx1 do not take: those go to the host's linker below, with the objects. The emulated
+    // target links nothing and a Shalimar program links its own runtime, so those two stay.
     if (parts.size() == 1) {
         ToolchainKind only = toolchainOf(tool, parts[0]);
         if (tool.libraries.empty() || isEmulated(arch) || only == ToolShc)
@@ -786,16 +764,9 @@ Built buildPartsOnce(const Toolchain& tool, const std::vector<Part>& parts,
     int linked = runCaptured(link.command, result.output, sink, context);
 
 #ifdef __APPLE__
-    // **The DWARF is in the objects, and the objects are about to go.** On a
-    // Mac the linker leaves debug information where the compiler wrote it
-    // and puts a map to those files in the program; lldb follows the map. The
-    // driver runs dsymutil to gather it into a .dSYM only when it compiled
-    // the sources itself - a link of objects, which is all this is, gets no
-    // bundle however many -g it is given. So the bundle is asked for here,
-    // before the objects are removed, or a breakpoint in a project of two
-    // compilers stops nowhere and says nothing about why. Found when the
-    // first cc1-and-cxx1 project was put under the debugger; a one-compiler
-    // project never saw it because its compiler links the sources itself.
+    // **The DWARF is in the objects, and the objects are about to go.** On a Mac the linker leaves
+    // debug information in the objects and maps to them; only a driver that compiled the sources runs dsymutil, and a link of objects gets no bundle however many -g it is given.
+    // So the bundle is asked for here, or a breakpoint in a project of two compilers stops nowhere.
     if (linked == 0 && config == ConfigDebug)
         runCaptured("dsymutil \"" + program + "\"", result.output, sink, context);
 #endif
@@ -855,11 +826,9 @@ void removeProgram(const Built& built) {
     for (size_t i = 0; i < built.leftovers.size(); ++i)
         std::remove(built.leftovers[i].c_str());
 #ifdef __APPLE__
-    // The .dSYM a debug build leaves beside the program - the compiler's
-    // driver makes one for a single file, buildParts makes one for a project
-    // - is a directory, and std::remove does not take those. Left behind, a
-    // temporary directory filled with ride-run-<pid>.dSYM bundles, one per
-    // F8, which is how this was noticed.
+    // The .dSYM a debug build leaves beside the program - the compiler's driver makes one for a
+    // single file, buildParts for a project - is a directory, and std::remove does not take those.
+    // Left behind, the temporary directory filled with ride-run-<pid>.dSYM bundles, one per F8.
     if (!built.program.empty()) path::removeTree(built.program + ".dSYM");
 #endif
 }

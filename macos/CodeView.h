@@ -33,8 +33,7 @@
 
 // Put one line's leading space where the rules say it belongs.
 - (void)realignRow:(NSInteger)row;
-// Edit > Re-indent: the selected lines, or the whole file with nothing
-// selected. The whole file is always measured.
+// Edit > Re-indent: the selected lines, or the whole file with nothing selected; the whole file is always measured.
 - (void)reindentSelectionOrAll;
 
 // Replace a range as a user edit would: undoable, and announced.

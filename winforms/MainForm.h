@@ -26,16 +26,12 @@ value struct Spot {
     int y;
 };
 
-// The file tabs, with a close × built into the tab view itself. It owner-draws
-// each tab (name, then a × at the right) and hit-tests clicks on the ×, raising
-// TabCloseRequested(index) - so the close button is part of the control rather
-// than something painted over it from outside.
+// The file tabs, with a close × in the tab view itself: it owner-draws each tab, hit-tests the × and raises TabCloseRequested(index), so the close button is part of the control.
 public delegate void TabCloseHandler(int index);
 
-// The build's question - the project's own masm/link/lnk6x did not build it,
-// use the native tools instead? - as the window asks it. A plain function so
-// the bridge can hold its address; MessageBox needs no owner, and the build
-// may be on the worker thread, whose own message loop shows it.
+// The build's question - the project's own masm/link/lnk6x did not build it, use the native tools
+// instead? - as the window asks it. A plain function so the bridge can hold its address;
+// MessageBox needs no owner, and the build may be on the worker thread, whose own message loop shows it.
 static int AskNativeInWindow(const char* question) {
     String^ text = gcnew String(question, 0, static_cast<int>(std::strlen(question)),
                                 System::Text::Encoding::UTF8);
@@ -148,11 +144,9 @@ protected:
 
     static String^ ProductName() { return gcnew String(ride_product_name()); }
 
-    // The window title: the product and its version, then the project it is in,
-    // then the file in front - "RIDE 4.5 - demo - main.c". With no project it
-    // is "RIDE 4.5 - main.c"; with neither, just "RIDE 4.5". One place, so
-    // opening a file, loading or closing a project and saving-as all say it the
-    // same way.
+    // The window title: the product and its version, then the project it is in, then the file in
+    // front - "RIDE 4.5 - demo - main.c"; "RIDE 4.5 - main.c" with no project, "RIDE 4.5" with
+    // neither. One place, so opening, loading or closing a project and saving-as all say it the same way.
     void RefreshTitle() {
         String^ title = ProductName() + " " + FromUtf8(ride_version());
         String^ project = project_ == nullptr ? nullptr
@@ -318,12 +312,9 @@ private:
         arch_ = "x86_64-windows";
         ride_ask_native(AskNativeInWindow);
 
-        // The i-line names, since 3.5: the compilers docked beside the editor
-        // are c90, cpp11 and shalimar (the Toolchain struct defaults to the same).
-        // Named looks for "<name>.exe" beside the editor, so the plain names
-        // used to find a stale cc1.exe / cxx1.exe left over from a 3.0 build in
-        // the same directory - an old cc1 then read a project's .cpp as C and
-        // said "expected a type". cl stays the host compiler, found on PATH.
+        // The i-line names, since 3.5: the compilers docked beside the editor are c90, cpp11 and
+        // shalimar. Named looks for "<name>.exe" beside the editor, so the plain names used to find a
+        // stale cc1.exe left from a 3.0 build, which read a .cpp as C. cl stays the host compiler, found on PATH.
         cc1_ = Named("C90", "c90");
         cl_ = Named("CL", "cl");
         shc_ = Named("SHALIMAR", "shalimar");
@@ -394,10 +385,9 @@ private:
 
     void Lay() {
         RefreshTitle();
-        // The icon the exe carries (winforms/RIDEGui.rc, resource 1), for
-        // the title bar and the taskbar; a build without it keeps the
-        // default. Through LoadIcon rather than .NET's ExtractAssociatedIcon,
-        // whose name <windows.h> rewrites into a Win32 call.
+        // The icon the exe carries (winforms/RIDEGui.rc, resource 1), for the title bar and the
+        // taskbar; a build without it keeps the default. Through LoadIcon rather than .NET's
+        // ExtractAssociatedIcon, whose name <windows.h> rewrites into a Win32 call.
         HICON loaded = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(1));
         if (loaded != NULL) Icon = System::Drawing::Icon::FromHandle(IntPtr(loaded));
         Width = 1100;
@@ -889,10 +879,9 @@ private:
         return root;
     }
 
-    // {app} is the folder above bin\, where RIDE.exe lives. Projects and single
-    // programs are the user's, so they default under Documents\RIDE\projects and
-    // Documents\RIDE\programs - as the macOS window has them - and not beside the
-    // install, which under Program Files is not the user's to write. Made on demand.
+    // {app} is the folder above bin\, where RIDE.exe lives. Projects and single programs are the
+    // user's, so they default under Documents\RIDE\projects and \programs - as the macOS window
+    // has them - and not beside the install, which under Program Files is not the user's to write. Made on demand.
     String^ AppDir() {
         try {
             System::IO::DirectoryInfo^ above =
@@ -1177,10 +1166,9 @@ private:
         PaneFollowsTabs();
         files_->TabPages->Add(sheet->page);
         files_->SelectedTab = sheet->page;
-        // The first tab of an empty environment is selected as it is
-        // added, and selecting it again raises no change - so the sheet is
-        // made current here, not left to the event. Without this, File >
-        // New after an empty start had a sheet nothing could paste into.
+        // The first tab of an empty environment is selected as it is added, and selecting it again
+        // raises no change - so the sheet is made current here, not left to the event. Without
+        // this, File > New after an empty start had a sheet nothing could paste into.
         OnSheetChanged(nullptr, nullptr);
         return sheet;
     }
@@ -2315,8 +2303,7 @@ private:
 
     enum class PaneMode { PaneProject, PaneFiles };
     PaneMode paneMode_;
-    // Set once Start() has opened what the command line and the project
-    // asked for; LoadProject opens the project's file only after that.
+    // Set once Start() has opened what the command line and the project asked for; LoadProject opens the project's file only after that.
     bool started_ = false;
 
     void OnRemoveFromProject(Object^, EventArgs^) {
@@ -2459,10 +2446,9 @@ private:
         what_->Text = "c90 and cpp11 assemble through " + pick->FileName + " - written to " + file;
     }
 
-    // The project's own linkers - LINK's for x86_64-windows in place of
-    // link.exe, LNK6X's for tms6747 in place of TI's lnk6x - each named by its
-    // path; Cancel keeps what is named, and the console front end's `-`
-    // clears it. One picker serves both, told which setting it is for.
+    // The project's own linkers - LINK's for x86_64-windows in place of link.exe, LNK6X's for
+    // tms6747 in place of TI's lnk6x - each named by its path; Cancel keeps what is named, and the
+    // console front end's `-` clears it. One picker serves both, told which setting it is for.
     void PickLinker(bool ti) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
@@ -2488,11 +2474,9 @@ private:
     void OnLocateLinker(Object^, EventArgs^) { PickLinker(false); }
     void OnLocateTilinker(Object^, EventArgs^) { PickLinker(true); }
 
-    // TI's C6000 compiler directory (CCS's ti-cgt-c6000_x.y.z), whose lnk6x
-    // links what asm6x made of a tms6747 build into a .out - and a second
-    // directory, asked for next, for the exception-handling runtime CCS does
-    // not ship (Cancel there keeps none). The console front end's `-` clears
-    // the setting; here, clear it by hand in settings.json.
+    // TI's C6000 compiler directory (CCS's ti-cgt-c6000_x.y.z), whose lnk6x links what asm6x made
+    // of a tms6747 build into a .out - and a second directory, asked for next, for the exception-
+    // handling runtime CCS does not ship (Cancel there keeps none). Clear the setting by hand in settings.json; the console's `-` does it there.
     void OnLocateTi(Object^, EventArgs^) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
@@ -2521,8 +2505,7 @@ private:
         what_->Text = "a tms6747 build links a .out with " + dir + " - written to " + file;
     }
 
-    // The last three projects remembered, named at the end of the Project
-    // menu; an entry whose project is gone is not shown.
+    // The last three projects remembered, named at the end of the Project menu; one whose project is gone is not shown.
     System::Collections::Generic::List<ToolStripMenuItem^>^ recentItems_;
 
     void RefreshRecent() {
@@ -2663,10 +2646,9 @@ private:
         String^ was = FromUtf8(ride_project_name(project_));
         RememberOpen();
 
-        // The project's files go with it - every file it lists that is
-        // open; one merely under its directory stays - each unsaved one
-        // asking first, and one refusal keeps the project open with
-        // everything as it was.
+        // The project's files go with it - every file it lists that is open; one merely under its
+        // directory stays - each unsaved one asking first, and one refusal keeps the project open
+        // with everything as it was.
         System::Collections::Generic::List<Sheet^>^ theirs = gcnew System::Collections::Generic::List<Sheet^>();
         for (int i = 0; i < sheets_->Count; ++i) {
             if (sheets_[i]->path == nullptr) continue;
@@ -3206,15 +3188,9 @@ private:
         array<Byte>^ archBytes = Utf8Of(arch_);
         pin_ptr<Byte> arch = &archBytes[0];
 
-        // **Every part, not the target as a whole.** A group of C and C++ is
-        // split into a part each, and the build sends each to its own compiler
-        // through toolKind_ (Auto for an auto project) - so the build call must
-        // pass toolKind_, not a single kind resolved from the first part's
-        // language. Resolving the whole target to that one kind forced every
-        // part to the first language's compiler: a .cpp went to cc1, which read
-        // `virtual` as C and said "expected a type" while the status bar,
-        // resolving the open file on its own, still showed cxx1. The check and
-        // the header ask the same question of each part that buildParts will.
+        // **Every part, not the target as a whole.** A group of C and C++ is split into a part each
+        // and the build sends each to its own compiler through toolKind_, so the build call must
+        // pass toolKind_, not one kind resolved from the first part: that sent a .cpp to cc1, which said "expected a type" while the status bar showed cxx1.
         int parts = ride_project_target_parts(project_);
         System::Collections::Generic::List<String^>^ compilers =
             gcnew System::Collections::Generic::List<String^>();
@@ -4040,8 +4016,7 @@ private:
         }
     }
 
-    // The compilers' names are what the user sees - c90, cpp11, shalimar, from
-    // product.h - so there is nothing left to translate for display.
+    // The compilers' names are what the user sees - c90, cpp11, shalimar, from product.h - so there is nothing left to translate.
     String^ PrettyCompiler(String^ name) { return name; }
 
     void ShowChoices() {
@@ -4102,10 +4077,9 @@ private:
         ShowChoices();
         what_->Text = "release";
     }
-    // The target and the compiler are the project's while one is open -
-    // written to its .pro, as the manual promised - and the installation's
-    // default otherwise. Until 2026-09-19 the Target menu wrote nothing and
-    // the Tools menu wrote settings.json whatever was open.
+    // The target and the compiler are the project's while one is open - written to its .pro, as
+    // the manual promised - and the installation's default otherwise. Until 2026-09-19 the Target
+    // menu wrote nothing and the Tools menu wrote settings.json whatever was open.
     String^ WrittenToProject(int outcome) {
         if (outcome != 0) return " - written to " + System::IO::Path::GetFileName(OutcomePath());
         return " - but " + FromUtf8(ride_outcome_message(project_));

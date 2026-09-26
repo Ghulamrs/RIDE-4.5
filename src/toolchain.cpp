@@ -51,16 +51,7 @@ std::string quoteDirectory(const std::string& s) {
 
 #ifdef _WIN32
 
-// Nothing asked from here reads the editor's input, and one of these was: cmd
-// running vcvars64.bat to hand back its environment inherits stdin, and read
-// it to the end while the parent drained the answer. stdin is the editor's
-// keystrokes, so after the first build there were none left - every key
-// pressed after it was silently the last one, and the editor quit on what it
-// took for end of input.
-//
-// The redirect is on a parenthesised block, not on the command: in a '&&'
-// chain cmd binds '< NUL' to the one command it follows, so the obvious
-// spelling left the 'call' still reading.
+// Nothing asked from here may read the editor's input - cmd running vcvars64.bat did, and ate the keystrokes - and the redirect goes on a parenthesised block, since in a '&&' chain cmd binds '< NUL' to the one command it follows.
 std::string forCmd(const std::string& s) { return "\"( " + s + " ) < NUL\""; }
 
 std::string firstLineOf(const std::string& command) {
@@ -77,10 +68,9 @@ std::string firstLineOf(const std::string& command) {
     return line;
 }
 
-// The batch file that puts cl, ml64 and link on PATH and LIB where they can
-// be found: named in the settings when a person had to, else the newest
-// Visual Studio vswhere knows of - any version, any edition, Build Tools
-// included - and failing vswhere, the places the installer puts them.
+// The batch file that puts cl, ml64 and link on PATH and LIB where they can be found: named in
+// the settings when a person had to, else the newest Visual Studio vswhere knows of - any
+// version, any edition, Build Tools included - and failing vswhere, the places the installer puts them.
 std::string findVcvars() {
     std::string named = settings::vcvars();
     if (!named.empty()) return named;
@@ -350,17 +340,9 @@ std::string configFlags(ToolchainKind kind, Configuration config,
     if (kind == ToolShc)
         return config == ConfigDebug && !isEmulated(arch) ? std::string(" --debug") : std::string();
 
-    // **cxx1's own -O2, not cl's.** This line passed `-O2` for a long time
-    // while cxx1 had no optimiser and no -O flag at all: it refused the switch
-    // ("unknown option -O2") and every Release C++ build failed, unseen only
-    // because the editor defaults to Debug. cxx1 now implements -O1 and -O2 on
-    // its instruction IR - lea fusion, copy propagation, a register and
-    // liveness model - so the switch is real and Release asks for it. On
-    // Compiler++'s sixteen units it takes .text from +54.6% over cl /O2 to
-    // +20.6%, and compiles faster than -O0 for having less assembly to write.
-    // -O2 is -O1 today; the favour-space/favour-speed split is not written yet.
-    // That -O2 went to the host's c++ alone until 2026-09-26, so a Release build
-    // with c90 or cpp11 was never optimised; both take their own -O2 now.
+    // **cxx1's own -O2, not cl's.** This line passed -O2 while cxx1 had no -O flag at all, so every
+    // Release C++ build failed, unseen because the editor defaults to Debug; cxx1 implements -O1
+    // and -O2 now. Until 2026-09-26 -O2 went to the host's c++ alone; c90 and cpp11 take their own now.
     if (kind == ToolCxx)
         return config == ConfigRelease ? " -O2 -DNDEBUG=1" : " -g -D_DEBUG=1";
 
@@ -484,8 +466,7 @@ std::string mine(const std::string& what) {
     return tempDir() + kSep + what + "-" + id;
 }
 
-// "ride-run", "ride-objs": the temporary names a build leaves, made from the
-// product's name. mine() adds this process's id to each.
+// "ride-run", "ride-objs": the temporary names a build leaves, from the product's name; mine() adds this process's id.
 std::string productNamed(const char* what) { return std::string(product::kLower) + "-" + what; }
 
 std::string programPath() {
@@ -556,12 +537,9 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
         path::makeDirectories(dir);
         recipe.assemblyPath = dir;
         if (kind == ToolShc) {
-            // A Shalimar program is one compilation: the file with main() and
-            // the files beside it that it calls into, which shc compiles as one
-            // - a library file on its own has no main() and is refused. So all
-            // the sources go in one command, and one .s comes out.
-            // Named after the program without the .exe Windows gives it, as
-            // the .vm directory is: prog.s in prog.vm, on every host.
+            // A Shalimar program is one compilation: the file with main() and the files it calls
+            // into, which shc compiles as one - a library file alone has no main() and is refused.
+            // One command, one .s, named after the program without Windows's .exe, as the .vm directory is.
             std::string stem = path::filename(emulatedProgram(program));
             stem.resize(stem.size() - 3);
             recipe.command = quote(programOf(tool, kind)) + named + " -S" + archFlag(kind, arch) + " -o " +
@@ -742,11 +720,9 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
-    // cc1 and cxx1 take sources only, so a library rides on F4, where the
-    // objects are linked by the host; the machine's own C++ takes them here.
-    // assemblerFlag as on F4: without it cpp11 writes the GNU spelling and
-    // hands masm.exe clang's command line - "usage: asm -t x64 ..." was what
-    // Run file on smart.cpp said in the first 4.0 install, F4 being fine.
+    // cc1 and cxx1 take sources only, so a library rides on F4, where the host links the objects;
+    // the machine's own C++ takes them here. assemblerFlag as on F4: without it cpp11 writes the
+    // GNU spelling and hands masm.exe clang's command line - "usage: asm -t x64 ..." in the first 4.0 install.
     recipe.command = quote(program) + " " + quote(source) + " -o " +
                      quote(recipe.assemblyPath) + configFlags(kind, config, arch) +
                      assemblerFlag(kind, arch) + includeFlags(tool, kind) +
@@ -834,10 +810,9 @@ bool prepareFor(ToolchainKind kind) {
     _putenv_s("C90_AS", as.c_str());
     _putenv_s("CPP11_AS", as.c_str());
     _putenv_s("SHALIMAR_AS", as.c_str());
-    // And the linker for x86_64-windows the same way, where one is named:
-    // each compiler links its own program through what *_LD says, else
-    // link.exe. An empty value unsets the variable, which is what a yes to
-    // the native tools needs (settings::forceNative).
+    // And the linker for x86_64-windows the same way, where one is named: each compiler links its
+    // own program through what *_LD says, else link.exe. An empty value unsets the variable,
+    // which is what a yes to the native tools needs (settings::forceNative).
     std::string ld = settings::linker();
     _putenv_s("C90_LD", ld.c_str());
     _putenv_s("CPP11_LD", ld.c_str());

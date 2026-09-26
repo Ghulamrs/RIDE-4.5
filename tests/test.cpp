@@ -19,10 +19,9 @@
 #include "help.h"
 #include "about.h"
 
-// The seam the window is built on. It is tested from here because the window
-// itself only runs on Windows, where cc1 emits MASM and there is no debugging
-// to be had - so the one machine that can run the GUI is the one machine that
-// cannot exercise what it calls.
+// The seam the window is built on, tested from here because the window itself only runs on
+// Windows, where cc1 emits MASM and there is no debugging to be had - so the one machine that can
+// run the GUI is the one machine that cannot exercise what it calls.
 #include "bridge.h"
 #include "compile.h"
 #include "convert.h"
@@ -37,9 +36,7 @@
 #include "workspace.h"
 #include "utf8.h"
 
-// What these tests used of <filesystem>, which is C++17 and so not here: a path
-// that can be joined with /, and three operations. Over src/path.cpp, the same
-// code the editor itself uses.
+// What these tests used of <filesystem>, which is C++17 and so not here, over src/path.cpp - the same code the editor uses.
 namespace file {
 
 struct path {
@@ -420,10 +417,9 @@ void routing() {
     check(editor::hostCppToolchain() == editor::ToolMsvc,
           "the host's C++ compiler is cl, on Windows");
 #else
-    // This used to say ToolMsvc on every machine, which meant a C++ file on a
-    // Mac was routed to a compiler that is not installed there and never could
-    // be - so a project of C and C++ could only ever have been built on
-    // Windows, however well the rest of it worked.
+    // This used to say ToolMsvc on every machine, which meant a C++ file on a Mac was routed to a
+    // compiler that is not installed there and never could be - so a project of C and C++ could
+    // only ever have been built on Windows, however well the rest of it worked.
     check(editor::hostCppToolchain() == editor::ToolCxx,
           "the host's C++ compiler is c++ here, there being no cl to go to");
     check(editor::canCompile(editor::ToolCxx, editor::LangCpp), "which can take it");
@@ -574,8 +570,7 @@ void routing() {
         check(editor::whyNotRun(editor::ToolCc1, every[i]).size() < 80,
               "in a line the status bar can show whole - " + every[i]);
 
-    // cl builds for the machine it was installed on and is handed no target at
-    // all, so the target menu cannot make it unrunnable.
+    // cl builds for the machine it was installed on and is handed no target, so the target menu cannot make it unrunnable.
     check(editor::runsHere(editor::ToolMsvc, elsewhere), "cl builds for its own host either way");
 
     // The recipe that makes a program rather than assembly: cc1 with neither -S
@@ -594,10 +589,9 @@ void routing() {
     size_t named = program.assemblyPath.find(stem);
     check(named != std::string::npos, "and gives it a name of this editor's own");
 
-    // The digit sits straight after the stem, and the offset is taken from the
-    // stem's own length rather than written as a number. It was written as 8,
-    // which was the length of the name before this one, and it went on looking
-    // like a fact about process ids right up until the name changed.
+    // The digit sits straight after the stem, and the offset is taken from the stem's own length
+    // rather than written as a number. It was written as 8, the length of the name before this one,
+    // and went on looking like a fact about process ids right up until the name changed.
     size_t digit = named + stem.size();
     check(digit < program.assemblyPath.size() &&
               program.assemblyPath[digit] >= '0' && program.assemblyPath[digit] <= '9',
@@ -1072,10 +1066,9 @@ void projects() {
     check(read.groups()[0].name == "Sources", "and the groups keep their order");
     check(read.toolchain() == editor::ToolMsvc, "the compiler choice survives");
 
-    // Debug or release is deliberately *not* in here since 2026-08-23. It is
-    // what you are building today rather than what the program is, and a
-    // project file travels - it should not arrive telling whoever opens it
-    // which configuration to be in. It lives in the machine's own settings.
+    // Debug or release is deliberately *not* in here since 2026-08-23. It is what you are building
+    // today rather than what the program is, and a project file travels - it should not arrive
+    // telling whoever opens it which configuration to be in. It lives in the machine's own settings.
     std::string onDisk;
     {
         std::ifstream f(read.file().c_str());
@@ -1338,13 +1331,9 @@ void projects() {
             check(typo.say.find(bin) == std::string::npos,
                   "TI's install is not blamed for a flag typed wrong");
         }
-        // The question a build asks when the project's own tools failed it.
-        // Ours are the tools by default; "askNative" decides whether a
-        // failure asks to go to the vendor's - and only when the vendor's
-        // are on this machine - and a yes builds again with the four
-        // settings answering nothing. tms6747 serves every host here, TI's
-        // lnk6x being the fake one under tibin; x86_64-windows only where
-        // Visual Studio is.
+        // The question a build asks when the project's own tools failed it. Ours are the tools by
+        // default; "askNative" decides whether a failure asks to go to the vendor's - only when they
+        // are on this machine - and a yes builds again with the four settings answering nothing. tms6747 serves every host here, TI's lnk6x being the fake one under tibin.
         {
             check(editor::settings::askNative(), "askNative is true unless the file says otherwise");
             std::string ours = editor::path::absolute((app / "settings.json").string());
@@ -1766,10 +1755,9 @@ void whereTheProgramIs(const char* argv0) {
     checkEqual(where, p::withSlashes(where), "in forward slashes, like everything here");
     checkEqual(where, p::absolute(where), "and absolute, with nothing left to resolve");
 
-    // Whatever this binary is called - test on a Mac or a Linux box, test.exe
-    // on Windows, and whatever anyone renames it to - it is beside itself, so
-    // asking for its own name has to find it. Taking the name from argv[0]
-    // rather than writing "test" here keeps that true.
+    // Whatever this binary is called - test on a Mac or a Linux box, test.exe on Windows, and
+    // whatever anyone renames it to - it is beside itself, so asking for its own name has to find
+    // it. Taking the name from argv[0] rather than writing "test" here keeps that true.
     std::string me = p::filename(p::withSlashes(argv0 ? argv0 : ""));
     if (me.size() > 4 && me.compare(me.size() - 4, 4, ".exe") == 0) me.resize(me.size() - 4);
     check(!me.empty(), "this test knows what it was called");
@@ -1779,11 +1767,9 @@ void whereTheProgramIs(const char* argv0) {
     check(p::exists(found), "and what comes back is really there");
     checkEqual(p::parent(found), where, "in the directory the program is in");
 
-    // And the name exactly as it was invoked, suffix and all. Windows used to
-    // append .exe unconditionally, so a caller naming "test.exe" - which is
-    // what the binaries are called on every machine now - was asking for
-    // test.exe.exe. About did that for all three compilers and reported them
-    // missing from the directory it was standing in.
+    // And the name exactly as it was invoked, suffix and all. Windows used to append .exe
+    // unconditionally, so a caller naming "test.exe" - what the binaries are called everywhere now -
+    // was asking for test.exe.exe. About did that for all three compilers and reported them missing.
     const std::string asInvoked = p::filename(p::withSlashes(argv0 ? argv0 : ""));
     check(!p::besideProgram(asInvoked).empty(),
           "the name as it was invoked is found, suffix and all");
@@ -1813,12 +1799,9 @@ void whereTheProgramIs(const char* argv0) {
 void talkingToAChild() {
     std::printf("a child that answers back\n");
 
-    // Something that reads lines and writes them straight back. cat does it on
-    // one machine; on the other, findstr looks like the answer and is not -
-    // it holds its output until it exits, so a marker sent to it never comes
-    // back and the wait for it hung this whole suite on the Windows box. What
-    // is wanted there is something that flushes each line as it writes it, and
-    // says so.
+    // Something that reads lines and writes them straight back. cat does it on one machine; on the
+    // other findstr looks like the answer and is not - it holds its output until it exits, so a
+    // marker sent to it never comes back, and the wait for it hung this suite on the Windows box.
 #ifdef _WIN32
     const char* echoes =
         "powershell -NoProfile -Command \"while (($l = [Console]::In.ReadLine()) -ne $null)"
@@ -1865,31 +1848,18 @@ void talkingToAChild() {
     missing.stop();
 }
 
-// Where output goes when nobody wants it. /dev/null is not a path on Windows -
-// cmd has NUL instead - so a command redirecting to it there fails to run at
-// all, and a case that builds something with one silently reported that the
-// compiler had not built it. Which is exactly how it reads: "shc did not build
-// it, so there is nothing to stop inside", on the machine where shc had only
-// just been made to exist.
+// Where output goes when nobody wants it. /dev/null is not a path on Windows - cmd has NUL - so a
+// command redirecting to it there fails to run at all, and a case that built with one silently
+// reported "shc did not build it", on the machine where shc had only just been made to exist.
 #ifdef _WIN32
 const char* const kNowhere = " > NUL 2>&1";
 #else
 const char* const kNowhere = " > /dev/null 2>&1";
 #endif
 
-// A command for std::system, which on Windows goes through `cmd /c`.
-//
-// cmd removes the first and last quote when a command has both a quoted
-// program and quoted arguments - the documented rule is that with more than
-// two quote characters it strips the leading one and the trailing one - so
-// `"shc.exe" "in.shl" -o "out.exe"` reaches the shell as garbage and fails
-// having run nothing at all. An extra pair around the whole thing is what cmd
-// then eats, leaving the real ones alone.
-//
-// src/compile.cpp's runCaptured has said this since it was written; this suite
-// did not, and every build it tried to do that way failed silently with an
-// empty log. Everything here that hands a quoted command to std::system goes
-// through this.
+// A command for std::system, which on Windows goes through `cmd /c`. cmd strips the first and last
+// quote when a command has more than two, so `"shc.exe" "in.shl" -o "out.exe"` reaches the shell as
+// garbage; an extra pair round the whole thing is what cmd then eats. src/compile.cpp's runCaptured has said this since it was written; this suite did not, and built nothing with an empty log.
 std::string shellCommand(const std::string& command) {
 #ifdef _WIN32
     return "\"" + command + "\"";
@@ -1916,11 +1886,9 @@ const char* const kLldbStop =
     "   12  \tfor (int i = 1; i <= 3; ++i) {\n"
     "-> 13  \t    total = total + twice(i);\n";
 
-// A function with two arguments, which is where the name used to be lost: the
-// comma inside the argument list was the last one on the line, and the reader
-// cut there. Every function in every other recording here takes one argument
-// or none, so nothing noticed until a project with a two-argument function was
-// stepped into.
+// A function with two arguments, which is where the name used to be lost: the comma inside the
+// argument list was the last one on the line, and the reader cut there. Every other recording here
+// takes one argument or none, so nothing noticed until a two-argument function was stepped into.
 const char* const kLldbStopTwoArgs =
     "Process 41207 stopped\n"
     "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
@@ -1938,18 +1906,9 @@ const char* const kGdbStop =
     "Breakpoint 1, main () at dbg.c:13\n"
     "13\t        total = total + twice(i);\n";
 
-// Four goes at one step, kept exactly as lldb printed them, from the project
-// the session suite builds: sum.c holding addUp on one line and main.c calling
-// it. The breakpoint is on sum.c:3 and each of these is one `next` after the
-// one above.
-//
-// The first two `next`s go nowhere. The line does not change, the addresses
-// climb, and by the third the arguments are rubbish because the frame is
-// coming apart - and only the fourth arrives in main. gdb, given the same
-// DWARF from the same compiler on x86_64-linux, answers the first `next` with
-// "main () at main.c:8": one press, one arrival. That difference is what
-// dbg_wentNowhere is for, and it is why one press of F7 on this Mac stepped
-// and appeared to do nothing.
+// Four goes at one step, exactly as lldb printed them, from the project the session suite builds:
+// the breakpoint on sum.c:3 and each of these one `next` after the last. The first two go nowhere -
+// the line stays, the addresses climb - and only the fourth arrives in main, where gdb on the same DWARF arrives in one. That is what dbg_wentNowhere is for.
 const char* const kLldbStopAtBreak =
     "Process 20033 stopped\n"
     "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
@@ -1983,25 +1942,16 @@ const char* const kLldbStepIntoTheCaller =
     "   8   \t    return 0;\n"
     "Target 0: (sums) stopped.\n";
 
-// The same one press of `next`, on the Linux box, on the same two files built
-// by the same cc1. It is here so that the two transcripts sit beside each
-// other: gdb names the caller straight away, which is what F7 is supposed to
-// do and what dbg_wentNowhere makes lldb do as well.
+// The same one press of `next`, on the Linux box, on the same two files built by the same cc1.
+// Here so that the two transcripts sit beside each other: gdb names the caller straight away,
+// which is what F7 is supposed to do and what dbg_wentNowhere makes lldb do as well.
 const char* const kGdbStepIntoTheCaller =
     "main () at /home/ec2-user/sumsprobe/src/main.c:8\n"
     "8\t    return 0;\n";
 
-// Recursion, which is the one thing a rule of "the same line twice is not a
-// move" would get wrong if it were written that way. fact calls itself on the
-// line it is defined on, so stepping into itself is the same file, the same
-// line and the same function - and it is a real arrival all the same. What
-// tells the two apart is the address: a step that only shuffled along goes
-// forward, and a step into the call goes back to the callee's prologue.
-//
-// Four `step`s in a row from cc1's own arm64-darwin build of
-// "int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }", with the
-// breakpoint left in main so that nothing here is a breakpoint stop and the
-// address is the only thing that can decide.
+// Recursion, the one thing a rule of "the same line twice is not a move" would get wrong: fact
+// calls itself on the line it is defined on, so stepping into itself is the same file, line and
+// function, and a real arrival. The address tells them apart - a shuffle goes forward, a step into the call goes back to the prologue. Four `step`s from cc1's arm64-darwin build, the breakpoint left in main.
 const char* const kLldbInFactFirst =
     "Process 25713 stopped\n"
     "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
@@ -2171,12 +2121,9 @@ void whatADebuggerSays() {
     check(callerGdb.line == 8, "gdb: and the line it carried on at");
 }
 
-// A step that did not go anywhere, which is a thing only lldb does. The
-// transcripts above are one `next` after another in the project the session
-// suite builds; the first two land back on the line they started on, and only
-// the third arrives. Checked here so that it needs no debugger and no built
-// program - it is the whole reason F7 had to be pressed three times on a Mac
-// to leave a function and once on the Linux box.
+// A step that did not go anywhere, which only lldb does: the transcripts above are one `next`
+// after another, and the first two land back on the line they started on. Checked here so it
+// needs no debugger - it is why F7 had to be pressed three times on a Mac to leave a function and once on the Linux box.
 void aStepThatWentNowhere() {
     std::printf("a step that did not go anywhere\n");
 
@@ -2226,10 +2173,9 @@ void aStepThatWentNowhere() {
           "and a stop that was not read at all is not a step to repeat");
 }
 
-// The call stack, in the three spellings it comes in. These are transcripts
-// each of them actually printed, prompts and all, rather than tidied versions
-// of them - the prompt on the front of the first line is exactly the sort of
-// thing that goes wrong.
+// The call stack, in the three spellings it comes in. These are transcripts each of them actually
+// printed, prompts and all, rather than tidied versions of them - the prompt on the front of the
+// first line is exactly the sort of thing that goes wrong.
 void whatACallStackLooksLike() {
     std::printf("who called what the program is standing in\n");
 
@@ -2259,11 +2205,9 @@ void whatACallStackLooksLike() {
     checkEqual(gdb[1].function, "main", "gdb: and past the address in front of the second");
     check(gdb[1].line == 11, "gdb: with the line it is waiting on");
 
-    // cdb prints a table, and puts the source in brackets at the end of each
-    // row because .lines -e was asked for when it started. This is what it
-    // printed, and the shape of it is the whole point: `k` numbers no frames,
-    // an inlined call has dashes where the stack pointer would be, and the
-    // heading and the CRT frames under main name no source at all.
+    // cdb prints a table, the source in brackets at the end of each row because .lines -e was asked
+    // for at start. This is what it printed, and the shape is the point: `k` numbers no frames, an
+    // inlined call has dashes where the stack pointer would be, and the heading and CRT frames name no source.
     std::vector<editor::StackFrame> cdb = editor::dbg_readFrames(
         editor::DebuggerCdb,
         "0:000> k\n"
@@ -2348,10 +2292,9 @@ void whatACallStackLooksLike() {
     check(editor::dbg_variableOnLine(inScope, editor::dbg_frameLine(one)) == inScope.size(),
           "and neither is a frame, which the same tab is full of");
 
-    // The value out of an answer, in the three spellings. These are what they
-    // printed: lldb echoes the command over a pipe and puts its caret line
-    // above the words, which is why the reader looks for the $ and not for the
-    // first line with an = in it.
+    // The value out of an answer, in the three spellings. These are what they printed: lldb echoes
+    // the command over a pipe and puts its caret line above the words, which is why the reader
+    // looks for the $ and not for the first line with an = in it.
     checkEqual(editor::dbg_readValue(editor::DebuggerLldb,
                                      "(lldb) expression total + i\n(int) $0 = 1\n"),
                "1", "lldb: the value is read past its own echo of the command");
@@ -2417,21 +2360,9 @@ void whatACallStackLooksLike() {
     check(alone.size() == 1, "a program standing in main has a stack of one");
 }
 
-// The whole conversation, against a program cc1 built. Needs both a debugger
-// and a compiler, so it says when it is skipping rather than passing quietly.
-// The same thing for the machine's *C++* compiler, which on Windows is the
-// only combination that can be debugged at all.
-//
-// cc1's Windows target emits MASM and MASM carries no line table, so the case
-// above is right to skip there - dbg_here() says DebuggerNone and there is
-// genuinely nothing to stop in. What that hid is that cl writes CodeView into
-// a .pdb and cdb reads it, and *that* pair works on that machine. It had no
-// test: the marker rename had to be driven by hand to prove cdb still stopped
-// a program, which is a thing a suite should be doing.
-//
-// One test for all three machines, because "the machine's C++ compiler" is
-// already resolved for us - cl with cdb on Windows, clang++ with lldb on a
-// Mac, g++ with gdb on the Linux box.
+// The whole conversation, against a program the machine's *C++* compiler built - cl with cdb on
+// Windows, clang++ with lldb on a Mac, g++ with gdb on Linux - needing a debugger and a compiler, so
+// it says when it skips. cc1's Windows target is MASM with no line table, and what that hid is that cl's .pdb and cdb work there; the marker rename had to be driven by hand to prove it.
 void stoppingTheHostsOwnCompiler() {
     std::printf("stopping what the machine's own C++ compiler built\n");
 
@@ -2518,10 +2449,9 @@ void debuggingForReal() {
     std::printf("stopping, stepping and looking, for real\n");
 
     const char* cc1 = std::getenv("CC1");
-    // Named but not there counts as not named, and the path is printed: a
-    // $CC1 with a ~ in it never expands, and a build with an unfindable
-    // compiler fails in a way that reads as a broken editor rather than as a
-    // path nobody resolved. That cost most of a day once.
+    // Named but not there counts as not named, and the path is printed: a $CC1 with a ~ in it never
+    // expands, and a build with an unfindable compiler fails in a way that reads as a broken editor
+    // rather than as a path nobody resolved. That cost most of a day once.
     if (cc1 && *cc1 && !editor::path::exists(cc1)) {
         std::printf("  (no cc1 at %s, so nothing is built to debug)\n", cc1);
         return;
@@ -2626,13 +2556,9 @@ void debuggingForReal() {
     editor::Stop again = debugger.resume();
     check(again.stopped && again.line == 11, "a breakpoint in a loop is hit again");
 
-    // A watch, which is the same question asked again at every stop. What
-    // makes it a watch rather than an answer is that nobody asks for it twice:
-    // the value below changes because the program moved, and for no other
-    // reason.
-    //
-    // Standing on the second time round the loop here, where total is 2 and i
-    // is 2.
+    // A watch, which is the same question asked again at every stop. What makes it a watch rather
+    // than an answer is that nobody asks for it twice: the value below changes because the program
+    // moved, and for no other reason. Standing on the second time round the loop, total 2 and i 2.
     debugger.addWatch("total + i");
     check(debugger.watches().size() == 1, "an expression can be watched");
     check(debugger.watches()[0].ok && debugger.watches()[0].value == "4",
@@ -2658,13 +2584,9 @@ void debuggingForReal() {
     debugger.stop();
     check(!debugger.running(), "the debugger goes when it is told to");
 
-    // Writing a variable back, on a second run of the same program - a run of
-    // its own so that the one above still measures what the program does when
-    // nothing has been written into it.
-    //
-    // What is checked is what the program returned. A variable that reads back
-    // as 100 and then has no effect on the answer would be a debugger showing
-    // its own idea of the program rather than the program.
+    // Writing a variable back, on a second run of the same program - a run of its own so the one
+    // above still measures what the program does when nothing has been written into it. What is
+    // checked is what the program returned: a variable reading back 100 with no effect on the answer is a debugger showing its own idea of the program.
     editor::Debugger writing;
     check(writing.start(editor::dbg_for(editor::ToolCc1, editor::hostArch()), program),
           "the debugger starts again on the same program");
@@ -2756,20 +2678,15 @@ void whatAConsoleAdds() {
                "and only the first of them, since the rest are the program's");
 }
 
-// Taking the program's words out of a debugger's transcript.
-//
-// The three fixtures below are real: each was captured from the debugger it
-// names, driving a program that prints a marker, flushes, stops, and prints
-// another on the way out. They are kept here verbatim so that the filter is
-// checked against all three shapes on every machine, rather than only against
-// the one whose debugger happens to be installed.
+// Taking the program's words out of a debugger's transcript. The three fixtures below are real:
+// each was captured from the debugger it names, driving a program that prints a marker, flushes,
+// stops, and prints another on the way out - kept verbatim so the filter is checked against all three shapes on every machine.
 void whatTheProgramSaid() {
     std::printf("the program's words, out of the debugger's transcript\n");
 
-    // lldb. Note the source echo: it prints the lines around the stop, and
-    // those lines contain the program's own string literals - which is why
-    // looking for the program's output rather than removing the debugger's
-    // cannot work.
+    // lldb. Note the source echo: it prints the lines around the stop, and those lines contain the
+    // program's own string literals - which is why looking for the program's output rather than
+    // removing the debugger's cannot work.
     const std::string lldbSaid =
         "\n(lldb) run\n"
         "MARKER-ONE\n"
@@ -2829,10 +2746,9 @@ void whatTheProgramSaid() {
     checkEqual(editor::dbg_programOutput(editor::DebuggerCdb, cdbExit), "MARKER-TWO 2\n",
                "and what it printed on the way out comes through the same way");
 
-    // The same gdb, once the program is not buffered: its output arrives the
-    // instant it is printed, which is after gdb's prompt on gdb's own line.
-    // Captured with the exec-wrapper in place. Dropping prompt lines whole -
-    // which is right for lldb - lost this one entirely.
+    // The same gdb, once the program is not buffered: its output arrives the instant it is printed,
+    // which is after gdb's prompt on gdb's own line. Captured with the exec-wrapper in place.
+    // Dropping prompt lines whole - which is right for lldb - lost this one entirely.
     const std::string gdbLive =
         "\n(gdb) MARKER-TWO 2\n"
         "11\t    return 0;\n"
@@ -2870,13 +2786,9 @@ void whatTheProgramSaid() {
                "nothing said is nothing printed");
 }
 
-// What the debugger said, across the seam the window uses.
-//
-// A debugged program writes down the debugger's own stream, so what it printed
-// is in `said` along with the debugger's words - and the window had no way to
-// read `said` at all until ride_stop_said existed. This is the property that
-// makes that accessor worth having, so it is checked rather than assumed: the
-// program's own output has to be in there.
+// What the debugger said, across the seam the window uses. A debugged program writes down the
+// debugger's own stream, so what it printed is in `said` with the debugger's words - and the window
+// could not read `said` until ride_stop_said existed. That property is checked rather than assumed: the program's output has to be in there.
 void whatTheDebuggerHeard() {
     std::printf("what the debugger said, and the program with it\n");
 
@@ -2942,10 +2854,9 @@ void whatTheDebuggerHeard() {
     editor::path::removeTree(dir);
 }
 
-// C++ on Windows, where none of the chain is ours: cl writes the .pdb, cdb
-// reads it, and the editor only drives them. This is the other half of the
-// same machine - the C file next to it goes to cc1 and cannot be debugged at
-// all, because MASM carries no line table.
+// C++ on Windows, where none of the chain is ours: cl writes the .pdb, cdb reads it, and the editor
+// only drives them. This is the other half of the same machine - the C file next to it goes to
+// cc1 and cannot be debugged at all, because MASM carries no line table.
 void debuggingCppForReal() {
     std::printf("stopping inside what cl built\n");
 
@@ -3043,12 +2954,9 @@ void debuggingCppForReal() {
     check(debugger.watches()[0].ok, "and cdb answers it");
     checkEqual(debugger.watches()[0].value, "1", "with what it comes to - total 0 plus 1");
 
-    // Writing one back, which is cdb's ?? - its C++ expression evaluator -
-    // rather than lldb's expression or gdb's set variable. Only this machine
-    // can say whether that spelling is right, and what is checked is what the
-    // program returns: a variable that reads back as 100 and changes nothing
-    // is a debugger showing its own idea of the program rather than the
-    // program.
+    // Writing one back, which is cdb's ?? - its C++ expression evaluator - rather than lldb's
+    // expression or gdb's set variable. Only this machine can say whether that spelling is right,
+    // and what is checked is what the program returns: a variable reading back 100 and changing nothing is a debugger showing its own idea of the program.
     std::string said;
     check(debugger.setVariable("total", "100", &said), "a variable is written back");
     std::vector<editor::Variable> now = debugger.locals();
@@ -3060,8 +2968,7 @@ void debuggingCppForReal() {
     check(!debugger.setVariable("nosuch", "1", &said), "a name that is not in scope is refused");
     check(!said.empty(), "with the debugger's own words for why");
 
-    // And the watch followed the write without being asked: a write is a move
-    // as far as an expression is concerned.
+    // And the watch followed the write without being asked: a write is a move as far as an expression is concerned.
     checkEqual(debugger.watches()[0].value, "101", "the watch followed what was written");
 
     debugger.clearBreakpoints();
@@ -3074,11 +2981,9 @@ void debuggingCppForReal() {
     editor::path::removeTree(dir);
 }
 
-// Everything the Windows front end does to stop a program on a line, done
-// through the same seam it uses, on a machine where a debugger exists.
-// The window asks for the project's build through the same seam, and the
-// checks below are the same questions the terminal's F4 asks - which is the
-// point of there being one core and two front ends rather than two editors.
+// The window asks for the project's build through the same seam, and the checks below are the same
+// questions the terminal's F4 asks - which is the point of there being one core and two front ends
+// rather than two editors.
 void theWindowsProjectBuild() {
     std::printf("what the window asks about building a project\n");
 
@@ -3102,10 +3007,9 @@ void theWindowsProjectBuild() {
     check(std::string(ride_project_target_program(project)).find("sums") != std::string::npos,
           "with the program named after the target");
 
-    // A target of both languages, which the window used to be told was a
-    // refusal and is now told is two parts. The window has to be able to build
-    // what the terminal can: an editor with two front ends that disagree about
-    // what a project is, is two editors.
+    // A target of both languages, which the window used to be told was a refusal and is now told is
+    // two parts. The window has to be able to build what the terminal can: an editor with two front
+    // ends that disagree about what a project is, is two editors.
     writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
     writeSource((dir / "project.pro").string(),
                 "{\n  \"name\": \"sums\",\n"
@@ -3166,6 +3070,8 @@ void theWindowsProjectBuild() {
     file::remove_all(dir);
 }
 
+// Everything the Windows front end does to stop a program on a line, done through the same seam it
+// uses, on a machine where a debugger exists.
 void theSeamTheWindowUses() {
     std::printf("what the window asks the core to do\n");
 
@@ -3316,11 +3222,9 @@ void theSeamTheWindowUses() {
     check(ride_locals_on_line(debugger, "called from") == -1,
           "while a row that is not a variable answers -1");
 
-    // In the caller's frame, which is where the window's own gesture would be
-    // aimed as often as not - and put back afterwards, so that what the
-    // program returns at the end of this test is still what it worked out
-    // rather than what was written into it. The reaching-the-program half is
-    // checked on its own run in debuggingForReal.
+    // In the caller's frame, where the window's own gesture would be aimed as often as not - and
+    // put back afterwards, so what the program returns at the end of this test is still what it
+    // worked out. The reaching-the-program half is checked on its own run in debuggingForReal.
     check(ride_debugger_look_at(debugger, 1) != 0, "looking at the caller to set one of its own");
     check(ride_set_variable(debugger, "total", "100") != 0, "a variable is set through it");
     bool setThrough = false;
@@ -3336,10 +3240,9 @@ void theSeamTheWindowUses() {
     check(ride_set_variable(debugger, "total", "0") != 0, "and it is put back where it was");
     check(ride_debugger_look_at(debugger, 0) != 0, "with the frame put back too");
 
-    // A watch through the seam, which is the window's only way to one. The
-    // list is the core's, so what is checked here is that the window can put
-    // one in it, read the line to write for it, and find it again from that
-    // line - the same three questions it asks about a frame.
+    // A watch through the seam, which is the window's only way to one. The list is the core's, so
+    // what is checked here is that the window can put one in it, read the line to write for it, and
+    // find it again from that line - the same three questions it asks about a frame.
     ride_watch_add(debugger, "n + 1");
     check(ride_watch_count(debugger) == 1, "the window can add a watch");
     std::string watchLine = ride_watch_text(debugger, 0);
@@ -3576,10 +3479,9 @@ void whatItRemembers() {
           "what the editor remembers is under a directory of its own, named for the product");
     check(editor::settings::lastProject().empty(), "and remembers nothing to begin with");
 
-    // A configuration that will not parse is not silently buried. It is kept
-    // under .error, a fresh one is written in its place, and the editor can say
-    // where the old one went. Before this, the first setting changed after a
-    // bad file wrote straight over it.
+    // A configuration that will not parse is not silently buried. It is kept under .error, a fresh
+    // one is written in its place, and the editor can say where the old one went. Before this, the
+    // first setting changed after a bad file wrote straight over it.
     {
         std::string config = editor::settings::fileName();
         // The editor makes this directory when it writes; a test that writes
@@ -3663,12 +3565,8 @@ void whatItRemembers() {
     pth::removeTree(home);
 }
 
-// What a project says it builds, and the three ways it can say something that
-// cannot be built. The compiling itself is the session suite's job; this is
-// about the reading and the refusing, which is where the rules live.
-// cc1 says it in two shapes, and the editor only ever read one of them: a
-// missing header - the most ordinary mistake there is - left the caret where it
-// was and the console to be read by eye.
+// cc1 says it in two shapes, and the editor only ever read one of them: a missing header - the most
+// ordinary mistake there is - left the caret where it was and the console to be read by eye.
 void theOtherShapeOfDiagnostic() {
     std::printf("the second shape a diagnostic comes in\n");
 
@@ -3704,10 +3602,9 @@ void theOtherShapeOfDiagnostic() {
     check(!bare.present, "a caret with nothing to say is not a diagnostic");
 }
 
-// A link that fails is a compiler that ran, and used to be reported as one
-// that could not be started: "ld: symbol(s) not found" contains "not found",
-// and the advice that followed - name it with --cc1, put it on PATH - sent
-// anybody who read it looking in the wrong place.
+// A link that fails is a compiler that ran, and used to be reported as one that could not be
+// started: "ld: symbol(s) not found" contains "not found", and the advice that followed - name it
+// with --cc1, put it on PATH - sent anybody who read it looking in the wrong place.
 void whereTheProgramCannotGo() {
     std::printf("a build whose program cannot be written where it would go\n");
 
@@ -3788,16 +3685,9 @@ void whatALinkFailureSays() {
     editor::path::removeTree(dir);
 }
 
-// A compiler per group: what the .pro says, what survives being written back,
-// and the two commands that used to be one.
-// The manual's contents, against the manual.
-//
-// Help > Contents lists the pages by name and says where each one is. Nothing
-// stops those two from parting company except this: a page renamed in help/
-// and not here leaves the editor pointing at a file that is not there, and a
-// page added to help/ and not here is invisible to anybody who only ever looks
-// at the editor. Both are the house bug - documentation that outlived the
-// fact - and both are one check.
+// The manual's contents, against the manual. Help > Contents lists the pages by name and where each
+// is, and nothing stops the two parting company but this: a page renamed in help/ and not here
+// points at nothing, one added there and not here is invisible - the house bug, and one check.
 void theManualsContents() {
     std::printf("the manual, and what the editor says is in it\n");
 
@@ -3851,6 +3741,8 @@ void theManualsContents() {
           "the contents names the version, so a printed page and the editor agree");
 }
 
+// A compiler per group: what the .pro says, what survives being written back, and the two commands
+// that used to be one.
 void aCompilerPerGroup() {
     std::printf("a compiler per group, and the link at the end\n");
 
@@ -3903,10 +3795,9 @@ void aCompilerPerGroup() {
     check(project.save(error), "it saves");
     std::string written = readWholeFile((dir / "project.pro").string());
     check(written.find("\"Sources\"") != std::string::npos, "Sources is still there");
-    // "msvc", not "cl": both are read and msvc is what the project file has
-    // always written for that compiler, at the top level as well as here. One
-    // word out and one word in beats a file whose spelling depends on which
-    // version of the editor last saved it.
+    // "msvc", not "cl": both are read and msvc is what the project file has always written for that
+    // compiler, at the top level as well as here. One word out and one word in beats a file whose
+    // spelling depends on which version of the editor last saved it.
     check(written.find("\"toolchain\": \"msvc\"") != std::string::npos,
           "and the group that named cl still names it, in the word the file writes");
     editor::Project again;
@@ -3957,28 +3848,9 @@ void aCompilerPerGroup() {
     file::remove_all(dir);
 }
 
-// A directory handed to cl's /Fo, which wants a separator on the end - and on
-// the machine where /Fo means anything that separator is a backslash, sitting
-// immediately before a closing quote where it escapes it. cl then answers
-// "D8003: missing source filename", which reads as a command with no file in
-// it rather than a command with a quote in the wrong place. It cost an
-// afternoon on the Windows box; it is one check here.
-// The fourth compiler, driven for real. Everything above about cxx1 is about
-// the editor's own rules - which word means it, where a C++ file goes - and
-// none of it runs the compiler. This does, when $CXX1 names one: a file
-// built and run, the two-compiler project cc1 and cxx1 make together, and a
-// stop inside the C++ half under the machine's debugger, which is the reading
-// of cxx1's DWARF this editor's Debug tab depends on.
-// The window's one rule about statics, checked where every machine can check
-// it. In the mixed native/managed image a function-local static with a
-// destructor corrupts the heap when it is first reached - the atexit
-// registration does it, not the object - and the only cure is the shape
-// scratch() in bridge.cpp has: made once with new, never destroyed. That was
-// found on the day the window was built and found again on 2026-09-11, when
-// ride_group_for_file arrived with a plain `static std::string` and New
-// File took a name and died. The window builds on one machine in three and
-// has no suite of its own, so the rule is held here, over exactly the files
-// RIDEGui.vcxproj compiles, read out of that file rather than listed twice.
+// The window's one rule about statics, held where every machine can check it: in the mixed image a
+// function-local static with a destructor corrupts the heap when first reached - the atexit
+// registration, not the object - and the cure is bridge.cpp's scratch(): made once with new, never destroyed. Found on the window's first day and again on 2026-09-11; checked over the files RIDEGui.vcxproj compiles, read out of that file.
 void theWindowsRuleAboutStatics() {
     std::printf("no static with a destructor in what the window compiles\n");
 
@@ -4032,6 +3904,9 @@ void theWindowsRuleAboutStatics() {
     check(offenders == 0, "and none of them holds a function-local static of class type");
 }
 
+// The fourth compiler, driven for real. Everything above about cxx1 is the editor's own rules and
+// runs no compiler; this does, when $CXX1 names one: a file built and run, the two-compiler
+// project, and a stop inside the C++ half under the machine's debugger - the reading of cxx1's DWARF the Debug tab depends on.
 void theFourthCompiler() {
     std::printf("cxx1, driven for real\n");
 
@@ -4081,11 +3956,9 @@ void theFourthCompiler() {
                                        editor::ConfigDebug);
     check(made.ok, "cxx1 compiles the file to assembly");
     check(!made.asmLines.empty(), "and the Assembly tab has something to show");
-    // cxx1 says who it is on stderr before every compile, and the editor
-    // shows what the compiler said, banner included: that is cxx1's own
-    // behaviour and the editor does not edit it - decided 2026-09-11, after
-    // -nologo had been passed for a day. What matters is that the banner is
-    // not read as a diagnostic, since it sits exactly where an error would.
+    // cxx1 says who it is on stderr before every compile, and the editor shows what the compiler
+    // said, banner included - cxx1's own behaviour, not edited here (decided 2026-09-11, after -nologo
+    // had been passed for a day). What matters is that the banner is not read as a diagnostic, since it sits where an error would.
     check(!made.diag.present, "with nothing read as a diagnostic - its banner is not one");
     check(made.output.find("ISO C++") != std::string::npos,
           "and the banner is in the console, as cxx1 wrote it");
@@ -4138,10 +4011,9 @@ void theFourthCompiler() {
                   editor::toolchainOf(tool, parts[1]) == editor::ToolCxx1,
               "a mixed target goes to cc1 and cxx1, by language, with nothing named");
 
-        // Named the way Project::targetProgram names one: with .exe on Windows,
-        // since cmd will not run a file that has no extension - a link into
-        // "both" there succeeds and the run then fails, which is not the
-        // link's fault and reads exactly as if it were.
+        // Named the way Project::targetProgram names one: with .exe on Windows, since cmd will not
+        // run a file that has no extension - a link into "both" there succeeds and the run then
+        // fails, which is not the link's fault and reads exactly as if it were.
 #ifdef _WIN32
         const char* bothName = "both.exe";
 #else
@@ -4184,6 +4056,9 @@ void theFourthCompiler() {
     editor::path::removeTree(dir);
 }
 
+// A directory handed to cl's /Fo, which wants a separator on the end - and on the machine where
+// /Fo means anything that separator is a backslash, sitting before a closing quote where it escapes
+// it. cl then answers "D8003: missing source filename", which reads as a command with no file in it. An afternoon on the Windows box; one check here.
 void aDirectoryInAQuotedArgument() {
     std::printf("a directory on the end of a quoted argument\n");
 
@@ -4207,6 +4082,9 @@ void aDirectoryInAQuotedArgument() {
 #endif
 }
 
+// What a project says it builds, and the three ways it can say something that cannot be built. The
+// compiling itself is the session suite's job; this is about the reading and the refusing, which is
+// where the rules live.
 void whatTheProjectBuilds() {
     std::printf("what a project says it builds\n");
 
@@ -4338,10 +4216,9 @@ void theThirdLanguage() {
 
     check(editor::languageFor("a.shl") == editor::LangShalimar, ".shl is Shalimar");
 
-    // .shm was Shalimar here until 2026-08-23. The phone app writes that
-    // suffix, but it is not accepted everywhere a Shalimar file has to go, so
-    // the editor knows one name for the language and the Language menu is what
-    // opens an app-written file without renaming it first.
+    // .shm was Shalimar here until 2026-08-23. The phone app writes that suffix, but it is not
+    // accepted everywhere a Shalimar file has to go, so the editor knows one name for the language
+    // and the Language menu is what opens an app-written file without renaming it first.
     check(editor::languageFor("a.shm") == editor::LangPlain,
           ".shm is not, since the editor knows one suffix for Shalimar");
     check(editor::languageFor("a.SHL") == editor::LangShalimar, "whatever the case");
@@ -4402,10 +4279,9 @@ void theThirdLanguage() {
         checkEqual(out[1], "    int n : 5", "a declaration sits one step in");
         checkEqual(out[3], "        n : n + 1", "and an assignment inside an if, two");
 
-        // Read as C, 'n : n + 1' is a goto label and goes in the function's
-        // own column - four spaces where it belongs at eight. The declaration
-        // above it is safe either way, because 'int n' is two words before the
-        // colon and a label is one.
+        // Read as C, 'n : n + 1' is a goto label and goes in the function's own column - four
+        // spaces where it belongs at eight. The declaration above it is safe either way, because
+        // 'int n' is two words before the colon and a label is one.
         editor::IndentStyle asC;
         std::vector<std::string> wrong = editor::reindent(lines, asC);
         checkEqual(wrong[3], "    n : n + 1",
@@ -4441,10 +4317,9 @@ void theThirdLanguage() {
     for (int i = 0; i < 3; ++i)
         check(!editor::emitsDebugInfo(editor::ToolShc, editor::kArches[i]),
               std::string("no debug information for ") + editor::kArches[i]);
-    // But a debug build is still a real thing, and this used to say it was
-    // not. shc emits no debug information and never will; what --debug changes
-    // is which runtime archive is linked, and only the debug one has any code
-    // in it for stopping the program. The assembly is identical either way.
+    // But a debug build is still a real thing, and this used to say it was not. shc emits no debug
+    // information and never will; what --debug changes is which runtime archive is linked, and only
+    // the debug one has any code in it for stopping the program. The assembly is identical either way.
     checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigDebug, "arm64-darwin"),
                " --debug",
                "and a debug build links the runtime that can stop it, having no -g to ask for");
@@ -4487,10 +4362,9 @@ void theThirdLanguage() {
               "except for the Windows target, where it is MASM and ml64 wants .asm");
     }
 
-    // A project made of Shalimar is not the shape a project made of C is, and
-    // the difference is the language's rather than the editor's: no include,
-    // no import, no way to name another file, and shc takes one program at a
-    // time. Several .shl in a group are several programs.
+    // A project made of Shalimar is not the shape a project made of C is, and the difference is the
+    // language's rather than the editor's: no include, no import, no way to name another file, and
+    // shc takes one program at a time. Several .shl in a group are several programs.
     {
         editor::Project project;
         std::string error;
@@ -4559,11 +4433,9 @@ void theThirdLanguage() {
         check(why.find("one group") != std::string::npos,
               "naming the group, so the reader knows which list to split");
 
-        // And in two groups it is refused for a different reason, which is the
-        // one that is not about the editor: a Shalimar object exports the same
-        // three startup symbols whatever file it came from, so two of them
-        // collide, and the language has no declarations, so a call across a
-        // link could not be checked. Compiler-S/docs/LINKING.md, in full.
+        // And in two groups it is refused for a different reason, the one that is not about the
+        // editor: a Shalimar object exports the same three startup symbols whatever file it came
+        // from, so two collide, and the language has no declarations to check a call across a link. Compiler-S/docs/LINKING.md, in full.
         writeSource(editor::path::join(dir, "project.pro"),
                     "{\n  \"name\": \"hello\",\n"
                     "  \"build\": { \"target\": \"hello\", \"groups\": [\"S\", \"C\"] },\n"
@@ -4595,11 +4467,9 @@ void theThirdLanguage() {
     }
 }
 
-// The Shalimar session, driven against a real program. There is no debugger
-// process here and nothing to install: the program stops itself, because the
-// compiler already emits a call before every statement so a runtime error can
-// name its line, and a debug build offers that same position to a session
-// inside it.
+// The Shalimar session, driven against a real program. There is no debugger process here and
+// nothing to install: the program stops itself, because the compiler already emits a call before
+// every statement so a runtime error can name its line, and a debug build offers that same position to a session inside it.
 void steppingShalimar() {
     std::printf("stopping a Shalimar program\n");
 
@@ -4639,19 +4509,17 @@ void steppingShalimar() {
         return;
     }
 
-    // .exe on Windows, and not because the compiler needs it: nothing there
-    // will *run* a file without one, so a program named "steps" builds
-    // perfectly and then cannot be started. -o is taken as given by shc, as it
-    // is by cc1, so the caller is the one that has to know this.
+    // .exe on Windows, and not because the compiler needs it: nothing there will *run* a file
+    // without one, so a program named "steps" builds perfectly and then cannot be started. -o is
+    // taken as given by shc, as it is by cc1, so the caller is the one that has to know this.
 #ifdef _WIN32
     const std::string program = editor::path::join(dir, "steps.exe");
 #else
     const std::string program = editor::path::join(dir, "steps");
 #endif
-    // Into a file rather than into nowhere, so that a build which does not
-    // work can say why. Discarding it is how this case spent an afternoon
-    // reporting "shc did not build it" on the machine where shc had only just
-    // been made to exist, with the reason thrown away every run.
+    // Into a file rather than into nowhere, so that a build which does not work can say why.
+    // Discarding it is how this case spent an afternoon reporting "shc did not build it" on the
+    // machine where shc had only just been made to exist, with the reason thrown away every run.
     const std::string log = editor::path::join(dir, "build.log");
     const std::string build = std::string("\"") + shc + "\" \"" + source +
                               "\" --debug -o \"" + program + "\" > \"" + log +
@@ -4712,10 +4580,9 @@ void steppingShalimar() {
     editor::path::removeTree(dir);
 }
 
-// The same program stopped through the seam the window uses, rather than
-// through the Session directly - which is the whole of what the window could
-// not do. Everything here is a ride_ call and nothing names a C++ type,
-// because that is the only vocabulary the form has.
+// The same program stopped through the seam the window uses, rather than through the Session
+// directly - which is the whole of what the window could not do. Everything here is a ride_ call
+// and nothing names a C++ type, because that is the only vocabulary the form has.
 void theWindowStoppingShalimar() {
     std::printf("the window stopping a Shalimar program\n");
 
@@ -4861,13 +4728,9 @@ void theWindowStoppingShalimar() {
     editor::path::removeTree(dir);
 }
 
-// How the window is told a project's program is stepped through - which is a
-// different question from how one file is, and the one the window could not
-// ask at all until it had a Debug project item.
-// c2s, driven from the Language menu. The editor runs it over the open file
-// and opens what it wrote; these are the decisions made before it is run,
-// which are the ones that can be wrong without anybody noticing until a file
-// has been written over.
+// c2s, driven from the Language menu. The editor runs it over the open file and opens what it
+// wrote; these are the decisions made before it is run, which are the ones that can be wrong
+// without anybody noticing until a file has been written over.
 void namingAConversion() {
     checkEqual(editor::convertedName("prime.c", true), "prime.shl",
                "a C file converts to .shl beside itself");
@@ -4933,6 +4796,8 @@ void theConversionSeam() {
     ride_conversion_free(made);
 }
 
+// How the window is told a project's program is stepped through - a different question from how
+// one file is, and the one the window could not ask at all until it had a Debug project item.
 void theWindowsProjectDebug() {
     std::printf("what the window asks about debugging a project\n");
 
@@ -4968,10 +4833,9 @@ void theWindowsProjectDebug() {
               "with no group the debugger would be blind in");
     }
 
-    // Two languages, two compilers, and debug information that does not mix.
-    // Which groups are invisible depends on the machine, so what is checked is
-    // the rule rather than a number: every part with no debugger of its own is
-    // named, and the one being read is a part that has one.
+    // Two languages, two compilers, and debug information that does not mix. Which groups are
+    // invisible depends on the machine, so what is checked is the rule rather than a number: every
+    // part with no debugger of its own is named, and the one being read is a part that has one.
     writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
     writeSource((dir / "project.pro").string(),
                 "{\n  \"name\": \"sums\",\n"
@@ -4999,10 +4863,9 @@ void theWindowsProjectDebug() {
     ride_project_free(project);
     file::remove_all(dir);
 
-    // Shalimar, which is the case none of the above describes: no debugger
-    // anywhere, nothing missing, and the program stops itself. It has to come
-    // out possible on every machine this runs on - that is the whole point of
-    // asking dbg_stopsItself before dbg_for.
+    // Shalimar, which is the case none of the above describes: no debugger anywhere, nothing
+    // missing, and the program stops itself. It has to come out possible on every machine this runs
+    // on - that is the whole point of asking dbg_stopsItself before dbg_for.
     const char* shc = std::getenv("SHC");
     file::path shmDir = file::temp_directory_path() / "ride-bridge-debug-shm";
     file::remove_all(shmDir);
@@ -5031,10 +4894,9 @@ void theWindowsProjectDebug() {
           "and can be debugged on every machine, needing nothing installed");
     check(ride_project_debug_kind(shm) == editor::ToolShc, "by shc, which reads nothing");
 
-    // The fix this test exists for. The walk over the parts puts every group
-    // with no debugger into the blind list, and shc has none - so a Shalimar
-    // project was told its own group carried no debug information and that the
-    // debugger could not stop in it, immediately before stopping in it.
+    // The fix this test exists for. The walk over the parts puts every group with no debugger into
+    // the blind list, and shc has none - so a Shalimar project was told its own group carried no
+    // debug information and the debugger could not stop in it, immediately before stopping in it.
     check(ride_project_blind_groups(shm) == 0,
           "and is not warned that the debugger cannot stop where it is about to stop");
 

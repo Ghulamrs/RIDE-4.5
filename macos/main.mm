@@ -1,7 +1,4 @@
-// RIDE's window on macOS: an AppKit front end over the same core the terminal
-// editor and the Windows Forms window use. `RIDE --version` answers without a
-// window; otherwise the arguments are a project (.pro or its directory) and
-// files to open, as with the other two.
+// RIDE's window on macOS: an AppKit front end over the core the terminal editor and the Windows Forms window use. `RIDE --version` answers without a window; otherwise the arguments are a project and files to open.
 #import <Cocoa/Cocoa.h>
 
 #include <cstdio>
@@ -29,11 +26,9 @@
     [self.window showWindow:nil];
     [self.window.window makeKeyAndOrderFront:nil];
     [self.window startWithProject:self.project files:self.files];
-    // Come to the front, so the menu bar at the top of the screen is RIDE's
-    // (File, Edit, View, Project, Build, Target, Option, Help) and not the
-    // menus of whatever launched it. Since macOS 14 activation is
-    // cooperative and activateIgnoringOtherApps: is ignored; activate is
-    // what asks for it now.
+    // Come to the front, so the menu bar is RIDE's and not the menus of whatever launched it.
+    // Since macOS 14 activation is cooperative and activateIgnoringOtherApps: is ignored; activate
+    // is what asks for it now.
     if (@available(macOS 14.0, *)) [NSApp activate];
     else [NSApp activateIgnoringOtherApps:YES];
 }

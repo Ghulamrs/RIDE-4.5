@@ -11,15 +11,9 @@ namespace editor {
 
 namespace {
 
-// "<<ride-done>>": what each debugger is asked to say once a command has
-// finished. cdb and lldb are asked in pieces, so that the command echoed back
-// is not itself the marker.
-//
-// **Functions, not std::string globals.** This file is compiled into the
-// window, a mixed-mode program, where a native global with a destructor
-// corrupted the heap before main - the window died at start, as it did on
-// 2026-09-18 over three such globals in settings.cpp. Nothing here may be a
-// global that needs constructing.
+// "<<ride-done>>": what each debugger is asked to say once a command has finished. cdb and lldb
+// are asked in pieces, so that the command echoed back is not itself the marker.
+// **Functions, not std::string globals**: in the mixed-mode window a native global with a destructor corrupted the heap before main - settings.cpp and the README say how.
 std::string markerStart() { return std::string("<<") + product::kLower; }
 std::string marker() { return markerStart() + "-done>>"; }
 

@@ -105,11 +105,9 @@ const char* ride_project_libraries(RIDEProject* project);
 int ride_project_set_includes(RIDEProject* project, const char* line);
 int ride_project_set_libraries(RIDEProject* project, const char* line);
 
-// The installation's settings.json, above bin/: where cxx1's headers
-// (include) and cc1's (lib) are, and the vcvars64.bat named there if any.
+// The installation's settings.json, above bin/: where cxx1's headers (include) and cc1's (lib) are, and the vcvars64.bat named there if any.
 const char* ride_install_file(void);
-// Writes that file with the installer's defaults where there is none - on macOS
-// ~/.ride/settings.json; 0 only when it is missing and cannot be written.
+// Writes that file with the installer's defaults where there is none - on macOS ~/.ride/settings.json; 0 only when it is missing and cannot be written.
 int ride_write_install_file_if_absent(void);
 // The installation's include directories and libraries, one ';'-separated
 // line each as settings.json has them; setting one writes the file.
@@ -164,8 +162,7 @@ int ride_rename_file(RIDEProject* project, const char* fromAbsolute, const char*
 int ride_delete_file(RIDEProject* project, const char* absolute);
 int ride_move_to_group(RIDEProject* project, const char* absolute, const char* group);
 int ride_add_existing(RIDEProject* project, const char* absolute, const char* group);
-// A file just saved under the project's root joins it; 0 when that did not
-// apply, and nothing to say then.
+// A file just saved under the project's root joins it; 0 when that did not apply, and nothing to say then.
 int ride_adopt_saved(RIDEProject* project, const char* absolute);
 // Whether the project lists this file, in any group.
 int ride_project_holds(RIDEProject* project, const char* absolute);

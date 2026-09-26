@@ -130,11 +130,9 @@ bool endsWith(const std::string& name, const std::string& suffix) {
     return true;
 }
 
-// A source of any of the three languages goes to Sources - the one group a
-// project made here builds from. Shalimar had a group of its own until
-// 2026-09-19, and a .shl made or added in the editor therefore never reached
-// the build; the rule that Shalimar and C cannot share a group is the
-// build's to state, when it happens, not the pane's to prevent by default.
+// A source of any of the three languages goes to Sources - the one group a project made here
+// builds from. Shalimar had a group of its own until 2026-09-19, so a .shl made in the editor never
+// reached the build; that Shalimar and C cannot share a group is the build's to state, not the pane's to prevent.
 std::string groupForNamed(const std::string& name) {
     if (endsWith(name, ".h") || endsWith(name, ".hpp")) return "Headers";
     if (sourceLanguageFor(name) != LangPlain || endsWith(name, ".s")) return "Sources";
