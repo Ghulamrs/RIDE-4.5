@@ -6,6 +6,8 @@
 	<string>RIDE</string>
 	<key>CFBundleDisplayName</key>
 	<string>RIDE</string>
+	<key>CFBundleIconFile</key>
+	<string>RIDE</string>
 	<key>CFBundleExecutable</key>
 	<string>RIDE</string>
 	<key>CFBundleIdentifier</key>

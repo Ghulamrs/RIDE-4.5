@@ -72,7 +72,7 @@ $(EXE): $(CORE_OBJ) $(MAC_OBJ)
 # The bundle: the program, its Info.plist, the manual, and - docked beside the
 # editor as on Windows - whatever compilers ../bin holds, with the Shalimar
 # runtime in lib/ beside them. The editor finds them there first.
-$(APP): $(EXE) Info.plist
+$(APP): $(EXE) Info.plist RIDE.icns
 	@mkdir -p $(APP)/Contents/Resources
 	cp Info.plist $(APP)/Contents/Info.plist
 	@printf 'APPL????' > $(APP)/Contents/PkgInfo
@@ -84,10 +84,7 @@ $(APP): $(EXE) Info.plist
 	@if [ -d ../bin/lib ]; then rm -rf $(APP)/Contents/MacOS/lib $(APP)/Contents/Resources/lib; mkdir -p $(APP)/Contents/Resources; cp -Rp ../bin/lib $(APP)/Contents/Resources/lib; ln -s ../Resources/lib $(APP)/Contents/MacOS/lib; fi
 	@rm -rf $(APP)/Contents/Resources/help && cp -R ../help $(APP)/Contents/Resources/help
 	@for d in projects programs; do rm -rf $(APP)/Contents/Resources/$$d; cp -R ../$$d $(APP)/Contents/Resources/$$d; done
-	@if [ -f ../winforms/ride.ico ] && [ ! -f $(APP)/Contents/Resources/RIDE.icns ]; then \
-	    sips -s format icns ../winforms/ride.ico --out $(APP)/Contents/Resources/RIDE.icns >/dev/null 2>&1 && \
-	    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string RIDE.icns' $(APP)/Contents/Info.plist >/dev/null 2>&1 || true; \
-	fi
+	cp RIDE.icns $(APP)/Contents/Resources/RIDE.icns
 	codesign --force --deep --sign - $(APP)
 	@touch $(APP)
 	@echo "built $(APP)"
