@@ -122,7 +122,8 @@ def main():
               "dest=\\\"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH\\\"\\n"
               "for tool in \\\"$SRCROOT\\\"/../bin/*.exe; do [ -f \\\"$tool\\\" ] || continue; "
               "case \\\"$tool\\\" in */RIDE.exe) continue;; esac; cp -p \\\"$tool\\\" \\\"$dest/\\\"; done\\n"
-              "if [ -d \\\"$SRCROOT/../bin/lib\\\" ]; then rm -rf \\\"$dest/lib\\\"; cp -Rp \\\"$SRCROOT/../bin/lib\\\" \\\"$dest/lib\\\"; fi\\n"
+              "res=\\\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\\\"; mkdir -p \\\"$res\\\"\\n"
+              "if [ -d \\\"$SRCROOT/../bin/lib\\\" ]; then rm -rf \\\"$dest/lib\\\" \\\"$res/lib\\\"; cp -Rp \\\"$SRCROOT/../bin/lib\\\" \\\"$res/lib\\\"; ln -s ../Resources/lib \\\"$dest/lib\\\"; fi\\n"
               "res=\\\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\\\"\\n"
               "mkdir -p \\\"$res\\\" && rm -rf \\\"$res/help\\\" && cp -R \\\"$SRCROOT/../help\\\" \\\"$res/help\\\"\\n")
     w("\n/* Begin PBXShellScriptBuildPhase section */\n")
