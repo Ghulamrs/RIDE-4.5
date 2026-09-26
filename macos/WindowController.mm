@@ -975,12 +975,9 @@ static NSColor* ColourOf(unsigned char kind) {
 - (BOOL)saveSheetAs:(Sheet*)sheet {
     NSSavePanel* pick = [NSSavePanel savePanel];
     pick.canCreateDirectories = YES;
-    if (sheet.path != nil) {
-        pick.directoryURL = [NSURL fileURLWithPath:sheet.path.stringByDeletingLastPathComponent];
-        pick.nameFieldStringValue = sheet.path.lastPathComponent;
-    } else if (ride_project_loaded(project_)) {
-        pick.directoryURL = [NSURL fileURLWithPath:Str(ride_project_root(project_))];
-    }
+    // File > Save As starts in ~/Documents/RIDE/programs; Project's dialogs in .../projects.
+    pick.directoryURL = [NSURL fileURLWithPath:[self madeUnder:@"programs"]];
+    if (sheet.path != nil) pick.nameFieldStringValue = sheet.path.lastPathComponent;
     if ([pick runModal] != NSModalResponseOK) {
         [self say:@"not saved"];
         return NO;
@@ -1306,11 +1303,19 @@ static NSColor* ColourOf(unsigned char kind) {
 
 // Projects and single programs default beside the installation, as on Windows,
 // or in ~/Documents when the editor is not installed anywhere writable.
+// ~/Documents/RIDE/<leaf>, made on demand; missing or empty, it is filled from the
+// install's own projects or programs, which is how the samples reach a new user.
 - (NSString*)madeUnder:(NSString*)leaf {
+    NSFileManager* fm = NSFileManager.defaultManager;
     NSString* base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/RIDE"];
     NSString* made = [base stringByAppendingPathComponent:leaf];
-    [NSFileManager.defaultManager createDirectoryAtPath:made withIntermediateDirectories:YES
-                                             attributes:nil error:NULL];
+    [fm createDirectoryAtPath:made withIntermediateDirectories:YES attributes:nil error:NULL];
+    NSArray<NSString*>* there = [fm contentsOfDirectoryAtPath:made error:NULL];
+    NSString* seed = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:leaf];
+    if (there.count == 0)
+        for (NSString* item in [fm contentsOfDirectoryAtPath:seed error:NULL])
+            [fm copyItemAtPath:[seed stringByAppendingPathComponent:item]
+                        toPath:[made stringByAppendingPathComponent:item] error:NULL];
     return made;
 }
 
@@ -1334,10 +1339,7 @@ static NSColor* ColourOf(unsigned char kind) {
     NSOpenPanel* pick = [NSOpenPanel openPanel];
     pick.allowsMultipleSelection = YES;
     pick.canChooseDirectories = NO;
-    if (current_.path != nil)
-        pick.directoryURL = [NSURL fileURLWithPath:current_.path.stringByDeletingLastPathComponent];
-    else if ([self rootNow].length > 0)
-        pick.directoryURL = [NSURL fileURLWithPath:[self rootNow]];
+    pick.directoryURL = [NSURL fileURLWithPath:[self madeUnder:@"programs"]];
     if ([pick runModal] != NSModalResponseOK) {
         [self say:@"not opened"];
         return;
@@ -1465,9 +1467,7 @@ static NSColor* ColourOf(unsigned char kind) {
     pick.canCreateDirectories = YES;
     pick.prompt = @"Choose";
     pick.message = @"Where to put the project";
-    NSString* start = [self rootNow];
-    if (start.length == 0) start = [self madeUnder:@"projects"];
-    pick.directoryURL = [NSURL fileURLWithPath:start];
+    pick.directoryURL = [NSURL fileURLWithPath:[self madeUnder:@"projects"]];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"no project made"]; return; }
 
     NSString* place = pick.URL.path;
@@ -1489,7 +1489,7 @@ static NSColor* ColourOf(unsigned char kind) {
     pick.canChooseFiles = YES;
     pick.canChooseDirectories = YES;
     pick.message = @"Choose a project's .pro file, or the directory it is in";
-    if (projectDirectory_.length > 0) pick.directoryURL = [NSURL fileURLWithPath:projectDirectory_];
+    pick.directoryURL = [NSURL fileURLWithPath:[self madeUnder:@"projects"]];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"no project opened"]; return; }
     [self loadProject:pick.URL.path];
 }
@@ -1505,7 +1505,7 @@ static NSColor* ColourOf(unsigned char kind) {
     NSString* suffix = Str(ride_project_suffix());
     NSSavePanel* pick = [NSSavePanel savePanel];
     pick.nameFieldStringValue = [Str(ride_project_name(project_)) stringByAppendingString:suffix];
-    pick.directoryURL = [NSURL fileURLWithPath:Str(ride_project_root(project_))];
+    pick.directoryURL = [NSURL fileURLWithPath:[self madeUnder:@"projects"]];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"not saved"]; return; }
 
     char why[512] = {0};

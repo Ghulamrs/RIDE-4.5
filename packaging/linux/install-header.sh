@@ -97,6 +97,21 @@ rm -rf "$PREFIX"
 EOF
 chmod 755 "$PREFIX/uninstall.sh"
 
+# ---- the samples, for whoever is installing ------------------------------------
+# ~/Documents/RIDE/projects and .../programs are where the editor looks first;
+# missing or empty, each is filled from the install's own - never over a file.
+owner=${SUDO_USER:-$(id -un)}
+home=$(getent passwd "$owner" 2>/dev/null | cut -d: -f6)
+[ -n "$home" ] || home=$HOME
+for leaf in projects programs; do
+    dest=$home/Documents/RIDE/$leaf
+    if [ -d "$PREFIX/$leaf" ] && { [ ! -d "$dest" ] || [ -z "$(ls -A "$dest" 2>/dev/null)" ]; }; then
+        mkdir -p "$dest" && cp -R "$PREFIX/$leaf/." "$dest/"
+        [ "$(id -u)" = 0 ] && chown -R "$owner" "$home/Documents/RIDE" 2>/dev/null || true
+        say "  samples in $dest"
+    fi
+done
+
 # ---- does it work --------------------------------------------------------------
 say "RIDE $VER is in $PREFIX"
 [ -n "$MADE" ] && say "  commands in $LINKDIR: ride c90 cpp11 shalimar c2s vm6747 asm6x masm lnk6x"

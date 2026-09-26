@@ -33,16 +33,20 @@ MAC=$OUT/mac
 # Staged outside ~/Documents: files written there carry provenance attributes,
 # which pkgbuild records as ._ entries and the install puts back on every file.
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/ride-pkg.XXXXXX")
-trap 'rm -rf "$STAGE"' EXIT
+XC=
+trap 'rm -rf "$STAGE" ${XC:+"$XC"}' EXIT
 say() { printf '%s\n' "$*"; }
 
 say "[1/6] The tools, for macOS 12, into $MAC/bin"
 MACOSX_DEPLOYMENT_TARGET=12.0 make -s -C "$ROOT" -f workspace.mk bin BINDIR="$MAC/bin" -j8 >/dev/null
 
 say "[2/6] RIDE.app, Release"
+# Built outside ~/Documents: iCloud Drive marks a bundle there with Finder info at
+# any moment, and Xcode's own CodeSign then refuses the app as carrying detritus.
+XC=$(mktemp -d "${TMPDIR:-/tmp}/ride-xcode.XXXXXX")
 xcodebuild -quiet -project "$ROOT/macos/Window.xcodeproj" -scheme RIDE -configuration Release \
-    -derivedDataPath "$MAC/xcode" build
-APPSRC=$MAC/xcode/Build/Products/Release/RIDE.app
+    -derivedDataPath "$XC" build
+APPSRC=$XC/Build/Products/Release/RIDE.app
 
 say "[3/6] Staging"
 rm -rf "$STAGE"
@@ -78,6 +82,8 @@ ditto "$CPP/include" "$R/include"
 cp -p "$CPP"/lib/*.h "$R/include/"
 ditto "$CC/lib" "$R/lib"
 ditto "$ROOT/help" "$R/help"
+ditto "$ROOT/projects" "$R/projects"
+ditto "$ROOT/programs" "$R/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$R/examples/" 2>/dev/null || true; done
 for f in "$R"/bin/*.exe; do codesign --force --sign - "$f"; done
 ln -s ../ride/bin/RIDE.exe "$STAGE/usr/local/bin/ride"

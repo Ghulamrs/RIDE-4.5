@@ -21,6 +21,8 @@ rem bin\ for its own, and settings.json beside them says so for the editor.
 if exist "%CPP%\include" xcopy /e /i /q "%CPP%\include" "%STAGE%\include" >nul
 if exist "%CPP%\lib\*.h" copy /y "%CPP%\lib\*.h" "%STAGE%\include\" >nul
 if exist "%CC%\lib" xcopy /e /i /q "%CC%\lib" "%STAGE%\lib" >nul
+rem The sample programs: the editor copies them into Documents\RIDE\programs on first use.
+if exist "%SRC%\programs" xcopy /e /i /q "%SRC%\programs" "%STAGE%\programs" >nul
 rem The assembler and the two linkers are the project's own, beside the
 rem editor, named relative to this file so the installation can be put
 rem anywhere; the editor makes each absolute against the file. They are the
@@ -59,9 +61,9 @@ for %%e in (c h cpp shl pro) do (
 rem example projects that live in their own subdirectory (a .pro with many
 rem files, e.g. compilerpp\) travel whole; the .iss recurses the stage tree
 for /d %%D in ("%SRC%\examples\*") do xcopy /e /i /q "%%D" "%STAGE%\examples\%%~nxD" >nul
-rem full project workspaces (a .pro with its files in its own directory, e.g.
-rem projects\compilerpp) - shipped whole into {app}\projects, which the .iss makes
-rem users-modify so F4 can write the built exe beside the project
+rem the sample projects (a .pro with its files in its own directory, e.g.
+rem projects\compilerpp) - shipped whole into {app}\projects; the editor copies
+rem them into Documents\RIDE\projects on first use, where a build can write
 if exist "%SRC%\projects" xcopy /e /i /q "%SRC%\projects" "%STAGE%\projects" >nul
 if exist "%SRC%\help" xcopy /e /i /q "%SRC%\help" "%STAGE%\help" >nul
 if exist "%SRC%\docs" xcopy /e /i /q "%SRC%\docs" "%STAGE%\docs" >nul

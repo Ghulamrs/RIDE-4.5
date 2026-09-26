@@ -126,6 +126,8 @@ def main():
               "if [ -d \\\"$SRCROOT/../bin/lib\\\" ]; then rm -rf \\\"$dest/lib\\\" \\\"$res/lib\\\"; cp -Rp \\\"$SRCROOT/../bin/lib\\\" \\\"$res/lib\\\"; ln -s ../Resources/lib \\\"$dest/lib\\\"; fi\\n"
               "res=\\\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\\\"\\n"
               "mkdir -p \\\"$res\\\" && rm -rf \\\"$res/help\\\" && cp -R \\\"$SRCROOT/../help\\\" \\\"$res/help\\\"\\n"
+              "# The sample projects and programs, copied into ~/Documents/RIDE on first use.\\n"
+              "for d in projects programs; do rm -rf \\\"$res/$d\\\"; cp -R \\\"$SRCROOT/../$d\\\" \\\"$res/$d\\\"; done\\n"
               "# Re-signed here too: when only ../bin changed, Xcode skips its own CodeSign.\\n"
               "if [ \\\"$CODE_SIGNING_ALLOWED\\\" = YES ]; then xattr -cr \\\"$TARGET_BUILD_DIR/$WRAPPER_NAME\\\"; codesign --force --deep --sign \\\"${EXPANDED_CODE_SIGN_IDENTITY:--}\\\" \\\"$TARGET_BUILD_DIR/$WRAPPER_NAME\\\"; fi\\n")
     w("\n/* Begin PBXShellScriptBuildPhase section */\n")

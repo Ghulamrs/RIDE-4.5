@@ -83,6 +83,7 @@ $(APP): $(EXE) Info.plist
 	done
 	@if [ -d ../bin/lib ]; then rm -rf $(APP)/Contents/MacOS/lib $(APP)/Contents/Resources/lib; mkdir -p $(APP)/Contents/Resources; cp -Rp ../bin/lib $(APP)/Contents/Resources/lib; ln -s ../Resources/lib $(APP)/Contents/MacOS/lib; fi
 	@rm -rf $(APP)/Contents/Resources/help && cp -R ../help $(APP)/Contents/Resources/help
+	@for d in projects programs; do rm -rf $(APP)/Contents/Resources/$$d; cp -R ../$$d $(APP)/Contents/Resources/$$d; done
 	@if [ -f ../winforms/ride.ico ] && [ ! -f $(APP)/Contents/Resources/RIDE.icns ]; then \
 	    sips -s format icns ../winforms/ride.ico --out $(APP)/Contents/Resources/RIDE.icns >/dev/null 2>&1 && \
 	    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string RIDE.icns' $(APP)/Contents/Info.plist >/dev/null 2>&1 || true; \

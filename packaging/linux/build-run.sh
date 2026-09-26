@@ -37,6 +37,8 @@ cp -rp "$CPP/include" "$STAGE/include"
 cp -p "$CPP"/lib/*.h "$STAGE/include/"
 cp -rp "$CC/lib" "$STAGE/lib"
 cp -rp "$ROOT/help" "$STAGE/help"
+cp -rp "$ROOT/projects" "$STAGE/projects"
+cp -rp "$ROOT/programs" "$STAGE/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$STAGE/examples/" 2>/dev/null || true; done
 cat > "$STAGE/settings.json" <<'EOF'
 {
