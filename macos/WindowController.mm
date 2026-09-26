@@ -2670,8 +2670,8 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (void)showHelp:(id)sender { (void)sender; [self openHelpPage:@"manual.html"]; }
-- (void)showShalimarReference:(id)sender { (void)sender; [self openHelpPage:@"appendix-a-shalimar-language.md"]; }
-- (void)showKeys:(id)sender { (void)sender; [self openHelpPage:@"10-keys.md"]; }
+- (void)showShalimarReference:(id)sender { (void)sender; [self openHelpPage:@"shalimar-language.html"]; }
+- (void)showKeys:(id)sender { (void)sender; [self openHelpPage:@"keys.html"]; }
 
 - (void)showAbout:(id)sender {
     (void)sender;
