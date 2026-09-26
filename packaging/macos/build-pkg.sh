@@ -1,0 +1,121 @@
+#!/bin/sh
+# The macOS installer: one .pkg holding the window and the console.
+#
+#   /Applications/RIDE.app      the AppKit window, with every tool it drives
+#                               and their headers and runtime inside it
+#   /usr/local/ride/            the console editor and the same tools, laid
+#                               out as the Windows install is: bin include
+#                               lib help examples
+#   /usr/local/bin/<tool>       symbolic links into /usr/local/ride/bin, so
+#                               ride, c90, cpp11, shalimar and the rest are
+#                               on PATH - all but link, which macOS already
+#                               has as /usr/bin/link
+#
+#   packaging/macos/build-pkg.sh [version]        -> dist/RIDE-<ver>-macos.pkg
+#
+# The tools are built for macOS 12, the window's own deployment target, into
+# dist/mac/bin: the ones in bin/ carry the building Mac's version as their
+# minimum and would refuse to start on anything older. Both halves find their
+# headers the way a relocated install must - beside the program or one
+# directory up - so nothing depends on where this tree was.
+#
+# Without a Developer ID the package cannot be signed or notarized: another
+# Mac asks the user to open it from Finder's context menu the first time.
+set -eu
+
+VER=${1:-4.5}
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
+CPP=${CPP:-$ROOT/../VM6747/Compiler-Cppi}
+CC=${CC:-$ROOT/../VM6747/Compiler-Ci}
+OUT=$ROOT/dist
+MAC=$OUT/mac
+# Staged outside ~/Documents: files written there carry provenance attributes,
+# which pkgbuild records as ._ entries and the install puts back on every file.
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/ride-pkg.XXXXXX")
+trap 'rm -rf "$STAGE"' EXIT
+say() { printf '%s\n' "$*"; }
+
+say "[1/6] The tools, for macOS 12, into $MAC/bin"
+MACOSX_DEPLOYMENT_TARGET=12.0 make -s -C "$ROOT" -f workspace.mk bin BINDIR="$MAC/bin" -j8 >/dev/null
+
+say "[2/6] RIDE.app, Release"
+xcodebuild -quiet -project "$ROOT/macos/Window.xcodeproj" -scheme RIDE -configuration Release \
+    -derivedDataPath "$MAC/xcode" build
+APPSRC=$MAC/xcode/Build/Products/Release/RIDE.app
+
+say "[3/6] Staging"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/Applications" "$STAGE/usr/local/ride" "$STAGE/usr/local/bin"
+ditto "$APPSRC" "$STAGE/Applications/RIDE.app"
+APP=$STAGE/Applications/RIDE.app/Contents
+TOOLS="c90 cpp11 shalimar c2s vm6747 asm6x masm link lnk6x"
+
+# The window: the macOS-12 tools beside it, and what they read in Resources -
+# cpp11's headers (C++ and the C ones they wrap, one directory, as installed on
+# Windows), and lib holding c90's headers beside the Shalimar runtime, since
+# c90 and shalimar both look in lib/ beside themselves.
+for t in $TOOLS; do cp -p "$MAC/bin/$t.exe" "$APP/MacOS/"; done
+rm -rf "$APP/Resources/include" "$APP/Resources/lib" "$APP/MacOS/include" "$APP/MacOS/lib"
+ditto "$CPP/include" "$APP/Resources/include"
+cp -p "$CPP"/lib/*.h "$APP/Resources/include/"
+ditto "$MAC/bin/lib" "$APP/Resources/lib"
+cp -p "$CC"/lib/*.h "$APP/Resources/lib/"
+ln -s ../Resources/include "$APP/MacOS/include"
+ln -s ../Resources/lib "$APP/MacOS/lib"
+# Copies made under ~/Documents carry provenance and Finder attributes codesign refuses.
+xattr -cr "$STAGE"
+codesign --force --deep --sign - "$STAGE/Applications/RIDE.app"
+codesign --verify --deep "$STAGE/Applications/RIDE.app"
+
+# The console, as the Windows install lays itself out.
+R=$STAGE/usr/local/ride
+mkdir -p "$R/bin" "$R/examples"
+cp -p "$MAC/bin/RIDE.exe" "$R/bin/"
+for t in $TOOLS; do cp -p "$MAC/bin/$t.exe" "$R/bin/"; done
+ditto "$MAC/bin/lib" "$R/bin/lib"
+ditto "$CPP/include" "$R/include"
+cp -p "$CPP"/lib/*.h "$R/include/"
+ditto "$CC/lib" "$R/lib"
+ditto "$ROOT/help" "$R/help"
+for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$R/examples/" 2>/dev/null || true; done
+for f in "$R"/bin/*.exe; do codesign --force --sign - "$f"; done
+ln -s ../ride/bin/RIDE.exe "$STAGE/usr/local/bin/ride"
+for t in $TOOLS; do
+    [ "$t" = link ] && continue
+    ln -s "../ride/bin/$t.exe" "$STAGE/usr/local/bin/$t"
+done
+
+say "[4/6] Checking the staged compilers find their own headers"
+PROBE=$MAC/probe; rm -rf "$PROBE"; mkdir -p "$PROBE"
+printf '#include <stdio.h>\nint main(void) { printf("c %%d\\n", 6 * 7); return 0; }\n' > "$PROBE/p.c"
+printf '#include <string>\n#include <cstdio>\nint main() { std::string s("cpp"); std::printf("%%s %%d\\n", s.c_str(), 6 * 7); return 0; }\n' > "$PROBE/p.cpp"
+printf 'fun <> = main() {\n  ? 42\n}\n' > "$PROBE/p.shl"
+check() {  # the program, its source, what it must print
+    "$1" "$PROBE/$2" -o "$PROBE/a.out" >/dev/null 2>"$PROBE/err" || { say "  $1 $2: refused"; cat "$PROBE/err"; exit 1; }
+    got=$("$PROBE/a.out" | tr -d ' ')
+    [ "$got" = "$3" ] || { say "  $1 $2: printed '$got', wanted '$3'"; exit 1; }
+    say "  ok  $(basename "$1") $2"
+}
+for where in "$APP/MacOS" "$R/bin"; do
+    check "$where/c90.exe" p.c "c42"
+    check "$where/cpp11.exe" p.cpp "cpp42"
+    check "$where/shalimar.exe" p.shl "42"
+done
+
+say "[5/6] The package"
+xattr -cr "$STAGE"
+COMP=$MAC/component.plist
+pkgbuild --analyze --root "$STAGE" "$COMP" >/dev/null
+# Installed where it says, not wherever another RIDE.app happens to be found.
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMP"
+pkgbuild --root "$STAGE" --component-plist "$COMP" --identifier com.ghulamrs.ride \
+    --version "$VER" --install-location / "$MAC/RIDE-component.pkg" >/dev/null
+productbuild --package "$MAC/RIDE-component.pkg" "$OUT/RIDE-$VER-macos.pkg" >/dev/null
+if lsbom -s "$(pkgutil --bom "$MAC/RIDE-component.pkg" | head -1)" | grep -q '/\._'; then
+    say "  note: the payload carries ._ entries - com.apple.provenance, which macOS puts on"
+    say "  every file an agent's shell writes and will not let it remove. Harmless, but a"
+    say "  build run from your own Terminal has none."
+fi
+
+say "[6/6] Done: $OUT/RIDE-$VER-macos.pkg ($(du -h "$OUT/RIDE-$VER-macos.pkg" | cut -f1))"
