@@ -69,7 +69,7 @@ tar --no-mac-metadata \
     --exclude 'tests/test' --exclude 'tests/session' --exclude '* 2.*' \
     --exclude 'lib' --exclude 'x64' --exclude 'DerivedData' --exclude 'bin' \
     -czf "$TMP/ride-src.tgz" \
-    src tests winforms examples help tools docs packaging Makefile workspace.mk README.md 2>/dev/null || exit 2
+    src tests winforms examples help tools docs packaging projects programs Makefile workspace.mk README.md 2>/dev/null || exit 2
 
 # ---- what it drives ---------------------------------------------------------
 # Each repository's sources, tests and Makefile, and nothing built here.
