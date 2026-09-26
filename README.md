@@ -751,7 +751,7 @@ builds it.
 | **RIDE** | the console editor on Linux and macOS | `src/*.cpp` with `src/terminal.cpp` | `make` |
 | **WinConsole** | the console editor on Windows | the same `src/*.cpp` with `src/terminal_win.cpp` | `build.bat` |
 | **RIDEGui** | the C++/CLI window, WinForms | `winforms/*.cpp` and the core files named in `winforms/RIDEGui.vcxproj` | `msbuild winforms\RIDEGui.vcxproj` |
-| **RIDE.app** | the AppKit window on macOS, Objective-C++ | `macos/*.mm`, `winforms/bridge.cpp` and the same core files | `make -C macos`, or `macos/RIDEMac.xcodeproj` |
+| **RIDE.app** | the AppKit window on macOS, Objective-C++ | `macos/*.mm`, `winforms/bridge.cpp` and the same core files | `make -C macos`, or `macos/Window.xcodeproj` |
 
 **The two consoles are one front end and two terminals.** `src/editor.cpp` draws
 the screen for both; `src/terminal.cpp` and `src/terminal_win.cpp` are the halves

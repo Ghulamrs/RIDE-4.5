@@ -5,18 +5,18 @@
 // out, colouring it, reading the project and choosing and running the
 // compilers are the same code - so the two windows cannot drift apart on
 // anything but looks.
-#ifndef RIDE_MAC_WINDOW_CONTROLLER_H
-#define RIDE_MAC_WINDOW_CONTROLLER_H
+#ifndef MACOS_WINDOW_CONTROLLER_H
+#define MACOS_WINDOW_CONTROLLER_H
 
 #import <Cocoa/Cocoa.h>
 
-#import "RIDECodeView.h"
+#import "CodeView.h"
 
-@interface RIDEWindowController
+@interface WindowController
     : NSWindowController <NSWindowDelegate, NSTextViewDelegate, NSOutlineViewDataSource,
                           NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate,
                           NSSplitViewDelegate, NSMenuDelegate, NSMenuItemValidation,
-                          RIDECodeViewHost>
+                          CodeViewHost>
 
 - (instancetype)init;
 

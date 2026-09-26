@@ -1,6 +1,6 @@
-#import "RIDELineNumbers.h"
+#import "LineNumbers.h"
 
-@implementation RIDELineNumbers {
+@implementation LineNumbers {
     NSDictionary* numberAttributes_;
     NSUInteger lastDigits_;
 }

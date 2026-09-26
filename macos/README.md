@@ -34,7 +34,7 @@ make            # ../../build/RIDE-4.5/RIDE.app
 make run        # build and open it
 ```
 
-or `open RIDEMac.xcodeproj` and Run. The Xcode project is generated from this
+or `open Window.xcodeproj` and Run. The Xcode project is generated from this
 Makefile's source lists by `python3 make-xcodeproj.py`; run it again after
 adding or removing a file.
 
@@ -49,10 +49,10 @@ after the `C90`, `CPP11` and `SHALIMAR` environment variables. The manual goes t
 | file | what it is |
 | --- | --- |
 | `main.mm` | the application: arguments, the Dock, quitting |
-| `RIDEWindowController.mm` | the window - navigator, editor, panel, status bar, the eight menus and every action |
-| `RIDECodeView.mm` | the text: lays C, C++ and Shalimar out as it is typed, through the core's indent rules |
-| `RIDELineNumbers.mm` | the gutter: line numbers, and red/orange marks where the last build complained |
-| `RIDEStrings.h` | NSString to UTF-8 and back, in one place |
+| `WindowController.mm` | the window - navigator, editor, panel, status bar, the eight menus and every action |
+| `CodeView.mm` | the text: lays C, C++ and Shalimar out as it is typed, through the core's indent rules |
+| `LineNumbers.mm` | the gutter: line numbers, and red/orange marks where the last build complained |
+| `Text.h` | NSString to UTF-8 and back, in one place |
 
 ## What it does
 

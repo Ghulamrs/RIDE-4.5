@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		EA60D85EB249DBF0F4C12B9D /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = D976293658370BA71FC385C8 /* main.mm */; };
-		03A8AA773D2DDC82CAF7690E /* RIDEWindowController.mm in Sources */ = {isa = PBXBuildFile; fileRef = B57C654632C0A861D43211DB /* RIDEWindowController.mm */; };
-		5BA8DFFAFBF83DAE24F1E464 /* RIDECodeView.mm in Sources */ = {isa = PBXBuildFile; fileRef = B19B356F747CE40C3D3FCAC9 /* RIDECodeView.mm */; };
-		992C5C12248BEBE9EF28CC6A /* RIDELineNumbers.mm in Sources */ = {isa = PBXBuildFile; fileRef = 8B25FCD1A20E7D710E373E65 /* RIDELineNumbers.mm */; };
+		365E448AF6D80E09CABD920E /* WindowController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 023B8C49D3D79643C50D5E2B /* WindowController.mm */; };
+		CB7D97F13BCD4A7DFEAC8BE7 /* CodeView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 2B400ED8DC419287B215A667 /* CodeView.mm */; };
+		23E2947451B88B94DAD89E68 /* LineNumbers.mm in Sources */ = {isa = PBXBuildFile; fileRef = 850748EB78AB5F0CE7FAC427 /* LineNumbers.mm */; };
 		75DC696AB16F2197FAAF37EB /* buffer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3E45ECBFDB8B89FADC482A9 /* buffer.cpp */; };
 		BACAAF3895B03DA66740CD89 /* compile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = EACAA131FCE95FE5A1C885C7 /* compile.cpp */; };
 		1C9D334833FBDE1BB71CEA19 /* convert.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1BE3D267433209226A4694C3 /* convert.cpp */; };
@@ -37,13 +37,13 @@
 
 /* Begin PBXFileReference section */
 		D976293658370BA71FC385C8 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = main.mm; path = "main.mm"; sourceTree = "<group>"; };
-		B57C654632C0A861D43211DB /* RIDEWindowController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = RIDEWindowController.mm; path = "RIDEWindowController.mm"; sourceTree = "<group>"; };
-		B19B356F747CE40C3D3FCAC9 /* RIDECodeView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = RIDECodeView.mm; path = "RIDECodeView.mm"; sourceTree = "<group>"; };
-		8B25FCD1A20E7D710E373E65 /* RIDELineNumbers.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = RIDELineNumbers.mm; path = "RIDELineNumbers.mm"; sourceTree = "<group>"; };
-		213430B2C1541A0792AF968C /* RIDECodeView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RIDECodeView.h; path = "RIDECodeView.h"; sourceTree = "<group>"; };
-		5C000178BAAEFCB0030C9020 /* RIDELineNumbers.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RIDELineNumbers.h; path = "RIDELineNumbers.h"; sourceTree = "<group>"; };
-		37EC79010E469FC77F06B0DC /* RIDEStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RIDEStrings.h; path = "RIDEStrings.h"; sourceTree = "<group>"; };
-		49F19E65A3FA64B2B30A37EF /* RIDEWindowController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RIDEWindowController.h; path = "RIDEWindowController.h"; sourceTree = "<group>"; };
+		023B8C49D3D79643C50D5E2B /* WindowController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = WindowController.mm; path = "WindowController.mm"; sourceTree = "<group>"; };
+		2B400ED8DC419287B215A667 /* CodeView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CodeView.mm; path = "CodeView.mm"; sourceTree = "<group>"; };
+		850748EB78AB5F0CE7FAC427 /* LineNumbers.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = LineNumbers.mm; path = "LineNumbers.mm"; sourceTree = "<group>"; };
+		2642D28E5F2931AD1A1360FA /* CodeView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CodeView.h; path = "CodeView.h"; sourceTree = "<group>"; };
+		D5097931C2B0DF9F5AF1347A /* LineNumbers.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = LineNumbers.h; path = "LineNumbers.h"; sourceTree = "<group>"; };
+		102AF3A1B70138291FF0793E /* Text.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Text.h; path = "Text.h"; sourceTree = "<group>"; };
+		31EDA312ACEEB80B8FE177FF /* WindowController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WindowController.h; path = "WindowController.h"; sourceTree = "<group>"; };
 		26858F66DF8624867574B286 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = "Info.plist"; sourceTree = "<group>"; };
 		E3E45ECBFDB8B89FADC482A9 /* buffer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = buffer.cpp; path = "../src/buffer.cpp"; sourceTree = "<group>"; };
 		EACAA131FCE95FE5A1C885C7 /* compile.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = compile.cpp; path = "../src/compile.cpp"; sourceTree = "<group>"; };
@@ -96,13 +96,13 @@
 			isa = PBXGroup;
 			children = (
 				D976293658370BA71FC385C8 /* main.mm */,
-				B57C654632C0A861D43211DB /* RIDEWindowController.mm */,
-				B19B356F747CE40C3D3FCAC9 /* RIDECodeView.mm */,
-				8B25FCD1A20E7D710E373E65 /* RIDELineNumbers.mm */,
-				213430B2C1541A0792AF968C /* RIDECodeView.h */,
-				5C000178BAAEFCB0030C9020 /* RIDELineNumbers.h */,
-				37EC79010E469FC77F06B0DC /* RIDEStrings.h */,
-				49F19E65A3FA64B2B30A37EF /* RIDEWindowController.h */,
+				023B8C49D3D79643C50D5E2B /* WindowController.mm */,
+				2B400ED8DC419287B215A667 /* CodeView.mm */,
+				850748EB78AB5F0CE7FAC427 /* LineNumbers.mm */,
+				2642D28E5F2931AD1A1360FA /* CodeView.h */,
+				D5097931C2B0DF9F5AF1347A /* LineNumbers.h */,
+				102AF3A1B70138291FF0793E /* Text.h */,
+				31EDA312ACEEB80B8FE177FF /* WindowController.h */,
 				26858F66DF8624867574B286 /* Info.plist */,
 			);
 			name = Window;
@@ -234,9 +234,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				EA60D85EB249DBF0F4C12B9D /* main.mm in Sources */,
-				03A8AA773D2DDC82CAF7690E /* RIDEWindowController.mm in Sources */,
-				5BA8DFFAFBF83DAE24F1E464 /* RIDECodeView.mm in Sources */,
-				992C5C12248BEBE9EF28CC6A /* RIDELineNumbers.mm in Sources */,
+				365E448AF6D80E09CABD920E /* WindowController.mm in Sources */,
+				CB7D97F13BCD4A7DFEAC8BE7 /* CodeView.mm in Sources */,
+				23E2947451B88B94DAD89E68 /* LineNumbers.mm in Sources */,
 				75DC696AB16F2197FAAF37EB /* buffer.cpp in Sources */,
 				BACAAF3895B03DA66740CD89 /* compile.cpp in Sources */,
 				1C9D334833FBDE1BB71CEA19 /* convert.cpp in Sources */,

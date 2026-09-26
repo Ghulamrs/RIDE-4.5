@@ -37,7 +37,7 @@ CORE_SRC := src/buffer.cpp src/compile.cpp src/convert.cpp \
        src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp
 SHM_SRC := src/shalimar/channel.cpp src/shalimar/session.cpp
 BRIDGE_SRC := winforms/bridge.cpp
-MAC_SRC := main.mm RIDEWindowController.mm RIDECodeView.mm RIDELineNumbers.mm
+MAC_SRC := main.mm WindowController.mm CodeView.mm LineNumbers.mm
 
 # Outside the checkout, beside the terminal editor's objects, so that a
 # listing of the repository is source and nothing else.

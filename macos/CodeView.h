@@ -1,13 +1,13 @@
 // The text of the file: an NSTextView that lays C, C++ and Shalimar out as it
 // is typed, by asking the core (indent.cpp through winforms/bridge.h) - the
 // same rules the terminal editor and the Windows window follow.
-#ifndef RIDE_MAC_CODE_VIEW_H
-#define RIDE_MAC_CODE_VIEW_H
+#ifndef MACOS_CODE_VIEW_H
+#define MACOS_CODE_VIEW_H
 
 #import <Cocoa/Cocoa.h>
 
 // What the view needs to know from the window to lay a line out.
-@protocol RIDECodeViewHost <NSObject>
+@protocol CodeViewHost <NSObject>
 - (int)indentWidth;
 - (int)indentTabs;
 - (int)indentCase;
@@ -17,9 +17,9 @@
 - (BOOL)laysOut;
 @end
 
-@interface RIDECodeView : NSTextView
+@interface CodeView : NSTextView
 
-@property(nonatomic, weak) id<RIDECodeViewHost> host;
+@property(nonatomic, weak) id<CodeViewHost> host;
 
 // 0-based row and column (in characters) of the caret.
 - (NSInteger)caretRow;

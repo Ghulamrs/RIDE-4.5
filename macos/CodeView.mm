@@ -1,10 +1,10 @@
-#import "RIDECodeView.h"
+#import "CodeView.h"
 
 #include <cstring>
 
-#import "RIDEStrings.h"
+#import "Text.h"
 
-@implementation RIDECodeView
+@implementation CodeView
 
 // ---- rows and columns -------------------------------------------------------
 
@@ -78,7 +78,7 @@ static NSUInteger leadingSpace(NSString* line) {
 }
 
 - (NSString*)indentUnit {
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host != nil && [host indentTabs] != 0) return @"\t";
     int width = host != nil ? [host indentWidth] : 4;
     if (width < 1) width = 4;
@@ -86,7 +86,7 @@ static NSUInteger leadingSpace(NSString* line) {
 }
 
 - (void)realignRow:(NSInteger)row {
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host == nil) return;
     NSRange contents = [self contentsOfRow:row];
     if (contents.location == NSNotFound) return;
@@ -94,7 +94,7 @@ static NSUInteger leadingSpace(NSString* line) {
     NSString* line = [self.string substringWithRange:contents];
     NSUInteger lead = leadingSpace(line);
 
-    NSString* want = RIDETake(ride_indent_for(RIDEUtf8(self.string), (int)row,
+    NSString* want = Take(ride_indent_for(Utf8(self.string), (int)row,
                                               [host indentWidth], [host indentTabs],
                                               [host indentCase], [host indentDialect]));
     if ([want isEqualToString:[line substringToIndex:lead]]) return;
@@ -110,7 +110,7 @@ static NSUInteger leadingSpace(NSString* line) {
 }
 
 - (void)insertNewline:(id)sender {
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host == nil || ![host laysOut]) {
         [super insertNewline:sender];
         return;
@@ -122,16 +122,16 @@ static NSUInteger leadingSpace(NSString* line) {
     NSString* before = [all substringWithRange:NSMakeRange(line.location,
                                                            selection.location - line.location)];
     // The core counts columns in bytes of UTF-8, as it counts everything.
-    int column = (int)std::strlen(RIDEUtf8(before));
+    int column = (int)std::strlen(Utf8(before));
 
-    NSString* lead = RIDETake(ride_indent_after_newline(RIDEUtf8(all), (int)row, column,
+    NSString* lead = Take(ride_indent_after_newline(Utf8(all), (int)row, column,
                                                         [host indentWidth], [host indentTabs],
                                                         [host indentCase], [host indentDialect]));
     [self insertText:[@"\n" stringByAppendingString:lead] replacementRange:selection];
 }
 
 - (void)insertTab:(id)sender {
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host == nil || ![host laysOut] || self.selectedRange.length != 0) {
         [super insertTab:sender];
         return;
@@ -156,7 +156,7 @@ static NSUInteger leadingSpace(NSString* line) {
 - (void)insertText:(id)text replacementRange:(NSRange)range {
     [super insertText:text replacementRange:range];
 
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host == nil || ![host laysOut]) return;
     NSString* typed = [text isKindOfClass:[NSAttributedString class]]
                           ? [(NSAttributedString*)text string] : (NSString*)text;
@@ -180,10 +180,10 @@ static NSUInteger leadingSpace(NSString* line) {
 }
 
 - (void)reindentSelectionOrAll {
-    id<RIDECodeViewHost> host = self.host;
+    id<CodeViewHost> host = self.host;
     if (host == nil) return;
     NSString* all = self.string;
-    NSString* laid = RIDETake(ride_reindent(RIDEUtf8(all), [host indentWidth],
+    NSString* laid = Take(ride_reindent(Utf8(all), [host indentWidth],
                                             [host indentTabs], [host indentCase],
                                             [host indentDialect]));
     if ([laid isEqualToString:all]) return;

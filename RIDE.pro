@@ -109,16 +109,16 @@
       "winforms/show.ps1"
     ],
     "macOS window": [
+      "macos/CodeView.h",
+      "macos/CodeView.mm",
       "macos/Info.plist",
+      "macos/LineNumbers.h",
+      "macos/LineNumbers.mm",
       "macos/Makefile",
       "macos/README.md",
-      "macos/RIDECodeView.h",
-      "macos/RIDECodeView.mm",
-      "macos/RIDELineNumbers.h",
-      "macos/RIDELineNumbers.mm",
-      "macos/RIDEStrings.h",
-      "macos/RIDEWindowController.h",
-      "macos/RIDEWindowController.mm",
+      "macos/Text.h",
+      "macos/WindowController.h",
+      "macos/WindowController.mm",
       "macos/main.mm",
       "macos/make-xcodeproj.py"
     ]

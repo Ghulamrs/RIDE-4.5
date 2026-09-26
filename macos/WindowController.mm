@@ -1,11 +1,11 @@
-#import "RIDEWindowController.h"
+#import "WindowController.h"
 
 #include <cstring>
 #include <string>
 #include <vector>
 
-#import "RIDELineNumbers.h"
-#import "RIDEStrings.h"
+#import "LineNumbers.h"
+#import "Text.h"
 
 #include "compile.h"
 #include "product.h"
@@ -14,7 +14,7 @@
 
 // One open file. The window has one text view and swaps each file's text
 // storage into it, so a file keeps its own text, undo and place.
-@interface RIDESheet : NSObject
+@interface Sheet : NSObject
 @property(nonatomic, copy) NSString* path;  // nil: never saved
 @property(nonatomic, strong) NSTextStorage* storage;
 @property(nonatomic, strong) NSUndoManager* undo;
@@ -24,7 +24,7 @@
 @property(nonatomic) int language;  // RIDE_LANG_*, or -1: by the name
 @end
 
-@implementation RIDESheet
+@implementation Sheet
 - (instancetype)init {
     self = [super init];
     if (self) {
@@ -37,7 +37,7 @@
 @end
 
 // A line of the Errors tab.
-@interface RIDEIssue : NSObject
+@interface Issue : NSObject
 @property(nonatomic, copy) NSString* file;  // absolute; nil when not known
 @property(nonatomic) NSInteger line;
 @property(nonatomic) NSInteger column;
@@ -45,19 +45,19 @@
 @property(nonatomic) BOOL warning;
 @end
 
-@implementation RIDEIssue
+@implementation Issue
 @end
 
 // A row of the navigator: a section heading, a project group, or a file.
-@interface RIDENavItem : NSObject
+@interface NavItem : NSObject
 @property(nonatomic, copy) NSString* title;
 @property(nonatomic, copy) NSString* path;  // files only
-@property(nonatomic, strong) NSMutableArray<RIDENavItem*>* children;
+@property(nonatomic, strong) NSMutableArray<NavItem*>* children;
 @property(nonatomic) BOOL section;
 @property(nonatomic, copy) NSString* group;  // the project group a file or group is
 @end
 
-@implementation RIDENavItem
+@implementation NavItem
 - (instancetype)init {
     self = [super init];
     if (self) _children = [NSMutableArray array];
@@ -67,7 +67,7 @@
 
 // What a build hands back to the main thread: copied out of the core's
 // objects on the thread that ran it, so nothing the core owns crosses over.
-struct RIDEOutcome {
+struct Outcome {
     bool ran = false;       // the compiler or program could be started
     bool ok = false;
     bool hasError = false;
@@ -90,11 +90,11 @@ struct RIDEOutcome {
 // the native tools instead?" It is asked on whichever thread is building, and
 // an alert belongs to the main thread, so it waits there for the answer.
 static int AskNativeInWindow(const char* question) {
-    NSString* text = RIDEStr(question);
+    NSString* text = Str(question);
     __block int answer = 0;
     void (^ask)(void) = ^{
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.messageText = RIDEStr(ride_product_name());
+        alert.messageText = Str(ride_product_name());
         alert.informativeText = text;
         [alert addButtonWithTitle:@"Yes"];
         [alert addButtonWithTitle:@"No"];
@@ -121,10 +121,10 @@ enum { kPanelErrors = 0, kPanelProgress = 1, kPanelOutput = 2 };
 static const CGFloat kStatusHeight = 24;
 static const CGFloat kJumpBarHeight = 26;
 
-@interface RIDEWindowController ()
+@interface WindowController ()
 @end
 
-@implementation RIDEWindowController {
+@implementation WindowController {
     RIDEProject* project_;
 
     // The compilers, found once: an environment variable, else beside the
@@ -147,12 +147,12 @@ static const CGFloat kJumpBarHeight = 26;
     NSDate* workStarted_;
 
     NSFont* codeFont_;
-    NSMutableArray<RIDESheet*>* sheets_;
-    RIDESheet* current_;
-    RIDESheet* blank_;  // what the view shows with no file open
+    NSMutableArray<Sheet*>* sheets_;
+    Sheet* current_;
+    Sheet* blank_;  // what the view shows with no file open
 
-    NSMutableArray<RIDEIssue*>* issues_;
-    NSMutableArray<RIDENavItem*>* navRoots_;
+    NSMutableArray<Issue*>* issues_;
+    NSMutableArray<NavItem*>* navRoots_;
     NSString* projectDirectory_;
 
     // Views.
@@ -164,8 +164,8 @@ static const CGFloat kJumpBarHeight = 26;
     NSTextField* jumpBar_;
     NSTextField* compilerHint_;
     NSScrollView* codeScroll_;
-    RIDECodeView* code_;
-    RIDELineNumbers* gutter_;
+    CodeView* code_;
+    LineNumbers* gutter_;
     NSView* panelPane_;
     NSTabView* panel_;
     NSTableView* issueTable_;
@@ -230,14 +230,14 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
         project_ = ride_project_new();
         ride_ask_native(AskNativeInWindow);
 
-        cc1_ = FoundCompiler(@"C90", RIDEStr(editor::product::kCompilerC));
-        cxx1_ = FoundCompiler(@"CPP11", RIDEStr(editor::product::kCompilerCpp));
-        shc_ = FoundCompiler(@"SHALIMAR", RIDEStr(editor::product::kCompilerShalimar));
+        cc1_ = FoundCompiler(@"C90", Str(editor::product::kCompilerC));
+        cxx1_ = FoundCompiler(@"CPP11", Str(editor::product::kCompilerCpp));
+        shc_ = FoundCompiler(@"SHALIMAR", Str(editor::product::kCompilerShalimar));
         // No cl on a Mac; the slot is kept empty and the core's default stands.
         cl_ = @"";
 
-        arch_ = RIDEStr(ride_host_arch());
-        if (arch_.length == 0) arch_ = RIDEStr(ride_arch(0));
+        arch_ = Str(ride_host_arch());
+        if (arch_.length == 0) arch_ = Str(ride_arch(0));
         toolKind_ = ride_default_compiler();
         config_ = ride_configuration();
         indentWidth_ = ride_default_indent_width();
@@ -251,7 +251,7 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
         sheets_ = [NSMutableArray array];
         issues_ = [NSMutableArray array];
         navRoots_ = [NSMutableArray array];
-        blank_ = [[RIDESheet alloc] init];
+        blank_ = [[Sheet alloc] init];
         blank_.storage = [[NSTextStorage alloc] initWithString:@""
                                                     attributes:[self codeAttributes]];
 
@@ -285,7 +285,7 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
 // The face code is drawn in: remembered in ~/.ride/state.json as "Name size",
 // the person's and not the project's. A name this Mac lacks is the default.
 - (NSFont*)rememberedFont {
-    NSString* said = RIDEStr(ride_code_font());
+    NSString* said = Str(ride_code_font());
     NSRange cut = [said rangeOfString:@" " options:NSBackwardsSearch];
     if (cut.location != NSNotFound && cut.location > 0) {
         NSString* name = [said substringToIndex:cut.location];
@@ -503,7 +503,7 @@ static NSScrollView* Scroller(NSRect frame) {
     [layout addTextContainer:container];
     [blank_.storage addLayoutManager:layout];
 
-    code_ = [[RIDECodeView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)
+    code_ = [[CodeView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)
                                   textContainer:container];
     code_.minSize = NSMakeSize(0, size.height);
     code_.maxSize = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
@@ -534,7 +534,7 @@ static NSScrollView* Scroller(NSRect frame) {
     code_.editable = NO;  // until a file is open
     codeScroll_.documentView = code_;
 
-    gutter_ = [[RIDELineNumbers alloc] initWithTextView:code_];
+    gutter_ = [[LineNumbers alloc] initWithTextView:code_];
     codeScroll_.verticalRulerView = gutter_;
     codeScroll_.hasVerticalRuler = YES;
     codeScroll_.rulersVisible = YES;
@@ -647,10 +647,10 @@ static NSScrollView* Scroller(NSRect frame) {
 }
 
 - (void)refreshTitle {
-    NSString* title = [NSString stringWithFormat:@"%@ %@", RIDEStr(ride_product_name()),
-                                                 RIDEStr(ride_version())];
+    NSString* title = [NSString stringWithFormat:@"%@ %@", Str(ride_product_name()),
+                                                 Str(ride_version())];
     if (ride_project_loaded(project_)) {
-        NSString* name = RIDEStr(ride_project_name(project_));
+        NSString* name = Str(ride_project_name(project_));
         if (name.length > 0) title = [title stringByAppendingFormat:@" — %@", name];
     }
     if (current_ != nil)
@@ -661,33 +661,33 @@ static NSScrollView* Scroller(NSRect frame) {
 
     if (current_ == nil) {
         jumpBar_.stringValue = ride_project_loaded(project_)
-                                   ? RIDEStr(ride_project_root(project_)) : @"No file open";
+                                   ? Str(ride_project_root(project_)) : @"No file open";
     } else if (current_.path == nil) {
         jumpBar_.stringValue = current_.modified ? @"●  Untitled" : @"Untitled";
     } else {
         NSString* shown = current_.path;
-        if (ride_project_loaded(project_) && ride_project_holds(project_, RIDEUtf8(shown)))
+        if (ride_project_loaded(project_) && ride_project_holds(project_, Utf8(shown)))
             shown = [NSString stringWithFormat:@"%@  ›  %@",
-                                               RIDEStr(ride_project_name(project_)),
-                                               RIDEStr(ride_project_relative(project_, RIDEUtf8(shown)))];
+                                               Str(ride_project_name(project_)),
+                                               Str(ride_project_relative(project_, Utf8(shown)))];
         jumpBar_.stringValue = current_.modified
                                    ? [@"●  " stringByAppendingString:shown] : shown;
     }
 }
 
-- (NSString*)shownName:(RIDESheet*)sheet {
+- (NSString*)shownName:(Sheet*)sheet {
     return sheet.path != nil ? sheet.path.lastPathComponent : @"Untitled";
 }
 
 - (BOOL)anyModified {
-    for (RIDESheet* sheet in sheets_)
+    for (Sheet* sheet in sheets_)
         if (sheet.modified) return YES;
     return NO;
 }
 
 - (int)languageNow {
     if (current_ != nil && current_.language >= 0) return current_.language;
-    return ride_language_for(RIDEUtf8(current_.path ?: @""));
+    return ride_language_for(Utf8(current_.path ?: @""));
 }
 
 // The status bar says what the next build will use: the language, debug or
@@ -697,10 +697,10 @@ static NSScrollView* Scroller(NSRect frame) {
 - (void)sayBuild {
     int language = [self languageNow];
     int kind = ride_resolve(toolKind_, language);
-    NSString* compiler = RIDEStr(ride_toolchain_name(kind));
+    NSString* compiler = Str(ride_toolchain_name(kind));
     NSMutableString* said = [NSMutableString stringWithFormat:@"%@   %@   %@",
-                                                              RIDEStr(ride_language_name(language)),
-                                                              RIDEStr(ride_config_name(config_)),
+                                                              Str(ride_language_name(language)),
+                                                              Str(ride_config_name(config_)),
                                                               compiler];
     if (toolKind_ == RIDE_TOOL_AUTO) [said appendString:@"*"];
     if (ride_uses_arch(kind)) [said appendFormat:@"   %@", arch_];
@@ -718,7 +718,7 @@ static NSScrollView* Scroller(NSRect frame) {
                                                           (long)[code_ caretColumn] + 1];
 }
 
-// ---- RIDECodeViewHost ------------------------------------------------------------
+// ---- CodeViewHost ------------------------------------------------------------
 
 - (int)indentWidth { return indentWidth_ > 0 ? indentWidth_ : 4; }
 - (int)indentTabs { return indentTabs_; }
@@ -776,7 +776,7 @@ static NSColor* ColourOf(unsigned char kind) {
             --stop;
         }
         NSString* text = [all substringWithRange:NSMakeRange(line.location, stop - line.location)];
-        const char* bytes = RIDEUtf8(text);
+        const char* bytes = Utf8(text);
         size_t length = std::strlen(bytes);
         kinds.assign(length + 1, 0);
         int howMany = ride_highlight(bytes, language, &state, kinds.data(), (int)kinds.size());
@@ -852,17 +852,17 @@ static NSColor* ColourOf(unsigned char kind) {
 
 // ---- sheets ---------------------------------------------------------------------
 
-- (RIDESheet*)sheetFor:(NSString*)path {
+- (Sheet*)sheetFor:(NSString*)path {
     if (path == nil) return nil;
     NSString* wanted = path.stringByStandardizingPath;
-    for (RIDESheet* sheet in sheets_)
+    for (Sheet* sheet in sheets_)
         if (sheet.path != nil && [sheet.path.stringByStandardizingPath isEqualToString:wanted])
             return sheet;
     return nil;
 }
 
-- (RIDESheet*)makeSheet:(NSString*)path text:(NSString*)text {
-    RIDESheet* sheet = [[RIDESheet alloc] init];
+- (Sheet*)makeSheet:(NSString*)path text:(NSString*)text {
+    Sheet* sheet = [[Sheet alloc] init];
     sheet.path = path;
     sheet.storage = [[NSTextStorage alloc] initWithString:text ?: @""
                                                attributes:[self codeAttributes]];
@@ -872,13 +872,13 @@ static NSColor* ColourOf(unsigned char kind) {
 
 // Bring a sheet into the one text view - nil for none - keeping where the
 // one leaving was.
-- (void)showSheet:(RIDESheet*)sheet {
+- (void)showSheet:(Sheet*)sheet {
     if (current_ != nil) {
         current_.selection = code_.selectedRange;
         current_.scrolled = codeScroll_.contentView.bounds.origin;
     }
     current_ = sheet;
-    RIDESheet* shown = sheet != nil ? sheet : blank_;
+    Sheet* shown = sheet != nil ? sheet : blank_;
     NSLayoutManager* layout = code_.layoutManager;
     if (layout.textStorage != shown.storage) [layout replaceTextStorage:shown.storage];
     code_.editable = sheet != nil;
@@ -905,7 +905,7 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)openPath:(NSString*)path {
     if (path.length == 0) return;
     path = path.stringByStandardizingPath;
-    RIDESheet* already = [self sheetFor:path];
+    Sheet* already = [self sheetFor:path];
     if (already != nil) {
         [self showSheet:already];
         return;
@@ -925,17 +925,17 @@ static NSColor* ColourOf(unsigned char kind) {
     contents = [[contents stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"]
         stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
 
-    RIDESheet* sheet = [self makeSheet:path text:contents];
+    Sheet* sheet = [self makeSheet:path text:contents];
     [self showSheet:sheet];
     code_.selectedRange = NSMakeRange(0, 0);
     [code_ scrollRangeToVisible:NSMakeRange(0, 0)];
-    ride_remember_file(RIDEUtf8(path));
+    ride_remember_file(Utf8(path));
     NSUInteger lines = [contents componentsSeparatedByString:@"\n"].count;
     [self say:[NSString stringWithFormat:@"%@  %lu lines", path.lastPathComponent,
                                          (unsigned long)lines]];
 }
 
-- (BOOL)writeSheet:(RIDESheet*)sheet {
+- (BOOL)writeSheet:(Sheet*)sheet {
     if (sheet == nil || sheet.path == nil) return NO;
     NSError* problem = nil;
     if (![sheet.storage.string writeToFile:sheet.path atomically:YES
@@ -947,7 +947,7 @@ static NSColor* ColourOf(unsigned char kind) {
     return YES;
 }
 
-- (BOOL)saveSheet:(RIDESheet*)sheet {
+- (BOOL)saveSheet:(Sheet*)sheet {
     if (sheet == nil) return NO;
     if (sheet.path == nil) return [self saveSheetAs:sheet];
     if (![self writeSheet:sheet]) return NO;
@@ -957,14 +957,14 @@ static NSColor* ColourOf(unsigned char kind) {
     return YES;
 }
 
-- (BOOL)saveSheetAs:(RIDESheet*)sheet {
+- (BOOL)saveSheetAs:(Sheet*)sheet {
     NSSavePanel* pick = [NSSavePanel savePanel];
     pick.canCreateDirectories = YES;
     if (sheet.path != nil) {
         pick.directoryURL = [NSURL fileURLWithPath:sheet.path.stringByDeletingLastPathComponent];
         pick.nameFieldStringValue = sheet.path.lastPathComponent;
     } else if (ride_project_loaded(project_)) {
-        pick.directoryURL = [NSURL fileURLWithPath:RIDEStr(ride_project_root(project_))];
+        pick.directoryURL = [NSURL fileURLWithPath:Str(ride_project_root(project_))];
     }
     if ([pick runModal] != NSModalResponseOK) {
         [self say:@"not saved"];
@@ -975,9 +975,9 @@ static NSColor* ColourOf(unsigned char kind) {
 
     // Saved into the project's directory is saved into the project.
     NSString* said = [sheet.path.lastPathComponent stringByAppendingString:@" written"];
-    if (ride_adopt_saved(project_, RIDEUtf8(sheet.path)) != 0)
-        said = RIDEStr(ride_outcome_message(project_));
-    ride_remember_file(RIDEUtf8(sheet.path));
+    if (ride_adopt_saved(project_, Utf8(sheet.path)) != 0)
+        said = Str(ride_outcome_message(project_));
+    ride_remember_file(Utf8(sheet.path));
     [self say:said];
     [self refreshTitle];
     [self sayBuild];
@@ -987,14 +987,14 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (void)saveEveryModified {
-    for (RIDESheet* sheet in sheets_)
+    for (Sheet* sheet in sheets_)
         if (sheet.modified && sheet.path != nil) [self writeSheet:sheet];
     [self refreshTitle];
     [navigator_ reloadData];
 }
 
 // Asks before a changed file goes; NO when the answer was Cancel.
-- (BOOL)mayDiscard:(RIDESheet*)sheet {
+- (BOOL)mayDiscard:(Sheet*)sheet {
     if (sheet == nil || !sheet.modified) return YES;
     if (sheet != current_) [self showSheet:sheet];
     NSAlert* alert = [[NSAlert alloc] init];
@@ -1009,14 +1009,14 @@ static NSColor* ColourOf(unsigned char kind) {
     return [self saveSheet:sheet];
 }
 
-- (void)closeSheet:(RIDESheet*)sheet {
+- (void)closeSheet:(Sheet*)sheet {
     if (sheet == nil) return;
     if (![self mayDiscard:sheet]) return;
     NSUInteger at = [sheets_ indexOfObject:sheet];
     [sheets_ removeObject:sheet];
     if (sheet == current_) {
         current_ = nil;
-        RIDESheet* next = nil;
+        Sheet* next = nil;
         if (sheets_.count > 0) next = sheets_[MIN(at, sheets_.count - 1)];
         [self showSheet:next];
     } else {
@@ -1028,7 +1028,7 @@ static NSColor* ColourOf(unsigned char kind) {
 - (BOOL)mayClose {
     if (closing_) return YES;
     [self rememberOpen];
-    for (RIDESheet* sheet in [sheets_ copy])
+    for (Sheet* sheet in [sheets_ copy])
         if (![self mayDiscard:sheet]) return NO;
     return YES;
 }
@@ -1047,13 +1047,13 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)rememberOpen {
     if (current_.path != nil && ride_project_loaded(project_))
-        ride_remember_open(project_, RIDEUtf8(current_.path));
+        ride_remember_open(project_, Utf8(current_.path));
 }
 
 - (void)openFirstOfProject {
-    NSString* relative = RIDEStr(ride_project_file_to_open(project_));
+    NSString* relative = Str(ride_project_file_to_open(project_));
     if (relative.length == 0) return;
-    NSString* full = RIDEStr(ride_project_absolute(project_, RIDEUtf8(relative)));
+    NSString* full = Str(ride_project_absolute(project_, Utf8(relative)));
     if (full.length > 0 && [NSFileManager.defaultManager fileExistsAtPath:full])
         [self openPath:full];
 }
@@ -1064,21 +1064,21 @@ static NSColor* ColourOf(unsigned char kind) {
     [navRoots_ removeAllObjects];
 
     if (ride_project_loaded(project_)) {
-        RIDENavItem* section = [[RIDENavItem alloc] init];
+        NavItem* section = [[NavItem alloc] init];
         section.section = YES;
-        section.title = [RIDEStr(ride_project_name(project_)) uppercaseString];
+        section.title = [Str(ride_project_name(project_)) uppercaseString];
         int groups = ride_project_groups(project_);
         for (int group = 0; group < groups; ++group) {
-            RIDENavItem* node = [[RIDENavItem alloc] init];
-            node.title = RIDEStr(ride_project_group_name(project_, group));
+            NavItem* node = [[NavItem alloc] init];
+            node.title = Str(ride_project_group_name(project_, group));
             node.group = node.title;
             int files = ride_project_files(project_, group);
             for (int file = 0; file < files; ++file) {
-                NSString* relative = RIDEStr(ride_project_file(project_, group, file));
-                RIDENavItem* leaf = [[RIDENavItem alloc] init];
+                NSString* relative = Str(ride_project_file(project_, group, file));
+                NavItem* leaf = [[NavItem alloc] init];
                 leaf.title = relative;
                 leaf.group = node.title;
-                leaf.path = RIDEStr(ride_project_absolute(project_, RIDEUtf8(relative)));
+                leaf.path = Str(ride_project_absolute(project_, Utf8(relative)));
                 [node.children addObject:leaf];
             }
             [section.children addObject:node];
@@ -1086,11 +1086,11 @@ static NSColor* ColourOf(unsigned char kind) {
         [navRoots_ addObject:section];
     }
 
-    RIDENavItem* open = [[RIDENavItem alloc] init];
+    NavItem* open = [[NavItem alloc] init];
     open.section = YES;
     open.title = @"OPEN FILES";
-    for (RIDESheet* sheet in sheets_) {
-        RIDENavItem* leaf = [[RIDENavItem alloc] init];
+    for (Sheet* sheet in sheets_) {
+        NavItem* leaf = [[NavItem alloc] init];
         leaf.title = [self shownName:sheet];
         leaf.path = sheet.path;
         [open.children addObject:leaf];
@@ -1098,9 +1098,9 @@ static NSColor* ColourOf(unsigned char kind) {
     [navRoots_ addObject:open];
 
     [navigator_ reloadData];
-    for (RIDENavItem* root in navRoots_) {
+    for (NavItem* root in navRoots_) {
         [navigator_ expandItem:root];
-        for (RIDENavItem* child in root.children) [navigator_ expandItem:child];
+        for (NavItem* child in root.children) [navigator_ expandItem:child];
     }
     [self selectCurrentInNavigator];
 }
@@ -1111,7 +1111,7 @@ static NSColor* ColourOf(unsigned char kind) {
         return;
     }
     for (NSInteger row = 0; row < navigator_.numberOfRows; ++row) {
-        RIDENavItem* item = [navigator_ itemAtRow:row];
+        NavItem* item = [navigator_ itemAtRow:row];
         BOOL same = item.path != nil && current_.path != nil &&
                     [item.path.stringByStandardizingPath
                         isEqualToString:current_.path.stringByStandardizingPath];
@@ -1127,35 +1127,35 @@ static NSColor* ColourOf(unsigned char kind) {
 - (NSInteger)outlineView:(NSOutlineView*)view numberOfChildrenOfItem:(id)item {
     (void)view;
     if (item == nil) return (NSInteger)navRoots_.count;
-    return (NSInteger)((RIDENavItem*)item).children.count;
+    return (NSInteger)((NavItem*)item).children.count;
 }
 
 - (id)outlineView:(NSOutlineView*)view child:(NSInteger)index ofItem:(id)item {
     (void)view;
     if (item == nil) return navRoots_[(NSUInteger)index];
-    return ((RIDENavItem*)item).children[(NSUInteger)index];
+    return ((NavItem*)item).children[(NSUInteger)index];
 }
 
 - (BOOL)outlineView:(NSOutlineView*)view isItemExpandable:(id)item {
     (void)view;
-    RIDENavItem* node = item;
+    NavItem* node = item;
     return node.section || (node.path == nil && node.children.count > 0) ||
            (node.path == nil && node.group != nil);
 }
 
 - (BOOL)outlineView:(NSOutlineView*)view isGroupItem:(id)item {
     (void)view;
-    return ((RIDENavItem*)item).section;
+    return ((NavItem*)item).section;
 }
 
 - (BOOL)outlineView:(NSOutlineView*)view shouldSelectItem:(id)item {
     (void)view;
-    return !((RIDENavItem*)item).section;
+    return !((NavItem*)item).section;
 }
 
 - (NSView*)outlineView:(NSOutlineView*)view viewForTableColumn:(NSTableColumn*)column item:(id)item {
     (void)column;
-    RIDENavItem* node = item;
+    NavItem* node = item;
     NSString* identifier = node.section ? @"section" : @"cell";
     NSTableCellView* cell = [view makeViewWithIdentifier:identifier owner:self];
     if (cell == nil) {
@@ -1191,11 +1191,11 @@ static NSColor* ColourOf(unsigned char kind) {
 
     NSString* title = node.title;
     if (node.path != nil) {
-        RIDESheet* open = [self sheetFor:node.path];
+        Sheet* open = [self sheetFor:node.path];
         if (open.modified) title = [title stringByAppendingString:@"  ●"];
     } else if (!node.section && node.group == nil) {
         // An untitled sheet in the open-files list.
-        for (RIDESheet* sheet in sheets_)
+        for (Sheet* sheet in sheets_)
             if (sheet.path == nil && sheet.modified) {
                 title = [title stringByAppendingString:@"  ●"];
                 break;
@@ -1207,7 +1207,7 @@ static NSColor* ColourOf(unsigned char kind) {
         NSString* symbol = @"doc.text";
         if (node.path == nil && node.group != nil) symbol = @"folder";
         else {
-            int language = ride_language_for(RIDEUtf8(node.path ?: node.title));
+            int language = ride_language_for(Utf8(node.path ?: node.title));
             if (language == RIDE_LANG_C || language == RIDE_LANG_CPP) symbol = @"chevron.left.forwardslash.chevron.right";
             else if (language == RIDE_LANG_SHALIMAR) symbol = @"s.square";
             else if (language == RIDE_LANG_ASM) symbol = @"cpu";
@@ -1226,7 +1226,7 @@ static NSColor* ColourOf(unsigned char kind) {
     (void)sender;
     NSInteger row = navigator_.clickedRow >= 0 ? navigator_.clickedRow : navigator_.selectedRow;
     if (row < 0) return;
-    RIDENavItem* item = [navigator_ itemAtRow:row];
+    NavItem* item = [navigator_ itemAtRow:row];
     if (item.section) return;
     if (item.path != nil) {
         if ([NSFileManager.defaultManager fileExistsAtPath:item.path]) [self openPath:item.path];
@@ -1235,7 +1235,7 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     if (item.group == nil) {
         // An untitled sheet.
-        for (RIDESheet* sheet in sheets_)
+        for (Sheet* sheet in sheets_)
             if (sheet.path == nil) {
                 [self showSheet:sheet];
                 return;
@@ -1249,7 +1249,7 @@ static NSColor* ColourOf(unsigned char kind) {
     NSInteger row = navigator_.clickedRow;
     if (row < 0 && self.window.firstResponder == navigator_) row = navigator_.selectedRow;
     if (row >= 0) {
-        RIDENavItem* item = [navigator_ itemAtRow:row];
+        NavItem* item = [navigator_ itemAtRow:row];
         if (item.path != nil) return item.path;
     }
     return current_.path;
@@ -1258,7 +1258,7 @@ static NSColor* ColourOf(unsigned char kind) {
 - (NSString*)groupUnderCursor {
     NSInteger row = navigator_.clickedRow >= 0 ? navigator_.clickedRow : navigator_.selectedRow;
     if (row >= 0) {
-        RIDENavItem* item = [navigator_ itemAtRow:row];
+        NavItem* item = [navigator_ itemAtRow:row];
         if (item.group != nil) return item.group;
     }
     return @"Sources";
@@ -1283,11 +1283,11 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (BOOL)did:(int)outcome {
-    [self say:RIDEStr(ride_outcome_message(project_))];
+    [self say:Str(ride_outcome_message(project_))];
     return outcome != 0;
 }
 
-- (NSString*)outcomePath { return RIDEStr(ride_outcome_path(project_)); }
+- (NSString*)outcomePath { return Str(ride_outcome_path(project_)); }
 
 // Projects and single programs default beside the installation, as on Windows,
 // or in ~/Documents when the editor is not installed anywhere writable.
@@ -1300,7 +1300,7 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (NSString*)rootNow {
-    NSString* root = RIDEStr(ride_project_root(project_));
+    NSString* root = Str(ride_project_root(project_));
     if (root.length == 0) root = projectDirectory_;
     return root;
 }
@@ -1309,7 +1309,7 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)newBuffer:(id)sender {
     (void)sender;
-    RIDESheet* sheet = [self makeSheet:nil text:@""];
+    Sheet* sheet = [self makeSheet:nil text:@""];
     [self showSheet:sheet];
     [self say:@"a new file - Save names it"];
 }
@@ -1328,7 +1328,7 @@ static NSColor* ColourOf(unsigned char kind) {
         return;
     }
     for (NSURL* url in pick.URLs) {
-        NSString* suffix = RIDEStr(ride_project_suffix());
+        NSString* suffix = Str(ride_project_suffix());
         if (suffix.length > 0 && [url.path hasSuffix:suffix])
             [self loadProject:url.path];
         else
@@ -1357,7 +1357,7 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)saveAll:(id)sender {
     (void)sender;
     NSUInteger written = 0;
-    for (RIDESheet* sheet in [sheets_ copy]) {
+    for (Sheet* sheet in [sheets_ copy]) {
         if (!sheet.modified) continue;
         if (sheet.path == nil) { [self showSheet:sheet]; [self saveSheetAs:sheet]; }
         else if ([self writeSheet:sheet]) ++written;
@@ -1404,21 +1404,21 @@ static NSColor* ColourOf(unsigned char kind) {
     projectDirectory_ = directory;
 
     char why[512] = {0};
-    int loaded = ride_project_load(project_, RIDEUtf8(where), why, (int)sizeof why);
+    int loaded = ride_project_load(project_, Utf8(where), why, (int)sizeof why);
     if (!loaded) {
-        NSString* reason = RIDEStr(why);
-        if (reason.length == 0 && ride_begin_from_what_is_there(project_, RIDEUtf8(directory))) {
+        NSString* reason = Str(why);
+        if (reason.length == 0 && ride_begin_from_what_is_there(project_, Utf8(directory))) {
             [self projectArrived:where];
-            [self say:RIDEStr(ride_outcome_message(project_))];
+            [self say:Str(ride_outcome_message(project_))];
             return;
         }
-        ride_project_set_root(project_, RIDEUtf8(where));
+        ride_project_set_root(project_, Utf8(where));
         [self say:reason.length > 0 ? reason : @"no .pro project in that directory"];
         return;
     }
     [self projectArrived:where];
     [self say:[NSString stringWithFormat:@"ready - %@, %d groups",
-                                         RIDEStr(ride_project_name(project_)),
+                                         Str(ride_project_name(project_)),
                                          ride_project_groups(project_)]];
     if (started_) {
         NSString* said = statusMessage_.stringValue;
@@ -1434,9 +1434,9 @@ static NSColor* ColourOf(unsigned char kind) {
     toolKind_ = ride_project_toolchain(project_) != RIDE_TOOL_AUTO
                     ? ride_project_toolchain(project_) : ride_default_compiler();
     config_ = ride_configuration();
-    NSString* arch = RIDEStr(ride_project_arch(project_));
+    NSString* arch = Str(ride_project_arch(project_));
     if (arch.length > 0) arch_ = arch;
-    ride_remember_project(RIDEUtf8(where));
+    ride_remember_project(Utf8(where));
     [self fillNavigator];
     [self refreshTitle];
     [self sayBuild];
@@ -1461,10 +1461,10 @@ static NSColor* ColourOf(unsigned char kind) {
                          value:@"Project"];
     if (name.length == 0) { [self say:@"no project made"]; return; }
 
-    if ([self did:ride_begin_project(project_, RIDEUtf8(place), RIDEUtf8(name),
-                                     RIDEUtf8(current_.path ?: @""))]) {
+    if ([self did:ride_begin_project(project_, Utf8(place), Utf8(name),
+                                     Utf8(current_.path ?: @""))]) {
         projectDirectory_ = place;
-        [self projectArrived:RIDEStr(ride_project_root(project_))];
+        [self projectArrived:Str(ride_project_root(project_))];
     }
 }
 
@@ -1487,15 +1487,15 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)saveProjectAs:(id)sender {
     (void)sender;
     if (!ride_project_loaded(project_)) { [self say:@"there is no project to save"]; return; }
-    NSString* suffix = RIDEStr(ride_project_suffix());
+    NSString* suffix = Str(ride_project_suffix());
     NSSavePanel* pick = [NSSavePanel savePanel];
-    pick.nameFieldStringValue = [RIDEStr(ride_project_name(project_)) stringByAppendingString:suffix];
-    pick.directoryURL = [NSURL fileURLWithPath:RIDEStr(ride_project_root(project_))];
+    pick.nameFieldStringValue = [Str(ride_project_name(project_)) stringByAppendingString:suffix];
+    pick.directoryURL = [NSURL fileURLWithPath:Str(ride_project_root(project_))];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"not saved"]; return; }
 
     char why[512] = {0};
-    if (!ride_project_save_as(project_, RIDEUtf8(pick.URL.path), why, (int)sizeof why)) {
-        [self say:RIDEStr(why)];
+    if (!ride_project_save_as(project_, Utf8(pick.URL.path), why, (int)sizeof why)) {
+        [self say:Str(why)];
         return;
     }
     projectDirectory_ = pick.URL.path.stringByDeletingLastPathComponent;
@@ -1507,23 +1507,23 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)closeProject:(id)sender {
     (void)sender;
     if (!ride_project_loaded(project_)) { [self say:@"there is no project open"]; return; }
-    NSString* was = RIDEStr(ride_project_name(project_));
+    NSString* was = Str(ride_project_name(project_));
     [self rememberOpen];
 
     // The project's files go with it; each unsaved one asks first, and one
     // refusal keeps the project open with everything as it was.
-    NSMutableArray<RIDESheet*>* theirs = [NSMutableArray array];
-    for (RIDESheet* sheet in sheets_)
-        if (sheet.path != nil && ride_project_holds(project_, RIDEUtf8(sheet.path)))
+    NSMutableArray<Sheet*>* theirs = [NSMutableArray array];
+    for (Sheet* sheet in sheets_)
+        if (sheet.path != nil && ride_project_holds(project_, Utf8(sheet.path)))
             [theirs addObject:sheet];
-    for (RIDESheet* sheet in theirs)
+    for (Sheet* sheet in theirs)
         if (![self mayDiscard:sheet]) {
             [self say:[@"not closed - unsaved changes in " stringByAppendingString:[self shownName:sheet]]];
             return;
         }
     [sheets_ removeObjectsInArray:theirs];
     ride_project_close(project_);
-    RIDESheet* next = [sheets_ containsObject:current_] ? current_ : sheets_.firstObject;
+    Sheet* next = [sheets_ containsObject:current_] ? current_ : sheets_.firstObject;
     current_ = nil;
     [self showSheet:next];
     [self clearIssues];
@@ -1567,9 +1567,9 @@ static NSColor* ColourOf(unsigned char kind) {
                                    stringByAppendingString:root]
                          value:@""];
     if (name.length == 0) { [self say:@"nothing made"]; return; }
-    NSString* group = RIDEStr(ride_group_for_file(RIDEUtf8(name.lastPathComponent)));
+    NSString* group = Str(ride_group_for_file(Utf8(name.lastPathComponent)));
     if (group.length == 0) group = [self groupUnderCursor];
-    if (![self did:ride_create_file(project_, RIDEUtf8(name), RIDEUtf8(group), toolKind_)]) return;
+    if (![self did:ride_create_file(project_, Utf8(name), Utf8(group), toolKind_)]) return;
     [self fillNavigator];
     [self openPath:[self outcomePath]];
 }
@@ -1577,11 +1577,11 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)addCurrentFile:(id)sender {
     (void)sender;
     if (current_.path == nil) { [self say:@"save the file first, so it has a name"]; return; }
-    NSString* wanted = RIDEStr(ride_group_for_file(RIDEUtf8(current_.path.lastPathComponent)));
+    NSString* wanted = Str(ride_group_for_file(Utf8(current_.path.lastPathComponent)));
     if (wanted.length == 0) wanted = @"Sources";
     NSString* group = [self ask:@"Add to group" detail:nil value:wanted];
     if (group.length == 0) { [self say:@"not added"]; return; }
-    if ([self did:ride_add_existing(project_, RIDEUtf8(current_.path), RIDEUtf8(group))])
+    if ([self did:ride_add_existing(project_, Utf8(current_.path), Utf8(group))])
         [self fillNavigator];
 }
 
@@ -1594,9 +1594,9 @@ static NSColor* ColourOf(unsigned char kind) {
     if ([pick runModal] != NSModalResponseOK) { [self say:@"nothing added"]; return; }
     NSString* fallback = [self groupUnderCursor];
     for (NSURL* url in pick.URLs) {
-        NSString* group = RIDEStr(ride_group_for_file(RIDEUtf8(url.lastPathComponent)));
+        NSString* group = Str(ride_group_for_file(Utf8(url.lastPathComponent)));
         if (group.length == 0) group = fallback;
-        [self did:ride_add_existing(project_, RIDEUtf8(url.path), RIDEUtf8(group))];
+        [self did:ride_add_existing(project_, Utf8(url.path), Utf8(group))];
     }
     [self fillNavigator];
 }
@@ -1605,21 +1605,21 @@ static NSColor* ColourOf(unsigned char kind) {
     (void)sender;
     NSString* target = [self targetFile];
     if (target == nil) { [self say:@"this file has no name to look for"]; return; }
-    if ([self did:ride_remove_from_project(project_, RIDEUtf8(target))]) [self fillNavigator];
+    if ([self did:ride_remove_from_project(project_, Utf8(target))]) [self fillNavigator];
 }
 
 - (void)renameFile:(id)sender {
     (void)sender;
     NSString* target = [self targetFile];
     if (target == nil) { [self say:@"no file to rename"]; return; }
-    NSString* shown = ride_project_holds(project_, RIDEUtf8(target))
-                          ? RIDEStr(ride_project_relative(project_, RIDEUtf8(target)))
+    NSString* shown = ride_project_holds(project_, Utf8(target))
+                          ? Str(ride_project_relative(project_, Utf8(target)))
                           : target.lastPathComponent;
     NSString* name = [self ask:[NSString stringWithFormat:@"Rename %@ to", shown] detail:nil value:shown];
     if (name.length == 0) { [self say:@"not renamed"]; return; }
-    if (![self did:ride_rename_file(project_, RIDEUtf8(target), RIDEUtf8(name))]) return;
+    if (![self did:ride_rename_file(project_, Utf8(target), Utf8(name))]) return;
     NSString* now = [self outcomePath];
-    RIDESheet* open = [self sheetFor:target];
+    Sheet* open = [self sheetFor:target];
     if (open != nil) open.path = now;
     [self refreshTitle];
     [self sayBuild];
@@ -1637,8 +1637,8 @@ static NSColor* ColourOf(unsigned char kind) {
     [alert addButtonWithTitle:@"Cancel"];
     [alert addButtonWithTitle:@"Delete"];
     if ([alert runModal] != NSAlertSecondButtonReturn) { [self say:@"not deleted"]; return; }
-    if (![self did:ride_delete_file(project_, RIDEUtf8(target))]) return;
-    RIDESheet* open = [self sheetFor:target];
+    if (![self did:ride_delete_file(project_, Utf8(target))]) return;
+    Sheet* open = [self sheetFor:target];
     if (open != nil) {
         open.modified = NO;
         [self closeSheet:open];
@@ -1652,7 +1652,7 @@ static NSColor* ColourOf(unsigned char kind) {
     if (target == nil) { [self say:@"no file to move"]; return; }
     NSString* group = [self ask:@"Move to group" detail:nil value:[self groupUnderCursor]];
     if (group.length == 0) { [self say:@"not moved"]; return; }
-    if ([self did:ride_move_to_group(project_, RIDEUtf8(target), RIDEUtf8(group))])
+    if ([self did:ride_move_to_group(project_, Utf8(target), Utf8(group))])
         [self fillNavigator];
 }
 
@@ -1672,9 +1672,9 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     NSString* line = [self ask:@"Project include paths"
                         detail:@"Kept in the project's .pro, relative to it, ';' between them"
-                         value:RIDEStr(ride_project_includes(project_))];
+                         value:Str(ride_project_includes(project_))];
     if (line == nil) { [self say:@"the project's include paths are unchanged"]; return; }
-    [self did:ride_project_set_includes(project_, RIDEUtf8(line))];
+    [self did:ride_project_set_includes(project_, Utf8(line))];
 }
 
 - (void)projectLibraries:(id)sender {
@@ -1685,9 +1685,9 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     NSString* line = [self ask:@"Project libraries"
                         detail:@"Kept in the project's .pro, relative to it, ';' between them, linked before the shared ones"
-                         value:RIDEStr(ride_project_libraries(project_))];
+                         value:Str(ride_project_libraries(project_))];
     if (line == nil) { [self say:@"the project's libraries are unchanged"]; return; }
-    [self did:ride_project_set_libraries(project_, RIDEUtf8(line))];
+    [self did:ride_project_set_libraries(project_, Utf8(line))];
 }
 
 // ---- the panel: Errors, Progress, Output -----------------------------------------
@@ -1714,7 +1714,7 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)labelErrorsTab {
     NSUInteger errors = 0, warnings = 0;
-    for (RIDEIssue* issue in issues_) {
+    for (Issue* issue in issues_) {
         if (issue.warning) ++warnings;
         else ++errors;
     }
@@ -1731,7 +1731,7 @@ static NSColor* ColourOf(unsigned char kind) {
     NSMutableIndexSet* errors = [NSMutableIndexSet indexSet];
     NSMutableIndexSet* warnings = [NSMutableIndexSet indexSet];
     NSString* here = current_.path.stringByStandardizingPath;
-    for (RIDEIssue* issue in issues_) {
+    for (Issue* issue in issues_) {
         if (here == nil || issue.line <= 0) continue;
         if (issue.file != nil && ![issue.file.stringByStandardizingPath isEqualToString:here]) continue;
         if (issue.warning) [warnings addIndex:(NSUInteger)issue.line];
@@ -1745,7 +1745,7 @@ static NSColor* ColourOf(unsigned char kind) {
     if (file.length == 0) return source;
     if (file.isAbsolutePath) return file.stringByStandardizingPath;
     if (ride_project_loaded(project_)) {
-        NSString* full = RIDEStr(ride_project_absolute(project_, RIDEUtf8(file)));
+        NSString* full = Str(ride_project_absolute(project_, Utf8(file)));
         if ([NSFileManager.defaultManager fileExistsAtPath:full]) return full;
     }
     if (source.length > 0) {
@@ -1758,9 +1758,9 @@ static NSColor* ColourOf(unsigned char kind) {
 // Every diagnostic in what the compilers printed, read line by line with the
 // core's own parser - GNU, MSVC, Shalimar and cc1's preprocessor spellings -
 // and the one the build itself reported added if the reading missed it.
-- (void)collectIssues:(const RIDEOutcome&)outcome source:(NSString*)source {
+- (void)collectIssues:(const Outcome&)outcome source:(NSString*)source {
     [issues_ removeAllObjects];
-    std::string sourcePath = RIDECopy(source);
+    std::string sourcePath = StdString(source);
     const std::string& text = outcome.output;
     std::string previous;
     size_t at = 0;
@@ -1773,15 +1773,15 @@ static NSColor* ColourOf(unsigned char kind) {
         if (!d.present && !previous.empty())
             d = editor::parseDiagnostic(previous + "\n" + line, sourcePath);
         if (d.present) {
-            RIDEIssue* issue = [[RIDEIssue alloc] init];
-            issue.file = [self absoluteFor:RIDEStr(d.file.c_str()) source:source];
+            Issue* issue = [[Issue alloc] init];
+            issue.file = [self absoluteFor:Str(d.file.c_str()) source:source];
             issue.line = (NSInteger)d.line;
             issue.column = (NSInteger)d.col;
-            issue.message = RIDEStr(d.message.c_str());
+            issue.message = Str(d.message.c_str());
             issue.warning = line.find("warning") != std::string::npos &&
                             line.find("error") == std::string::npos;
             BOOL seen = NO;
-            for (RIDEIssue* other in issues_)
+            for (Issue* other in issues_)
                 if (other.line == issue.line && other.column == issue.column &&
                     [other.message isEqualToString:issue.message]) { seen = YES; break; }
             if (!seen) [issues_ addObject:issue];
@@ -1792,14 +1792,14 @@ static NSColor* ColourOf(unsigned char kind) {
     }
 
     if (outcome.hasError) {
-        NSString* message = RIDEStr(outcome.errorMessage.c_str());
+        NSString* message = Str(outcome.errorMessage.c_str());
         BOOL seen = NO;
-        for (RIDEIssue* issue in issues_)
+        for (Issue* issue in issues_)
             if (!issue.warning && issue.line == outcome.errorLine &&
                 [issue.message isEqualToString:message]) { seen = YES; break; }
         if (!seen) {
-            RIDEIssue* issue = [[RIDEIssue alloc] init];
-            issue.file = [self absoluteFor:RIDEStr(outcome.errorFile.c_str()) source:source];
+            Issue* issue = [[Issue alloc] init];
+            issue.file = [self absoluteFor:Str(outcome.errorFile.c_str()) source:source];
             issue.line = outcome.errorLine;
             issue.column = outcome.errorColumn;
             issue.message = message;
@@ -1811,7 +1811,7 @@ static NSColor* ColourOf(unsigned char kind) {
     [self applyErrorMarks];
 }
 
-- (void)goToIssue:(RIDEIssue*)issue {
+- (void)goToIssue:(Issue*)issue {
     if (issue == nil) return;
     if (issue.file != nil && [NSFileManager.defaultManager fileExistsAtPath:issue.file])
         [self openPath:issue.file];
@@ -1846,7 +1846,7 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (NSView*)tableView:(NSTableView*)table viewForTableColumn:(NSTableColumn*)column row:(NSInteger)row {
-    RIDEIssue* issue = issues_[(NSUInteger)row];
+    Issue* issue = issues_[(NSUInteger)row];
     NSString* which = column.identifier;
     NSTableCellView* cell = [table makeViewWithIdentifier:which owner:self];
     if (cell == nil) {
@@ -1963,11 +1963,11 @@ static NSColor* ColourOf(unsigned char kind) {
     [self saveEveryModified];
 
     NSString* path = current_.path;
-    int of = ride_project_runs_as_project(project_, RIDEUtf8(path));
+    int of = ride_project_runs_as_project(project_, Utf8(path));
     if (of > 0) {
         [self say:[NSString stringWithFormat:@"%@ is one of %d sources of %@ - building the project",
                                              path.lastPathComponent, of,
-                                             RIDEStr(ride_project_name(project_))]];
+                                             Str(ride_project_name(project_))]];
         [self buildProject:andRun];
         return;
     }
@@ -1975,25 +1975,25 @@ static NSColor* ColourOf(unsigned char kind) {
     int language = [self languageNow];
     int kind = ride_resolve(toolKind_, language);
     if (!ride_can_compile(kind, language)) {
-        [self say:RIDEStr(ride_refusal(kind, language))];
+        [self say:Str(ride_refusal(kind, language))];
         return;
     }
-    if (andRun && !ride_runs_here(kind, RIDEUtf8(arch_))) {
-        [self say:RIDEStr(ride_why_not_run(kind, RIDEUtf8(arch_)))];
+    if (andRun && !ride_runs_here(kind, Utf8(arch_))) {
+        [self say:Str(ride_why_not_run(kind, Utf8(arch_)))];
         return;
     }
 
-    std::string cc1 = RIDECopy(cc1_), cl = RIDECopy(cl_), shc = RIDECopy(shc_), cxx1 = RIDECopy(cxx1_);
-    std::string source = RIDECopy(path), arch = RIDECopy(arch_);
+    std::string cc1 = StdString(cc1_), cl = StdString(cl_), shc = StdString(shc_), cxx1 = StdString(cxx1_);
+    std::string source = StdString(path), arch = StdString(arch_);
     int config = config_;
     RIDEProject* project = project_;
 
     NSString* command = andRun
-        ? RIDEStr(ride_shown_run_command(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
+        ? Str(ride_shown_run_command(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
                                          kind, source.c_str(), language, arch.c_str(), config))
-        : RIDEStr(ride_shown_command(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
+        : Str(ride_shown_command(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
                                      kind, source.c_str(), language, arch.c_str(), config));
-    NSString* compiler = RIDEStr(ride_toolchain_name(kind));
+    NSString* compiler = Str(ride_toolchain_name(kind));
 
     [self clearIssues];
     [self setOutput:[NSString stringWithFormat:@"$ %@\n", command]];
@@ -2004,7 +2004,7 @@ static NSColor* ColourOf(unsigned char kind) {
     [self showPanel:kPanelProgress];
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        RIDEOutcome outcome;
+        Outcome outcome;
         if (!andRun) {
             RIDEBuild* built = ride_build(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
                                           kind, source.c_str(), language, arch.c_str(), config);
@@ -2039,23 +2039,23 @@ static NSColor* ColourOf(unsigned char kind) {
     });
 }
 
-- (void)finishFile:(const RIDEOutcome&)outcome source:(NSString*)path
+- (void)finishFile:(const Outcome&)outcome source:(NSString*)path
           compiler:(NSString*)compiler run:(BOOL)andRun {
-    [self append:RIDEStr(outcome.output.c_str()) to:output_];
+    [self append:Str(outcome.output.c_str()) to:output_];
     [self collectIssues:outcome source:path];
 
     if (outcome.hasError) {
         [self advanceWork:[NSString stringWithFormat:@"%@ stopped at line %d: %@", compiler,
-                                                     outcome.errorLine, RIDEStr(outcome.errorMessage.c_str())]];
+                                                     outcome.errorLine, Str(outcome.errorMessage.c_str())]];
         [self endWork:[NSString stringWithFormat:@"%lu issue(s) - %@:%d:%d: error: %@",
                                                  (unsigned long)issues_.count, path.lastPathComponent,
                                                  outcome.errorLine, outcome.errorColumn,
-                                                 RIDEStr(outcome.errorMessage.c_str())]
+                                                 Str(outcome.errorMessage.c_str())]
                    ok:NO];
         [self showPanel:kPanelErrors];
         if (issues_.count > 0) {
             [issueTable_ selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
-            RIDEIssue* first = issues_.firstObject;
+            Issue* first = issues_.firstObject;
             [self openPath:first.file ?: path];
             [code_ goToLine:first.line column:first.column];
         }
@@ -2076,7 +2076,7 @@ static NSColor* ColourOf(unsigned char kind) {
         if (!outcome.assembly.empty()) {
             [self append:[NSString stringWithFormat:@"\n---- assembly, %d lines ----\n", outcome.assemblyLines]
                       to:output_];
-            [self append:RIDEStr(outcome.assembly.c_str()) to:output_];
+            [self append:Str(outcome.assembly.c_str()) to:output_];
             [output_ scrollRangeToVisible:NSMakeRange(0, 0)];
         }
         NSString* verdict = [NSString stringWithFormat:@"%@ compiled - %d lines of assembly%@",
@@ -2100,8 +2100,8 @@ static NSColor* ColourOf(unsigned char kind) {
     if (![self mayStartWork]) return;
     if (!ride_project_loaded(project_)) { [self say:@"there is no project open"]; return; }
     if (!ride_project_target_ready(project_)) {
-        NSString* why = RIDEStr(ride_project_target_why(project_));
-        NSString* detail = RIDEStr(ride_project_target_detail(project_));
+        NSString* why = Str(ride_project_target_why(project_));
+        NSString* detail = Str(ride_project_target_detail(project_));
         [self say:why];
         [self setOutput:detail.length > 0 ? [NSString stringWithFormat:@"%@\n\n%@\n", why, detail] : why];
         [self showPanel:kPanelOutput];
@@ -2109,8 +2109,8 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     [self saveEveryModified];
 
-    std::string cc1 = RIDECopy(cc1_), cl = RIDECopy(cl_), shc = RIDECopy(shc_), cxx1 = RIDECopy(cxx1_);
-    std::string arch = RIDECopy(arch_);
+    std::string cc1 = StdString(cc1_), cl = StdString(cl_), shc = StdString(shc_), cxx1 = StdString(cxx1_);
+    std::string arch = StdString(arch_);
     int config = config_;
     int toolKind = toolKind_;
     RIDEProject* project = project_;
@@ -2124,28 +2124,28 @@ static NSColor* ColourOf(unsigned char kind) {
         int kind = ride_project_part_toolchain(project, i, cc1.c_str(), cl.c_str(), shc.c_str(),
                                                cxx1.c_str(), toolKind);
         if (!ride_can_compile(kind, language)) {
-            [self say:RIDEStr(ride_refusal(kind, language))];
+            [self say:Str(ride_refusal(kind, language))];
             return;
         }
         if (andRun && !ride_runs_here(kind, arch.c_str())) {
-            [self say:RIDEStr(ride_why_not_run(kind, arch.c_str()))];
+            [self say:Str(ride_why_not_run(kind, arch.c_str()))];
             return;
         }
-        NSString* word = RIDEStr(ride_toolchain_name(kind));
+        NSString* word = Str(ride_toolchain_name(kind));
         if (![compilers containsObject:word]) [compilers addObject:word];
         [plan addObject:[NSString stringWithFormat:@"part %d: %@ (%@) with %@", i + 1,
-                                                   RIDEStr(ride_project_part_group(project, i)),
-                                                   RIDEStr(ride_language_name(language)), word]];
+                                                   Str(ride_project_part_group(project, i)),
+                                                   Str(ride_language_name(language)), word]];
     }
 
-    NSString* program = RIDEStr(ride_project_target_program(project));
+    NSString* program = Str(ride_project_target_program(project));
     int howMany = ride_project_target_sources(project);
     NSMutableString* said = [NSMutableString stringWithFormat:@"$ %@ %d %@ -o %@\n",
                                                               [compilers componentsJoinedByString:@", "],
                                                               howMany, howMany == 1 ? @"source" : @"sources",
                                                               program];
     for (int i = 0; i < howMany; ++i)
-        [said appendFormat:@"    %@\n", RIDEStr(ride_project_target_source(project, i))];
+        [said appendFormat:@"    %@\n", Str(ride_project_target_source(project, i))];
 
     [self clearIssues];
     [self setOutput:said];
@@ -2157,9 +2157,9 @@ static NSColor* ColourOf(unsigned char kind) {
     [self showPanel:kPanelProgress];
 
     NSString* root = [self rootNow];
-    std::string programPath = RIDECopy(program);
+    std::string programPath = StdString(program);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        RIDEOutcome outcome;
+        Outcome outcome;
         RIDEBuild* made = ride_build_target(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
                                             toolKind, arch.c_str(), config);
         if (made != NULL) {
@@ -2187,22 +2187,22 @@ static NSColor* ColourOf(unsigned char kind) {
     });
 }
 
-- (void)finishProject:(const RIDEOutcome&)outcome program:(NSString*)program root:(NSString*)root
+- (void)finishProject:(const Outcome&)outcome program:(NSString*)program root:(NSString*)root
                 parts:(int)parts compilers:(NSString*)compilers run:(BOOL)andRun {
     if (!outcome.ran) {
-        [self endWork:RIDEStr(ride_project_target_why(project_)) ok:NO];
+        [self endWork:Str(ride_project_target_why(project_)) ok:NO];
         return;
     }
-    [self append:RIDEStr(outcome.output.c_str()) to:output_];
+    [self append:Str(outcome.output.c_str()) to:output_];
     [self collectIssues:outcome source:[root stringByAppendingPathComponent:@"."]];
     for (int i = 0; i < parts; ++i) [self advanceWork:[NSString stringWithFormat:@"part %d done", i + 1]];
 
     if (outcome.hasError) {
         [self endWork:[NSString stringWithFormat:@"%lu issue(s) - %@:%d:%d: error: %@",
                                                  (unsigned long)issues_.count,
-                                                 RIDEStr(outcome.errorFile.c_str()).lastPathComponent,
+                                                 Str(outcome.errorFile.c_str()).lastPathComponent,
                                                  outcome.errorLine, outcome.errorColumn,
-                                                 RIDEStr(outcome.errorMessage.c_str())]
+                                                 Str(outcome.errorMessage.c_str())]
                    ok:NO];
         [self showPanel:kPanelErrors];
         if (issues_.count > 0) {
@@ -2223,7 +2223,7 @@ static NSColor* ColourOf(unsigned char kind) {
         [self showPanel:issues_.count > 0 ? kPanelErrors : kPanelOutput];
         return;
     }
-    [self append:RIDEStr(outcome.programOutput.c_str()) to:output_];
+    [self append:Str(outcome.programOutput.c_str()) to:output_];
     [self append:[NSString stringWithFormat:@"\n[program returned %d]\n", outcome.status] to:output_];
     [self advanceWork:[NSString stringWithFormat:@"the program returned %d", outcome.status]];
     [self endWork:[NSString stringWithFormat:@"ran %@ - it returned %d", program.lastPathComponent,
@@ -2243,26 +2243,26 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     if (![self saveSheet:current_]) return;
 
-    NSString* converter = RIDETake(ride_find_converter());
+    NSString* converter = Take(ride_find_converter());
     if (converter.length == 0) {
         [self say:@"no c2s beside this editor - build Converter-C2S here, or set C2S"];
         return;
     }
     NSString* path = current_.path;
-    NSString* produced = RIDETake(ride_converted_name(RIDEUtf8(path), toShalimar));
+    NSString* produced = Take(ride_converted_name(Utf8(path), toShalimar));
     if (produced.length == 0 || [produced isEqualToString:path]) {
         [self say:@"that would write over the file it is reading"];
         return;
     }
 
-    std::string where = RIDECopy(converter), source = RIDECopy(path), into = RIDECopy(produced);
+    std::string where = StdString(converter), source = StdString(path), into = StdString(produced);
     [self clearIssues];
     [self setOutput:[NSString stringWithFormat:@"$ c2s %@ %@\n", toShalimar ? @"--to-shalimar" : @"--to-c", produced]];
     [self beginWork:[NSString stringWithFormat:@"Converting %@ to %@", path.lastPathComponent,
                                                toShalimar ? @"Shalimar" : @"C"]
               steps:1];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        RIDEOutcome outcome;
+        Outcome outcome;
         RIDEConversion* made = ride_convert(where.c_str(), source.c_str(), into.c_str(), toShalimar);
         outcome.ran = ride_conversion_ran(made) != 0;
         outcome.ok = ride_conversion_ok(made) != 0;
@@ -2270,12 +2270,12 @@ static NSColor* ColourOf(unsigned char kind) {
         outcome.produced = ride_conversion_produced(made);
         ride_conversion_free(made);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self append:RIDEStr(outcome.output.c_str()) to:self->output_];
+            [self append:Str(outcome.output.c_str()) to:self->output_];
             if (!outcome.ran) {
                 [self endWork:[@"could not run " stringByAppendingString:converter] ok:NO];
                 return;
             }
-            NSString* written = RIDEStr(outcome.produced.c_str());
+            NSString* written = Str(outcome.produced.c_str());
             if (written.length == 0) {
                 [self endWork:@"nothing was written - c2s could not read or write a file" ok:NO];
                 return;
@@ -2404,14 +2404,14 @@ static NSColor* ColourOf(unsigned char kind) {
     if (font == nil) return;
     codeFont_ = font;
     NSDictionary* attributes = [self codeAttributes];
-    for (RIDESheet* sheet in sheets_)
+    for (Sheet* sheet in sheets_)
         [sheet.storage setAttributes:attributes range:NSMakeRange(0, sheet.storage.length)];
     [blank_.storage setAttributes:attributes range:NSMakeRange(0, blank_.storage.length)];
     code_.font = font;
     code_.typingAttributes = attributes;
     [gutter_ textDidChange];
     [self recolour];
-    ride_remember_code_font(RIDEUtf8([NSString stringWithFormat:@"%@ %g", font.fontName, font.pointSize]));
+    ride_remember_code_font(Utf8([NSString stringWithFormat:@"%@ %g", font.fontName, font.pointSize]));
     [self say:[NSString stringWithFormat:@"font: %@ %g", font.displayName, font.pointSize]];
 }
 
@@ -2432,14 +2432,14 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (NSString*)writtenToProject:(int)outcome {
     if (outcome != 0) return [@" - written to " stringByAppendingString:[self outcomePath].lastPathComponent];
-    return [@" - but " stringByAppendingString:RIDEStr(ride_outcome_message(project_))];
+    return [@" - but " stringByAppendingString:Str(ride_outcome_message(project_))];
 }
 
 - (void)chooseArch:(NSMenuItem*)sender {
-    arch_ = RIDEStr(ride_arch((int)(sender.tag - kTagArchBase)));
+    arch_ = Str(ride_arch((int)(sender.tag - kTagArchBase)));
     NSString* said = [@"target: " stringByAppendingString:arch_];
     if (ride_project_loaded(project_))
-        said = [said stringByAppendingString:[self writtenToProject:ride_project_set_arch(project_, RIDEUtf8(arch_))]];
+        said = [said stringByAppendingString:[self writtenToProject:ride_project_set_arch(project_, Utf8(arch_))]];
     [self sayBuild];
     [self say:said];
 }
@@ -2448,7 +2448,7 @@ static NSColor* ColourOf(unsigned char kind) {
     toolKind_ = (int)(sender.tag - kTagToolBase);
     NSString* said = toolKind_ == RIDE_TOOL_AUTO
                          ? @"compiler: chosen by the file"
-                         : [@"compiler: " stringByAppendingString:RIDEStr(ride_toolchain_name(toolKind_))];
+                         : [@"compiler: " stringByAppendingString:Str(ride_toolchain_name(toolKind_))];
     if (ride_project_loaded(project_))
         said = [said stringByAppendingString:[self writtenToProject:ride_project_set_toolchain(project_, toolKind_)]];
     else
@@ -2464,14 +2464,14 @@ static NSColor* ColourOf(unsigned char kind) {
     [self recolour];
     [self say:[@"language: " stringByAppendingString:current_.language < 0
                                                          ? @"chosen by the name"
-                                                         : RIDEStr(ride_language_name(current_.language))]];
+                                                         : Str(ride_language_name(current_.language))]];
 }
 
 - (void)chooseConfig:(NSMenuItem*)sender {
     config_ = (int)(sender.tag - kTagConfigBase);
     ride_remember_configuration(config_);
     [self sayBuild];
-    [self say:RIDEStr(ride_config_name(config_))];
+    [self say:Str(ride_config_name(config_))];
 }
 
 - (NSArray<NSNumber*>*)toolKinds {
@@ -2494,7 +2494,7 @@ static NSColor* ColourOf(unsigned char kind) {
     if (count == 0) return;
     int at = 0;
     for (int i = 0; i < count; ++i)
-        if ([RIDEStr(ride_arch(i)) isEqualToString:arch_]) { at = i; break; }
+        if ([Str(ride_arch(i)) isEqualToString:arch_]) { at = i; break; }
     NSMenuItem* item = [[NSMenuItem alloc] init];
     item.tag = kTagArchBase + (at + 1) % count;
     [self chooseArch:item];
@@ -2516,7 +2516,7 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (NSString*)installFileOrSay {
-    NSString* file = RIDEStr(ride_install_file());
+    NSString* file = Str(ride_install_file());
     if (file.length == 0) [self say:@"no installation directory to keep this in"];
     return file;
 }
@@ -2526,12 +2526,12 @@ static NSColor* ColourOf(unsigned char kind) {
     NSString* file = [self installFileOrSay];
     if (file.length == 0) return;
     NSString* include = [self ask:@"cpp11's headers (include)" detail:[@"Kept in " stringByAppendingString:file]
-                            value:RIDEStr(ride_include_dir())];
+                            value:Str(ride_include_dir())];
     if (include == nil) { [self say:@"header directories unchanged"]; return; }
     NSString* lib = [self ask:@"c90's headers (lib)" detail:[@"Kept in " stringByAppendingString:file]
-                        value:RIDEStr(ride_lib_dir())];
+                        value:Str(ride_lib_dir())];
     if (lib == nil) { [self say:@"header directories unchanged"]; return; }
-    [self say:ride_remember_header_dirs(RIDEUtf8(include), RIDEUtf8(lib))
+    [self say:ride_remember_header_dirs(Utf8(include), Utf8(lib))
                   ? [@"header directories written to " stringByAppendingString:file]
                   : [@"cannot write " stringByAppendingString:file]];
 }
@@ -2542,9 +2542,9 @@ static NSColor* ColourOf(unsigned char kind) {
     if (file.length == 0) return;
     NSString* line = [self ask:@"Shared include paths"
                         detail:[NSString stringWithFormat:@"Kept in %@, ';' between them", file]
-                         value:RIDEStr(ride_includes())];
+                         value:Str(ride_includes())];
     if (line == nil) { [self say:@"shared include paths unchanged"]; return; }
-    [self say:ride_set_includes(RIDEUtf8(line)) ? [@"shared include paths written to " stringByAppendingString:file]
+    [self say:ride_set_includes(Utf8(line)) ? [@"shared include paths written to " stringByAppendingString:file]
                                                 : [@"cannot write " stringByAppendingString:file]];
 }
 
@@ -2554,9 +2554,9 @@ static NSColor* ColourOf(unsigned char kind) {
     if (file.length == 0) return;
     NSString* line = [self ask:@"Shared libraries"
                         detail:[NSString stringWithFormat:@"Kept in %@, ';' between them, linked after the objects", file]
-                         value:RIDEStr(ride_libraries())];
+                         value:Str(ride_libraries())];
     if (line == nil) { [self say:@"shared libraries unchanged"]; return; }
-    [self say:ride_set_libraries(RIDEUtf8(line)) ? [@"shared libraries written to " stringByAppendingString:file]
+    [self say:ride_set_libraries(Utf8(line)) ? [@"shared libraries written to " stringByAppendingString:file]
                                                  : [@"cannot write " stringByAppendingString:file]];
 }
 
@@ -2569,7 +2569,7 @@ static NSColor* ColourOf(unsigned char kind) {
     pick.message = title;
     if (now.length > 0) pick.directoryURL = [NSURL fileURLWithPath:now.stringByDeletingLastPathComponent];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"unchanged"]; return; }
-    if (!remember(RIDEUtf8(pick.URL.path))) {
+    if (!remember(Utf8(pick.URL.path))) {
         [self say:[@"cannot write " stringByAppendingString:file]];
         return;
     }
@@ -2578,17 +2578,17 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)locateAssembler:(id)sender {
     (void)sender;
-    [self pickProgram:@"The assembler for x86_64-windows (masm.exe)" now:RIDEStr(ride_assembler())
+    [self pickProgram:@"The assembler for x86_64-windows (masm.exe)" now:Str(ride_assembler())
              remember:ride_remember_assembler said:@"c90 and cpp11 assemble through"];
 }
 - (void)locateLinker:(id)sender {
     (void)sender;
-    [self pickProgram:@"The linker for x86_64-windows (link.exe)" now:RIDEStr(ride_linker())
+    [self pickProgram:@"The linker for x86_64-windows (link.exe)" now:Str(ride_linker())
              remember:ride_remember_linker said:@"a Windows build links through"];
 }
 - (void)locateTiLinker:(id)sender {
     (void)sender;
-    [self pickProgram:@"The linker for tms6747 (lnk6x.exe)" now:RIDEStr(ride_tilinker())
+    [self pickProgram:@"The linker for tms6747 (lnk6x.exe)" now:Str(ride_tilinker())
              remember:ride_remember_tilinker said:@"a tms6747 build links through"];
 }
 
@@ -2600,7 +2600,7 @@ static NSColor* ColourOf(unsigned char kind) {
     pick.canChooseFiles = NO;
     pick.canChooseDirectories = YES;
     pick.message = @"TI's C6000 compiler directory - the one with bin/lnk6x";
-    NSString* now = RIDEStr(ride_ti());
+    NSString* now = Str(ride_ti());
     if (now.length > 0) pick.directoryURL = [NSURL fileURLWithPath:now];
     if ([pick runModal] != NSModalResponseOK) { [self say:@"TI compiler unchanged"]; return; }
     NSString* dir = pick.URL.path;
@@ -2609,7 +2609,7 @@ static NSColor* ColourOf(unsigned char kind) {
     lib.canChooseDirectories = YES;
     lib.message = @"A directory with rts6740_elf_eh.lib, the exception-handling runtime (Cancel for none)";
     NSString* libDir = [lib runModal] == NSModalResponseOK ? lib.URL.path : @"";
-    [self say:ride_remember_ti(RIDEUtf8(dir), RIDEUtf8(libDir))
+    [self say:ride_remember_ti(Utf8(dir), Utf8(libDir))
                   ? [NSString stringWithFormat:@"a tms6747 build links a .out with %@ - written to %@", dir, file]
                   : [@"cannot write " stringByAppendingString:file]];
 }
@@ -2619,9 +2619,9 @@ static NSColor* ColourOf(unsigned char kind) {
     NSString* text = [NSString stringWithFormat:
         @"c90       %@\ncpp11     %@\nshalimar  %@\nc2s       %@\n\nsettings  %@\nheaders   include %@, lib %@\n"
         @"assembler %@\nlinker    %@\nlnk6x     %@\nTI        %@\n",
-        cc1_, cxx1_, shc_, RIDETake(ride_find_converter()), RIDEStr(ride_install_file()),
-        RIDEStr(ride_include_dir()), RIDEStr(ride_lib_dir()), RIDEStr(ride_assembler()),
-        RIDEStr(ride_linker()), RIDEStr(ride_tilinker()), RIDEStr(ride_ti())];
+        cc1_, cxx1_, shc_, Take(ride_find_converter()), Str(ride_install_file()),
+        Str(ride_include_dir()), Str(ride_lib_dir()), Str(ride_assembler()),
+        Str(ride_linker()), Str(ride_tilinker()), Str(ride_ti())];
     [self setOutput:text];
     [self showPanel:kPanelOutput];
     [self say:@"the tools this window drives - in Output"];
@@ -2660,10 +2660,10 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)showAbout:(id)sender {
     (void)sender;
-    NSString* about = RIDETake(ride_about());
+    NSString* about = Take(ride_about());
     NSDictionary* options = @{
-        NSAboutPanelOptionApplicationName : RIDEStr(ride_product_name()),
-        NSAboutPanelOptionApplicationVersion : RIDEStr(ride_version()),
+        NSAboutPanelOptionApplicationName : Str(ride_product_name()),
+        NSAboutPanelOptionApplicationVersion : Str(ride_version()),
         NSAboutPanelOptionVersion : @"",
         NSAboutPanelOptionCredits : [[NSAttributedString alloc]
             initWithString:about
@@ -2680,7 +2680,7 @@ static NSColor* ColourOf(unsigned char kind) {
     BOOL file = current_ != nil;
 
     if (action == @selector(chooseArch:)) {
-        item.state = [RIDEStr(ride_arch((int)(item.tag - kTagArchBase))) isEqualToString:arch_]
+        item.state = [Str(ride_arch((int)(item.tag - kTagArchBase))) isEqualToString:arch_]
                          ? NSControlStateValueOn : NSControlStateValueOff;
         return !busy_;
     }
@@ -2736,10 +2736,10 @@ static NSColor* ColourOf(unsigned char kind) {
         action == @selector(projectLibraries:))
         return project && !busy_;
     if (action == @selector(addCurrentFile:)) return project && file && current_.path != nil &&
-                                                    !ride_project_holds(project_, RIDEUtf8(current_.path));
+                                                    !ride_project_holds(project_, Utf8(current_.path));
     if (action == @selector(removeFromProject:) || action == @selector(moveToGroup:)) {
         NSString* target = [self targetFile];
-        return project && target != nil && ride_project_holds(project_, RIDEUtf8(target));
+        return project && target != nil && ride_project_holds(project_, Utf8(target));
     }
     if (action == @selector(renameFile:) || action == @selector(deleteFile:))
         return [self targetFile] != nil && !busy_;
@@ -2755,7 +2755,7 @@ static NSColor* ColourOf(unsigned char kind) {
     BOOL projects = menu == recentProjectsMenu_;
     [menu removeAllItems];
     for (int i = 0; i < 8; ++i) {
-        NSString* where = RIDEStr(projects ? ride_recent_project(i) : ride_recent_file(i));
+        NSString* where = Str(projects ? ride_recent_project(i) : ride_recent_file(i));
         if (where.length == 0) break;
         if (![NSFileManager.defaultManager fileExistsAtPath:where]) continue;
         NSMenuItem* item = [[NSMenuItem alloc]
@@ -2806,7 +2806,7 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     const NSEventModifierFlags shift = NSEventModifierFlagShift;
     const NSEventModifierFlags opt = NSEventModifierFlagOption;
     const NSEventModifierFlags ctrl = NSEventModifierFlagControl;
-    NSString* product = RIDEStr(ride_product_name());
+    NSString* product = Str(ride_product_name());
 
     NSMenu* bar = [[NSMenu alloc] initWithTitle:@"Main"];
 
@@ -2930,15 +2930,15 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     // Target: where the build is for, which compiler, which language.
     NSMenu* target = [self submenu:@"Target" of:bar];
     for (int i = 0; i < ride_arch_count(); ++i)
-        [self add:RIDEStr(ride_arch(i)) to:target action:@selector(chooseArch:) key:@""].tag = kTagArchBase + i;
+        [self add:Str(ride_arch(i)) to:target action:@selector(chooseArch:) key:@""].tag = kTagArchBase + i;
     [self add:@"Next Target" to:target action:@selector(nextTarget:) key:@"t" mods:ctrl];
     [target addItem:[NSMenuItem separatorItem]];
     NSMenu* compilers = [self submenu:@"Compiler" of:target];
     for (NSNumber* kind in [self toolKinds]) {
         NSString* name = kind.intValue == RIDE_TOOL_AUTO ? @"By Language"
                          : kind.intValue == RIDE_TOOL_CXX
-                             ? [NSString stringWithFormat:@"Host (%@)", RIDEStr(ride_toolchain_name(RIDE_TOOL_CXX))]
-                             : RIDEStr(ride_toolchain_name(kind.intValue));
+                             ? [NSString stringWithFormat:@"Host (%@)", Str(ride_toolchain_name(RIDE_TOOL_CXX))]
+                             : Str(ride_toolchain_name(kind.intValue));
         [self add:name to:compilers action:@selector(chooseTool:) key:@""].tag = kTagToolBase + kind.intValue;
     }
     [compilers addItem:[NSMenuItem separatorItem]];

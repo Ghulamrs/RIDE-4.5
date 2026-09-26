@@ -7,20 +7,20 @@
 #include <cstdio>
 #include <cstring>
 
-#import "RIDEStrings.h"
-#import "RIDEWindowController.h"
+#import "Text.h"
+#import "WindowController.h"
 
-@interface RIDEAppDelegate : NSObject <NSApplicationDelegate>
-@property(nonatomic, strong) RIDEWindowController* window;
+@interface AppDelegate : NSObject <NSApplicationDelegate>
+@property(nonatomic, strong) WindowController* window;
 @property(nonatomic, copy) NSString* project;
 @property(nonatomic, strong) NSMutableArray<NSString*>* files;
 @end
 
-@implementation RIDEAppDelegate
+@implementation AppDelegate
 
 - (void)applicationWillFinishLaunching:(NSNotification*)note {
     (void)note;
-    self.window = [[RIDEWindowController alloc] init];
+    self.window = [[WindowController alloc] init];
     NSApp.mainMenu = [self.window makeMainMenu];
 }
 
@@ -34,7 +34,7 @@
 
 // Files dropped on the Dock icon, or opened with RIDE from Finder.
 - (void)application:(NSApplication*)sender openFiles:(NSArray<NSString*>*)paths {
-    NSString* suffix = RIDEStr(ride_project_suffix());
+    NSString* suffix = Str(ride_project_suffix());
     for (NSString* path in paths) {
         BOOL directory = NO;
         [NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory];
@@ -77,7 +77,7 @@ int main(int argc, const char* argv[]) {
     @autoreleasepool {
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
-        RIDEAppDelegate* delegate = [[RIDEAppDelegate alloc] init];
+        AppDelegate* delegate = [[AppDelegate alloc] init];
         delegate.files = [NSMutableArray array];
 
         // Arguments as the other two front ends take them; the ones macOS
@@ -87,13 +87,13 @@ int main(int argc, const char* argv[]) {
             const char* word = argv[i];
             if (word[0] == '-') {
                 if (std::strcmp(word, "--project") == 0 && i + 1 < argc) {
-                    delegate.project = RIDEStr(argv[++i]);
+                    delegate.project = Str(argv[++i]);
                     continue;
                 }
                 if (std::strncmp(word, "-NS", 3) == 0 || std::strncmp(word, "-Apple", 6) == 0) ++i;
                 continue;
             }
-            NSString* path = RIDEStr(word);
+            NSString* path = Str(word);
             if (!path.isAbsolutePath) path = [here stringByAppendingPathComponent:path];
             [delegate.files addObject:path.stringByStandardizingPath];
         }

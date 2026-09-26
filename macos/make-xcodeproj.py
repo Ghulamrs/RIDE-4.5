@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes RIDEMac.xcodeproj, the macOS window's Xcode project, from Makefile.
+"""Writes Window.xcodeproj, the macOS window's Xcode project, from Makefile.
 
     python3 make-xcodeproj.py
 
@@ -182,7 +182,7 @@ def main():
 
     w("\t};\n\trootObject = %s /* Project object */;\n}\n" % project)
 
-    where = os.path.join(HERE, "RIDEMac.xcodeproj")
+    where = os.path.join(HERE, "Window.xcodeproj")
     os.makedirs(where, exist_ok=True)
     with open(os.path.join(where, "project.pbxproj"), "w") as f:
         f.write("".join(out))

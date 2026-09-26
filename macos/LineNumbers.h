@@ -1,11 +1,11 @@
 // The gutter: line numbers down the left of the file, and a red mark on the
 // lines the last build complained about.
-#ifndef RIDE_MAC_LINE_NUMBERS_H
-#define RIDE_MAC_LINE_NUMBERS_H
+#ifndef MACOS_LINE_NUMBERS_H
+#define MACOS_LINE_NUMBERS_H
 
 #import <Cocoa/Cocoa.h>
 
-@interface RIDELineNumbers : NSRulerView
+@interface LineNumbers : NSRulerView
 
 - (instancetype)initWithTextView:(NSTextView*)textView;
 
