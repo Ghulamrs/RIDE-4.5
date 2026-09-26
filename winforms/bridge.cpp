@@ -737,6 +737,10 @@ const char* ride_install_file(void) {
     return scratch().c_str();
 }
 
+int ride_write_install_file_if_absent(void) {
+    return editor::settings::writeInstallFileIfAbsent() ? 1 : 0;
+}
+
 const char* ride_include_dir(void) {
     scratch() = editor::settings::includeDir();
     return scratch().c_str();

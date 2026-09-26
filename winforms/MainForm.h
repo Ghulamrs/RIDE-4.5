@@ -889,11 +889,10 @@ private:
         return root;
     }
 
-    // {app} is the folder above bin\, where RIDE.exe lives. New projects
-    // default under {app}\projects and single programs under {app}\programs, so
-    // they land in a known place beside the install instead of on the Desktop or
-    // in the read-only directory the shortcut starts in. Made on demand (the
-    // installer also creates them, user-writable).
+    // {app} is the folder above bin\, where RIDE.exe lives. Projects and single
+    // programs are the user's, so they default under Documents\RIDE\projects and
+    // Documents\RIDE\programs - as the macOS window has them - and not beside the
+    // install, which under Program Files is not the user's to write. Made on demand.
     String^ AppDir() {
         try {
             System::IO::DirectoryInfo^ above =
@@ -907,8 +906,30 @@ private:
         try { System::IO::Directory::CreateDirectory(d); } catch (Exception^) { }
         return d;
     }
-    String^ ProjectsDir() { return MadeUnderApp("projects"); }
-    String^ ProgramsDir() { return MadeUnderApp("programs"); }
+    // Missing or empty, Documents\RIDE\<leaf> is filled from {app}\<leaf>: the
+    // sample projects and programs the installer carries reach the user there.
+    static void CopyTree(String^ from, String^ to) {
+        System::IO::Directory::CreateDirectory(to);
+        for each (String^ f in System::IO::Directory::GetFiles(from))
+            System::IO::File::Copy(f, System::IO::Path::Combine(to, System::IO::Path::GetFileName(f)), false);
+        for each (String^ d in System::IO::Directory::GetDirectories(from))
+            CopyTree(d, System::IO::Path::Combine(to, System::IO::Path::GetFileName(d)));
+    }
+    String^ MadeUnderDocuments(String^ leaf) {
+        String^ docs = Environment::GetFolderPath(Environment::SpecialFolder::MyDocuments);
+        if (docs == nullptr || docs->Length == 0) return MadeUnderApp(leaf);
+        String^ d = System::IO::Path::Combine(System::IO::Path::Combine(docs, ProductName()), leaf);
+        try { System::IO::Directory::CreateDirectory(d); } catch (Exception^) { return MadeUnderApp(leaf); }
+        try {
+            String^ seed = System::IO::Path::Combine(AppDir(), leaf);
+            if (System::IO::Directory::GetFileSystemEntries(d)->Length == 0 &&
+                System::IO::Directory::Exists(seed))
+                CopyTree(seed, d);
+        } catch (Exception^) { }
+        return d;
+    }
+    String^ ProjectsDir() { return MadeUnderDocuments("projects"); }
+    String^ ProgramsDir() { return MadeUnderDocuments("programs"); }
 
     void SayWhere() {
         String^ root = RootNow();
@@ -2038,7 +2059,7 @@ private:
     void OnNewFile(Object^, EventArgs^) {
         String^ root = RootNow();
 
-        // No project open: a single program is made under {app}\programs rather
+        // No project open: a single program is made under Documents\RIDE\programs rather
         // than in the read-only directory the shortcut started the editor in.
         if (root == nullptr || root->Length == 0) {
             String^ programs = ProgramsDir();
@@ -2552,9 +2573,7 @@ private:
         FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
         pick->Description = "Where to put the project";
         pick->ShowNewFolderButton = true;
-        String^ start = RootNow();
-        if (start == nullptr || start->Length == 0) start = ProjectsDir();
-        if (start != nullptr && start->Length > 0) pick->SelectedPath = start;
+        pick->SelectedPath = ProjectsDir();
         if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
             what_->Text = "no project made";
             return;
@@ -2591,7 +2610,7 @@ private:
         pick->Title = "Open project file";
         pick->Filter = ProductName() + " projects (*" + suffix + ")|*" + suffix +
                        "|All files (*.*)|*.*";
-        if (projectDirectory_ != nullptr) pick->InitialDirectory = projectDirectory_;
+        pick->InitialDirectory = ProjectsDir();
         if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
             what_->Text = "no project opened";
             return;
@@ -2613,7 +2632,7 @@ private:
         pick->Title = "Save as project file";
         pick->FileName = offered;
         pick->Filter = ProductName() + " projects (*" + suffix + ")|*" + suffix;
-        pick->InitialDirectory = FromUtf8(ride_project_root(project_));
+        pick->InitialDirectory = ProjectsDir();
         if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
             what_->Text = "not saved";
             return;
@@ -2717,6 +2736,7 @@ private:
         OpenFileDialog^ pick = gcnew OpenFileDialog();
         pick->Filter = "Sources|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx;*.shl;*.s;*.json;*.pro"
                        "|C and C++|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx|Shalimar|*.shl|All files|*.*";
+        pick->InitialDirectory = ProgramsDir();
         if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
             what_->Text = "not opened";
             return;
@@ -2841,12 +2861,8 @@ private:
         SaveFileDialog^ pick = gcnew SaveFileDialog();
         pick->Filter = "Sources|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx;*.shl;*.s;*.json;*.pro"
                        "|C and C++|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx|Shalimar|*.shl|All files|*.*";
-        if (sheet->path != nullptr) {
-            pick->InitialDirectory = System::IO::Path::GetDirectoryName(sheet->path);
-            pick->FileName = System::IO::Path::GetFileName(sheet->path);
-        } else if (projectDirectory_ != nullptr) {
-            pick->InitialDirectory = projectDirectory_;
-        }
+        pick->InitialDirectory = ProgramsDir();
+        if (sheet->path != nullptr) pick->FileName = System::IO::Path::GetFileName(sheet->path);
         if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
             what_->Text = "not saved";
             return;

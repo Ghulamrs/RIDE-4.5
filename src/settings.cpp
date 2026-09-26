@@ -147,6 +147,17 @@ namespace {
 // pointer for the same reason.
 std::string* pretended = 0;
 
+// **On macOS settings.json is the user's, in ~/.ride beside state.json**: a file
+// written inside a signed RIDE.app breaks its signature, and /Applications is not
+// the user's to write. What it names is still resolved against the installation.
+bool perUserInstallFile() {
+#ifdef __APPLE__
+    return !(pretended && !pretended->empty()) && !path::homeDir().empty();
+#else
+    return false;
+#endif
+}
+
 std::string installDir() {
     if (pretended && !pretended->empty()) return *pretended;
     std::string where = path::programDirectory();
@@ -178,7 +189,8 @@ bool writeInstall(const Json& root) {
     std::string file = installFile();
     if (file.empty()) return false;
     std::string base = installDir();
-    if (!path::exists(file) &&
+    if (perUserInstallFile()) path::makeDirectories(path::parent(file));
+    else if (!path::exists(file) &&
         (!path::isDirectory(path::join(base, "include")) || !path::isDirectory(path::join(base, "lib"))))
         return false;
     FILE* out = std::fopen(file.c_str(), "wb");
@@ -226,6 +238,8 @@ void pretendInstalledAt(const std::string& directory) {
 }
 
 std::string installFile() {
+    if (perUserInstallFile())
+        return path::join(path::join(path::homeDir(), product::kStateDirectory), "settings.json");
     std::string base = installDir();
     return base.empty() ? std::string() : path::join(base, "settings.json");
 }

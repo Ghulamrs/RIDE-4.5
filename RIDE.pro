@@ -107,6 +107,20 @@
       "winforms/bridge.cpp",
       "winforms/bridge.h",
       "winforms/show.ps1"
+    ],
+    "macOS window": [
+      "macos/CodeView.h",
+      "macos/CodeView.mm",
+      "macos/Info.plist",
+      "macos/LineNumbers.h",
+      "macos/LineNumbers.mm",
+      "macos/Makefile",
+      "macos/README.md",
+      "macos/Text.h",
+      "macos/WindowController.h",
+      "macos/WindowController.mm",
+      "macos/main.mm",
+      "macos/make-xcodeproj.py"
     ]
   }
 }

@@ -751,6 +751,7 @@ builds it.
 | **RIDE** | the console editor on Linux and macOS | `src/*.cpp` with `src/terminal.cpp` | `make` |
 | **WinConsole** | the console editor on Windows | the same `src/*.cpp` with `src/terminal_win.cpp` | `build.bat` |
 | **RIDEGui** | the C++/CLI window, WinForms | `winforms/*.cpp` and the core files named in `winforms/RIDEGui.vcxproj` | `msbuild winforms\RIDEGui.vcxproj` |
+| **RIDE.app** | the AppKit window on macOS, Objective-C++ | `macos/*.mm`, `winforms/bridge.cpp` and the same core files | `make -C macos`, or `macos/Window.xcodeproj` |
 
 **The two consoles are one front end and two terminals.** `src/editor.cpp` draws
 the screen for both; `src/terminal.cpp` and `src/terminal_win.cpp` are the halves
@@ -775,6 +776,21 @@ it: put the difference behind the seam that already separates them, not a
 second copy of the editor. Two editors that behave nearly the same are worse
 than one editor with two terminals - the same reason the window shares the core
 rather than reimplementing it.
+
+### As a macOS window
+
+```
+make -C macos run
+```
+
+The same shape as the Windows window - the project down the left, the file in
+the middle, a panel across the bottom quarter, a one-line status bar under
+everything - built with AppKit in Objective-C++ (`.mm`) and consuming the core
+through `winforms/bridge.h`, the C interface the Windows window already speaks.
+Its menus are File, Edit, View, Project, Build, Target, Option and Help, and its
+panel's three tabs are Errors (every diagnostic the build printed, read with
+the core's own parser), Progress (each step, timed) and Output. Builds run off
+the main thread. The debugger is not in it yet. `macos/README.md` has the rest.
 
 ## The manual
 
