@@ -114,7 +114,14 @@ xattr -cr "$STAGE"
 COMP=$MAC/component.plist
 pkgbuild --analyze --root "$STAGE" "$COMP" >/dev/null
 # Installed where it says, not wherever another RIDE.app happens to be found.
-/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMP"
+python3 - "$COMP" <<'PY'
+import plistlib, sys
+p = sys.argv[1]
+with open(p, 'rb') as f: bundles = plistlib.load(f)
+for b in bundles: b['BundleIsRelocatable'] = False
+with open(p, 'wb') as f: plistlib.dump(bundles, f)
+print('  %d bundle(s), none relocatable: %s' % (len(bundles), ', '.join(b['RootRelativeBundlePath'] for b in bundles)))
+PY
 pkgbuild --root "$STAGE" --component-plist "$COMP" --identifier com.ghulamrs.ride \
     --version "$VER" --install-location / "$MAC/RIDE-component.pkg" >/dev/null
 productbuild --package "$MAC/RIDE-component.pkg" "$OUT/RIDE-$VER-macos.pkg" >/dev/null
