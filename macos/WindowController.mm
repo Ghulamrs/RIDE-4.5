@@ -270,6 +270,8 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
 }
 
 - (void)startWithProject:(NSString*)project files:(NSArray<NSString*>*)files {
+    // ~/.ride/settings.json, made with the installer's defaults the first time.
+    ride_write_install_file_if_absent();
     if (project.length > 0) [self loadProject:project];
     BOOL named = NO;
     for (NSString* file in files) {
