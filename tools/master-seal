@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""The master seal: every project's seal, listed and combined into one.
+
+    tools/master-seal write    write MASTER.SEAL from each project's seal file
+    tools/master-seal check    check every project's seal, then MASTER.SEAL itself
+
+RIDE is the product, so MASTER.SEAL lives here and names the trees workspace.mk
+builds from, at the paths it builds them from. Each project's own tools/seal is
+run first, so a project whose sources have moved is reported before its seal
+is trusted. The master seal is a CRC32 over the project seals in this order.
+"""
+import binascii
+import datetime
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.normpath(os.path.join(HERE, ".."))
+NAME = "MASTER.SEAL"
+
+# (the program, the project directory beside RIDE, its seal file) - workspace.mk's order.
+PROJECTS = [
+    ("RIDE", ".", "ride-4.5.dat"),
+    ("c90", "../VM6747/Compiler-Ci", "c90-1.1.dat"),
+    ("cpp11", "../VM6747/Compiler-Cppi", "cxx1-1.4.dat"),
+    ("shalimar", "../VM6747/Compiler-Si", "shalimar-1.2.dat"),
+    ("c2s", "../Converter-C2S", "c2s-1.2.dat"),
+    ("vm6747", "../VM6747/Emulator", "vm6747-1.0.dat"),
+    ("asm6x", "../ASM6x", "asm6x-0.2.dat"),
+    ("masm", "../MASM", "masm-1.0.dat"),
+    ("link", "../LINK", "link-1.0.dat"),
+    ("lnk6x", "../LNK6x", "lnk6x-1.0.dat"),
+]
+
+
+def header(path):
+    """The file count and seal from a project seal's fourth line: 'CRC32 ... - N files, seal XXXXXXXX'."""
+    with open(path) as fh:
+        for line in fh:
+            if " files, seal " in line:
+                tail = line.rsplit("- ", 1)[1].split()
+                return int(tail[0]), tail[3]
+    raise SystemExit("%s: no seal line in it" % path)
+
+
+def rows():
+    out = []
+    for prog, where, dat in PROJECTS:
+        path = os.path.normpath(os.path.join(ROOT, where, dat))
+        count, seal = header(path)
+        with open(path, "rb") as fh:
+            whole = binascii.crc32(fh.read()) & 0xFFFFFFFF
+        out.append((prog, os.path.relpath(path, ROOT).replace(os.sep, "/"), count, seal, whole))
+    return out
+
+
+def combined(rs):
+    return binascii.crc32("".join("%s %s" % (p, s) for p, _, _, s, _ in rs).encode()) & 0xFFFFFFFF
+
+
+def write():
+    rs = rows()
+    total = combined(rs)
+    today = datetime.date.today().strftime("%d-%m-%Y")
+    with open(os.path.join(ROOT, NAME), "w") as fh:
+        fh.write("©2026 G. R. Akhtar - RIDE 4.5 and the programs it drives\n")
+        fh.write("Master seal: each project's seal, listed and combined into one\n")
+        fh.write("Written by tools/master-seal; check it with `tools/master-seal check`.\n")
+        fh.write("%d projects, %d files, master seal %08X\n"
+                 % (len(rs), sum(r[2] for r in rs), total))
+        fh.write("-" * 72 + "\n")
+        fh.write("%-9s %-8s %-8s %6s  %s\n" % ("program", "seal", "file CRC", "files", "seal file"))
+        for prog, rel, count, seal, whole in rs:
+            fh.write("%-9s %-8s %08X %6d  %s\n" % (prog, seal, whole, count, rel))
+        fh.write("-" * 72 + "\n")
+        fh.write("Master seal %08X\n" % total)
+        fh.write("Sealed on %s\n" % today)
+    print("wrote %s: %d projects, master seal %08X" % (NAME, len(rs), total))
+    return 0
+
+
+def check():
+    bad = 0
+    for prog, where, dat in PROJECTS:
+        tool = os.path.join(ROOT, where, "tools", "seal")
+        r = subprocess.run([sys.executable, tool, "check"], cwd=os.path.join(ROOT, where),
+                           stdout=subprocess.PIPE, universal_newlines=True)
+        print("  %-9s %s" % (prog, r.stdout.strip().splitlines()[-1]))
+        bad += r.returncode != 0
+    recorded = {}
+    for line in open(os.path.join(ROOT, NAME)):
+        parts = line.split()
+        if len(parts) == 5 and len(parts[1]) == 8 and parts[4].endswith(".dat"):
+            recorded[parts[0]] = (parts[1], parts[2])
+    for prog, rel, count, seal, whole in rows():
+        if recorded.get(prog) != (seal, "%08X" % whole):
+            print("  %s: MASTER.SEAL does not match %s" % (prog, rel)); bad += 1
+    print("master seal: %d projects, %d differ" % (len(PROJECTS), bad))
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    what = sys.argv[1] if len(sys.argv) > 1 else "check"
+    if what == "write":
+        sys.exit(write())
+    if what == "check":
+        sys.exit(check())
+    print(__doc__)
+    sys.exit(2)
