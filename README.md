@@ -843,6 +843,44 @@ panel's three tabs are Errors (every diagnostic the build printed, read with
 the core's own parser), Progress (each step, timed) and Output. Builds run off
 the main thread. The debugger is not in it yet. `macos/README.md` has the rest.
 
+### The seam
+
+`winforms/bridge.h` is the whole of what either window knows about the core,
+and it is C so that C++/CLI and Objective-C++ can both call it. What it
+promises, written down because a window that guesses gets it wrong on the
+other thread:
+
+- **A `const char*` it answers is its own**, and good until the next call that
+  answers one on the same object - a project's `answer`, a debugger's lines -
+  or, for a call that takes no object, the next such call, since those share
+  one string. Copy it before calling again. A `char*` it hands over is the
+  caller's, freed with `ride_free`.
+- **One thread at a time per `RIDEProject`.** A build reads the project on the
+  thread it runs on; a window that builds off its main thread must not load,
+  close or change the project while one runs. `ride_run_start` reads it on the
+  calling thread and not again.
+- **Errors come back three ways**: a buffer the caller passes
+  (`ride_project_load`, `_allows`, `_save_as`, cut on a character boundary),
+  `ride_outcome_message` after a project operation, and a result's own
+  accessors (`ride_build_error_*`, `ride_ran_error_*`, `ride_running_error_*`).
+  A 0 from a `ride_remember_*` or `ride_set_*` means the settings file could
+  not be written, and there is nothing more to say.
+- **Side effects that are not in a name**: `ride_program_free` deletes the
+  program it built; `ride_project_set_arch`, `_set_toolchain`,
+  `_set_includes` and `_set_libraries` write the `.pro` at once;
+  `ride_project_target_ready` is the first half of every `ride_project_target_*`
+  answer and is re-run inside `ride_build_target` and `ride_project_debug_plan`.
+- **Every accessor takes NULL** and answers 0 or `""`, so a build that returned
+  nothing reads as one that failed.
+- **Threads**: the `RIDEOutput` callback and the `ride_ask_native` question
+  come on whichever thread is building or running; a window marshals both to
+  its own. `ride_ask_native` takes no user pointer - a window reaches itself
+  through the one it has.
+
+The Mac window reads diagnostics through `ride_parse_diagnostic` and the
+compilers' names through `ride_compiler_name`, so neither window includes a
+core header; `tests/test.cpp` checks both answers against the core's own.
+
 ## The manual
 
 [`help/`](help/README.md) — ten pages about the editor, one about each language

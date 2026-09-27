@@ -35,14 +35,12 @@ public:
     bool send(const char* bytes, size_t size);
     void closeInput();
 
-    // Appends what the child wrote next: 1 when something came (*isStderr says from where), 0 when
-    // nothing did within the time, -1 when every stream it writes to has closed.
+    // Appends what came next: 1 something (*isStderr: from where), 0 nothing in time, -1 all closed.
     int readAny(std::string& into, bool* isStderr, int timeoutMs);
 
     // Whether the child has ended, and how, without waiting for it.
     bool ended(int* status);
-    // Waits for the child, lets go of everything held for it, and answers its status: the exit
-    // code, or 128 and the signal that ended it.
+    // Waits, lets go of all it held, and answers the exit code, or 128 and the signal that ended it.
     int finish();
     // Ends the child and its group at once; safe from another thread while one reads.
     void kill();

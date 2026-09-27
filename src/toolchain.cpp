@@ -118,8 +118,10 @@ bool importMsvcEnvironment() {
         return true;
     }
 
+    // cmd reads '%' in a line even inside quotes, and CALL doubles a quoted '^': a batch file whose
+    // path holds either would be a different path by the time it ran, so it is not run (M14).
     std::string bat = findVcvars();
-    if (bat.empty()) {
+    if (bat.empty() || bat.find_first_of("%^\"") != std::string::npos) {
         done = -1;
         return false;
     }

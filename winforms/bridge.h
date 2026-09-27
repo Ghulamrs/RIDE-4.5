@@ -1,6 +1,9 @@
 #ifndef RIDE_BRIDGE_H
 #define RIDE_BRIDGE_H
 
+/* The C seam both windows consume. A const char* answer is the bridge's own string, good until the
+   next call on the same object - or, for one taking none, the next such call; copy it first. One
+   thread at a time per RIDEProject. The rest - errors, side effects - is README.md, "The seam". */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,6 +47,7 @@ const char* ride_settings_set_aside(void);
 const char* ride_code_font(void);
 int ride_remember_code_font(const char* described);
 
+/* Win32 only: a Rich Edit's HWND. Elsewhere these do nothing. */
 void ride_undo_suspend(void* windowHandle);
 void ride_undo_resume(void* windowHandle);
 
@@ -63,6 +67,8 @@ typedef struct RIDEProject RIDEProject;
 RIDEProject* ride_project_new(void);
 void ride_project_free(RIDEProject* project);
 
+/* A project's directory or its .pro. On failure the project is left not loaded; error says why,
+   or is empty when there was no .pro there at all. */
 int ride_project_load(RIDEProject* project, const char* directory,
                      char* error, int errorSize);
 
@@ -190,6 +196,14 @@ int ride_save_project(RIDEProject* project);
 const char* ride_outcome_message(RIDEProject* project);
 const char* ride_outcome_path(RIDEProject* project);
 
+/* One diagnostic read from compiler output - one line, or two for cc1's preprocessor - by the core's
+   own parser; 1 when there is one. *file and *message hold until the next call. Any one thread. */
+int ride_parse_diagnostic(const char* text, const char* source, int* line, int* column,
+                          const char** file, const char** message);
+/* The three compilers' names as people type them; their programs are these with .exe. */
+enum { RIDE_COMPILER_C = 0, RIDE_COMPILER_CPP, RIDE_COMPILER_SHALIMAR };
+const char* ride_compiler_name(int which);
+
 const char* ride_arch(int index);
 int ride_arch_count(void);
 const char* ride_toolchain_name(int kind);
@@ -229,6 +243,8 @@ RIDEBuild* ride_build(RIDEProject* project, const char* cc1, const char* cl, con
                     int language, const char* arch, int config);
 
 int ride_project_builds(RIDEProject* project);
+/* Works out what the project builds; the ride_project_target_* and _part_* answers below are its,
+   until it is called again. ride_build_target and ride_project_debug_plan call it themselves. */
 int ride_project_target_ready(RIDEProject* project);
 const char* ride_project_target_why(RIDEProject* project);
 const char* ride_project_target_detail(RIDEProject* project);
@@ -281,6 +297,8 @@ int ride_ran_has_error(RIDERan* ran);
 int ride_ran_error_line(RIDERan* ran);
 int ride_ran_error_column(RIDERan* ran);
 const char* ride_ran_error_message(RIDERan* ran);
+/* The file the error is in - a header, perhaps, and not the source that was built. */
+const char* ride_ran_error_file(RIDERan* ran);
 
 /* ---- a program that runs while the window watches (README.md, "Input, and Stop") -------------
    RIDEOutput runs on a worker thread: marshal to the window's own and never wait there for a thread
@@ -342,6 +360,7 @@ typedef struct RIDEProgram RIDEProgram;
 
 RIDEProgram* ride_build_program(RIDEProject* project, const char* cc1, const char* cl, const char* shc, const char* cxx1, int kind, const char* source,
                               int language, const char* arch, int config);
+/* Deletes the built program from the disk, and what was built beside it, then lets it go. */
 void ride_program_free(RIDEProgram* built);
 
 int ride_program_ok(RIDEProgram* built);
@@ -351,6 +370,7 @@ int ride_program_has_error(RIDEProgram* built);
 int ride_program_error_line(RIDEProgram* built);
 int ride_program_error_column(RIDEProgram* built);
 const char* ride_program_error_message(RIDEProgram* built);
+const char* ride_program_error_file(RIDEProgram* built);
 
 int ride_debugger_for(int kind, const char* arch);
 const char* ride_debugger_name(int kind);

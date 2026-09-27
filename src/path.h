@@ -39,6 +39,9 @@ std::string programDirectory();
 
 std::string besideProgram(const std::string& name);
 
+// A bare program name as PATH finds it, absolute; never the current directory. Empty if not found.
+std::string onPath(const std::string& name);
+
 std::string homeDir();
 
 struct Entry {
