@@ -21,6 +21,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 WIN_ROOT="${WIN_ROOT:-C:\\ride-verify\\win}"
 TI_ROOT="${TI_ROOT:-C:\\ride-verify\\ti}"
 LOGS="${LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/to-windows-both.XXXXXX")}"
+mkdir -p "$LOGS" || exit 2
 TRILAB="${TRILAB:-../VM6747/TriLab}"
 WHICH="${1:-both}"
 
