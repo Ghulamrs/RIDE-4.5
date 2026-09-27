@@ -5127,6 +5127,64 @@ void aProgramThatReads() {
     editor::path::removeTree(dir);
 }
 
+// The seam's smaller promises (README.md, "The seam"): every accessor takes NULL, a message cut to
+// fit a buffer is cut between characters, the error's own file comes across for every result, and
+// the diagnostic reader and the compilers' names the Mac window used to take from the core.
+void theSeamsSmallPromises() {
+    std::printf("the seam's smaller promises\n");
+
+    check(ride_build_ok(0) == 0 && std::string(ride_build_output(0)).empty() &&
+              std::string(ride_build_error_file(0)).empty(),
+          "a build that is not there reads as one that failed");
+    check(ride_ran_ran(0) == 0 && std::string(ride_ran_error_file(0)).empty() &&
+              std::string(ride_program_error_file(0)).empty(),
+          "and so do a run and a program");
+    check(ride_project_loaded(0) == 0 && std::string(ride_project_name(0)).empty() &&
+              ride_project_groups(0) == 0,
+          "a project that is not there has nothing in it");
+    check(ride_stop_stopped(0) == 0 && std::string(ride_stop_file(0)).empty() &&
+              ride_locals_count(0) == 0,
+          "and a debugger that is not there has not stopped");
+    check(ride_running_done(0) == 0 && ride_running_send(0, "x", 1) == 0,
+          "and a run that is not there takes nothing");
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ride-seam-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    std::string pro = editor::path::join(dir, "a\xC3\xA9\xC3\xA9\xC3\xA9.pro");
+    writeSource(pro, "not json");
+    RIDEProject* project = ride_project_new();
+    char why[5];
+    ride_project_load(project, pro.c_str(), why, (int)sizeof why);
+    checkEqual(why, "a\xC3\xA9", "a message cut to fit is cut between characters, not inside one");
+    ride_project_free(project);
+    editor::path::removeTree(dir);
+
+    int line = 0, column = 0;
+    const char* file = 0;
+    const char* message = 0;
+    check(ride_parse_diagnostic("main.c:3:7: error: expected ';'", "main.c", &line, &column,
+                                &file, &message) != 0,
+          "the diagnostic reader finds a GNU error");
+    check(line == 3 && column == 7 && std::string(file) == "main.c" &&
+              std::string(message) == "expected ';'",
+          "where it is and what it says");
+    check(ride_parse_diagnostic("nothing to see", "main.c", &line, &column, &file, &message) == 0 &&
+              line == 0 && std::string(file).empty(),
+          "and finds nothing in a line that is not one");
+    checkEqual(ride_compiler_name(RIDE_COMPILER_C), editor::product::kCompilerC,
+               "the C compiler's name");
+    checkEqual(ride_compiler_name(RIDE_COMPILER_CPP), editor::product::kCompilerCpp,
+               "the C++ compiler's name");
+    checkEqual(ride_compiler_name(RIDE_COMPILER_SHALIMAR), editor::product::kCompilerShalimar,
+               "the Shalimar compiler's name");
+
+#ifndef _WIN32
+    check(editor::path::onPath("sh").find('/') == 0, "a tool on PATH is found by its full path");
+#endif
+    check(editor::path::onPath("no-such-tool-ride-test").empty(), "and one that is not, is not");
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -5141,6 +5199,7 @@ int main(int argc, char** argv) {
     jsonIsALanguage();
     talkingToAChild();
     aProgramThatReads();
+    theSeamsSmallPromises();
     whatADebuggerSays();
     aStepThatWentNowhere();
     whatACallStackLooksLike();
