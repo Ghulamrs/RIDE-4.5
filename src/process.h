@@ -47,6 +47,8 @@ public:
     bool killed() const { return killed_.load(); }
 
 private:
+    bool startOnPseudoConsole(const std::string& command);
+
     Process(const Process&);
     Process& operator=(const Process&);
 

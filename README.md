@@ -626,17 +626,22 @@ call per piece, marked as standard output, standard error, or what the build
 said before it; `ride_running_send` passes bytes to its input,
 `ride_running_close_input` is end of file (Ctrl-D on a Mac, Ctrl-Z on
 Windows), and `ride_running_stop` kills the program and everything it started
-- its process group on macOS and Linux, a job object on Windows. The window
-echoes what it sends: the program's input does not.
+- its process group on macOS and Linux, a job object on Windows.
 
-**What the program sees is not the same on every system, and this is the one
-difference.** On macOS and Linux its input and output are a pseudo-terminal,
-so its C library writes a line at a time and flushes a prompt before it reads,
-exactly as at a shell; its standard error is a pipe of its own. On Windows they
-are pipes, so the C library holds output until a buffer fills, the program
-flushes, or it ends: a prompt printed with no newline and no `fflush` shows
-after it has been answered. A terminal's line is at most a thousand bytes or
-so on macOS, which is its own limit and not the editor's.
+**What the program sees is a terminal on every system.** On macOS and Linux its
+input and output are a pseudo-terminal, and on Windows a pseudo-console
+(`CreatePseudoConsole`, Windows 10 1809 and later): either way its C library
+writes a line at a time and flushes a prompt before it reads, exactly as at a
+shell, and the terminal echoes what is sent - so the window shows the input
+once, from the program's side, and does not echo it itself. Two differences
+remain. A console has one output, so on Windows the program's standard error
+arrives with its standard output; on macOS and Linux it is a pipe of its own and
+comes marked as such. And a pseudo-console writes escape sequences - the window
+title, cursor moves, colours - which the core takes out before the window sees
+the bytes, a cursor sent down a row becoming a newline. On a Windows too old for
+a pseudo-console the program has pipes: no echo, stderr apart, and a prompt with
+no `fflush` shows after it is answered. A terminal's line is at most a thousand
+bytes or so on macOS, its own limit and not the editor's.
 
 **Stop reaches builds too.** `ride_cancel_builds` kills every compiler, linker
 and converter the core is running, on any thread; the build it belonged to

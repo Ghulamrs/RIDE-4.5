@@ -4993,7 +4993,7 @@ void aProgramThatReads() {
     writeSource(talker,
                 "@echo off\r\n"
                 "echo first\r\n"
-                "set /p line=\r\n"
+                "set /p line=name? \r\n"
                 "echo got %line%\r\n"
                 "set second=\r\n"
                 "set /p second=\r\n"
@@ -5007,6 +5007,7 @@ void aProgramThatReads() {
     writeSource(talker,
                 "#!/bin/sh\n"
                 "echo first\n"
+                "printf 'name? '\n"
                 "read line\n"
                 "echo \"got $line\"\n"
                 "read second || echo \"end of input\"\n"
@@ -5022,12 +5023,19 @@ void aProgramThatReads() {
     RIDERunning* running = ride_run_built_start(talker.c_str(), hear, &heard);
     check(running != 0, "a program starts with an input of its own");
     check(heardIt(heard, "first"), "its output arrives while it is still running");
+    check(heardIt(heard, "name? "), "and a prompt with no newline arrives before anything is sent");
     check(ride_running_done(running) == 0, "and it is still running, waiting to be told something");
     check(ride_running_send(running, "hello\n", 6) != 0, "a line is sent to it");
     check(heardIt(heard, "got hello"), "and what it read is the line that was sent");
     ride_running_close_input(running);
     check(heardIt(heard, "end of input"), "closing the input is end of file to its next read");
+#ifdef _WIN32
+    // A console has one output, so on a pseudo-console stderr comes with stdout.
+    check(heardIt(heard, "err line", 10000, true) || heardIt(heard, "err line"),
+          "what it says on stderr comes too");
+#else
     check(heardIt(heard, "err line", 10000, true), "what it says on stderr comes apart");
+#endif
     check(ride_running_wait(running, 10000) != 0, "and then it ends");
     check(ride_running_status(running) == 3, "with the status it exited with");
     check(ride_running_ran(running) != 0 && ride_running_stopped(running) == 0,
@@ -5109,10 +5117,8 @@ void aProgramThatReads() {
     Heard asked;
     running = ride_run_start(0, cc1, "cl", "shc", "cxx1", RIDE_TOOL_CC1, source.c_str(),
                              RIDE_LANG_C, editor::hostArch(), RIDE_CONFIG_DEBUG, hear, &asked);
-#ifndef _WIN32
     check(heardIt(asked, "a number? ", 60000),
           "a C program's prompt shows before it reads, with no fflush");
-#endif
     check(ride_running_send(running, "21\n", 3) != 0, "scanf is sent a number");
     check(heardIt(asked, "twice is 42", 60000), "and scanf reads it");
     ride_running_send(running, "a line\n", 7);
