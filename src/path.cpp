@@ -329,6 +329,34 @@ std::string besideProgram(const std::string& name) {
     return std::string();
 }
 
+std::string onPath(const std::string& name) {
+    if (name.empty() || name.find_first_of("/\\") != std::string::npos) return std::string();
+    const char* all = std::getenv("PATH");
+    if (!all) return std::string();
+#ifdef _WIN32
+    const char split = ';';
+#else
+    const char split = ':';
+#endif
+    std::string list = all;
+    size_t at = 0;
+    while (at <= list.size()) {
+        size_t cut = list.find(split, at);
+        if (cut == std::string::npos) cut = list.size();
+        std::string dir = list.substr(at, cut - at);
+        at = cut + 1;
+        // An empty entry, or ".", is the current directory: a tool is never found there.
+        if (dir.empty() || dir == ".") continue;
+        std::string full = join(dir, name);
+        if (exists(full) && !isDirectory(full)) return full;
+#ifdef _WIN32
+        full = join(dir, name + ".exe");
+        if (exists(full) && !isDirectory(full)) return full;
+#endif
+    }
+    return std::string();
+}
+
 std::vector<Entry> entries(const std::string& directory, bool* ok) {
     std::vector<Entry> found;
     if (ok) *ok = false;

@@ -1,10 +1,15 @@
 
 #include "bridge.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -28,6 +33,7 @@
 #include "find.h"
 #include "indent.h"
 #include "product.h"
+#include "path.h"
 #include "project.h"
 #include "symbols.h"
 #include "syntax.h"
@@ -53,6 +59,17 @@ char* give(const std::string& text) {
     if (!out) return 0;
     std::memcpy(out, text.c_str(), text.size() + 1);
     return out;
+}
+
+// A message into the caller's buffer, cut where it must be at the start of a UTF-8 character, so
+// the last one is never half a character that the window shows as a replacement mark (L14).
+void copyOut(char* into, int size, const std::string& text) {
+    size_t room = static_cast<size_t>(size) - 1;
+    size_t n = text.size() < room ? text.size() : room;
+    if (n < text.size())
+        while (n > 0 && (static_cast<unsigned char>(text[n]) & 0xC0) == 0x80) --n;
+    std::memcpy(into, text.data(), n);
+    into[n] = '\0';
 }
 
 std::vector<std::string> split(const char* text) {
@@ -230,6 +247,15 @@ struct RIDEProject {
 
 namespace {
 
+// A bare tool name made a full path - beside the editor, then on PATH - so the shell a build runs
+// through never looks in the current directory for it (M14); a name found nowhere stays bare.
+std::string resolved(const std::string& name) {
+    if (name.empty() || name.find_first_of("/\\") != std::string::npos) return name;
+    std::string found = editor::path::besideProgram(name);
+    if (found.empty()) found = editor::path::onPath(name);
+    return found.empty() ? name : found;
+}
+
 // The toolchain every build is given: the compilers as named, the
 // installation's header directories, and the project's own paths when a
 // project is open. The window has one project and passes it, loaded or not.
@@ -240,6 +266,11 @@ editor::Toolchain toolFrom(RIDEProject* project, const char* cc1, const char* cl
     if (cl && *cl) tool.cl = cl;
     if (shc && *shc) tool.shc = shc;
     if (cxx1 && *cxx1) tool.cxx1 = cxx1;
+    tool.cc1 = resolved(tool.cc1);
+    tool.cl = resolved(tool.cl);
+    tool.shc = resolved(tool.shc);
+    tool.cxx1 = resolved(tool.cxx1);
+    tool.cxx = resolved(tool.cxx);
     tool.include = editor::settings::includeDir();
     tool.lib = editor::settings::libDir();
     if (project && project->project.loaded()) {
@@ -258,10 +289,12 @@ editor::Toolchain toolFrom(RIDEProject* project, const char* cc1, const char* cl
 struct RIDEBuild {
     editor::Build built;
     std::string assembly;
+    bool stopped = false;
 };
 
 struct RIDERan {
     editor::Ran ran;
+    bool stopped = false;
 };
 
 struct RIDEProgram {
@@ -472,37 +505,42 @@ void ride_project_free(RIDEProject* project) { delete project; }
 
 int ride_project_load(RIDEProject* project, const char* directory,
                      char* error, int errorSize) {
+    if (!project) return 0;
     std::string why;
     bool loaded = project->project.load(directory ? directory : ".", why);
     if (error && errorSize > 0) {
-        std::strncpy(error, why.c_str(), static_cast<size_t>(errorSize) - 1);
-        error[errorSize - 1] = '\0';
+        copyOut(error, errorSize, why);
     }
     return loaded ? 1 : 0;
 }
 
 const char* ride_project_name(RIDEProject* project) {
+    if (!project) return "";
     project->answer = project->project.name();
     return project->answer.c_str();
 }
 
 int ride_project_groups(RIDEProject* project) {
+    if (!project) return 0;
     return static_cast<int>(project->project.groups().size());
 }
 
 const char* ride_project_group_name(RIDEProject* project, int group) {
+    if (!project) return "";
     if (group < 0 || group >= ride_project_groups(project)) return "";
     project->answer = project->project.groups()[static_cast<size_t>(group)].name;
     return project->answer.c_str();
 }
 
 int ride_project_files(RIDEProject* project, int group) {
+    if (!project) return 0;
     if (group < 0 || group >= ride_project_groups(project)) return 0;
     return static_cast<int>(
         project->project.groups()[static_cast<size_t>(group)].files.size());
 }
 
 const char* ride_project_file(RIDEProject* project, int group, int file) {
+    if (!project) return "";
     if (file < 0 || file >= ride_project_files(project, group)) return "";
     project->answer =
         project->project.groups()[static_cast<size_t>(group)].files[static_cast<size_t>(file)];
@@ -510,20 +548,25 @@ const char* ride_project_file(RIDEProject* project, int group, int file) {
 }
 
 const char* ride_project_absolute(RIDEProject* project, const char* relative) {
+    if (!project) return "";
     project->answer = project->project.absolute(relative ? relative : "");
     return project->answer.c_str();
 }
 
 int ride_project_indent_width(RIDEProject* project) {
+    if (!project) return 0;
     return static_cast<int>(project->project.indent().width);
 }
 int ride_project_indent_tabs(RIDEProject* project) {
+    if (!project) return 0;
     return project->project.indent().tabs ? 1 : 0;
 }
 int ride_project_case_indent(RIDEProject* project) {
+    if (!project) return 0;
     return static_cast<int>(project->project.indent().caseIndent);
 }
 int ride_project_toolchain(RIDEProject* project) {
+    if (!project) return 0;
     return static_cast<int>(project->project.toolchain());
 }
 int ride_configuration(void) {
@@ -534,6 +577,7 @@ void ride_remember_configuration(int config) {
     editor::settings::rememberConfiguration(config == RIDE_CONFIG_RELEASE ? "release" : "debug");
 }
 const char* ride_project_arch(RIDEProject* project) {
+    if (!project) return "";
     project->answer = project->project.arch();
     return project->answer.c_str();
 }
@@ -561,24 +605,25 @@ int ride_project_allows(const char* relative, char* why, int whySize) {
     std::string reason;
     bool fine = editor::Project::allows(relative ? relative : "", reason);
     if (why && whySize > 0) {
-        std::strncpy(why, reason.c_str(), static_cast<size_t>(whySize) - 1);
-        why[whySize - 1] = '\0';
+        copyOut(why, whySize, reason);
     }
     return fine ? 1 : 0;
 }
 
-int ride_project_loaded(RIDEProject* project) { return project->project.loaded() ? 1 : 0; }
+int ride_project_loaded(RIDEProject* project) { return project && project->project.loaded() ? 1 : 0; }
 
 const char* ride_project_root(RIDEProject* project) {
+    if (!project) return "";
     project->answer = project->project.root();
     return project->answer.c_str();
 }
 
 void ride_project_set_root(RIDEProject* project, const char* path) {
+    if (!project) return;
     project->project.setRoot(path ? path : ".");
 }
 
-void ride_project_close(RIDEProject* project) { project->project.close(); }
+void ride_project_close(RIDEProject* project) { if (project) project->project.close(); }
 
 const char* ride_project_suffix(void) { return editor::Project::suffix(); }
 
@@ -587,12 +632,12 @@ const char* ride_version(void) { return editor::about::version(); }
 
 int ride_project_save_as(RIDEProject* project, const char* file,
                             char* why, int whySize) {
+    if (!project) return 0;
     std::string error;
     bool ok = project->project.saveAs(file ? file : "", error);
     if (!ok && why && whySize > 0) {
         std::string said = error.empty() ? std::string("could not save the project") : error;
-        std::strncpy(why, said.c_str(), static_cast<size_t>(whySize) - 1);
-        why[whySize - 1] = '\0';
+        copyOut(why, whySize, said);
     }
     return ok ? 1 : 0;
 }
@@ -603,41 +648,48 @@ const char* ride_group_for_file(const char* name) {
 }
 
 const char* ride_project_relative(RIDEProject* project, const char* path) {
+    if (!project) return "";
     project->answer = project->project.relative(path ? path : "");
     return project->answer.c_str();
 }
 
 
 const char* ride_outcome_message(RIDEProject* project) {
+    if (!project) return "";
     return project->last.message.c_str();
 }
 
-const char* ride_outcome_path(RIDEProject* project) { return project->last.path.c_str(); }
+const char* ride_outcome_path(RIDEProject* project) { return project ? project->last.path.c_str() : ""; }
 
 int ride_create_file(RIDEProject* project, const char* relative, const char* group, int kind) {
+    if (!project) return 0;
     project->last = editor::createFile(project->project, relative ? relative : "",
                                        group ? group : "", static_cast<editor::ToolchainKind>(kind));
     return project->last.ok ? 1 : 0;
 }
 
 int ride_rename_file(RIDEProject* project, const char* fromAbsolute, const char* toRelative) {
+    if (!project) return 0;
     project->last = editor::renameFile(project->project, fromAbsolute ? fromAbsolute : "",
                                        toRelative ? toRelative : "");
     return project->last.ok ? 1 : 0;
 }
 
 int ride_delete_file(RIDEProject* project, const char* absolute) {
+    if (!project) return 0;
     project->last = editor::deleteFile(project->project, absolute ? absolute : "");
     return project->last.ok ? 1 : 0;
 }
 
 int ride_move_to_group(RIDEProject* project, const char* absolute, const char* group) {
+    if (!project) return 0;
     project->last = editor::moveToGroup(project->project, absolute ? absolute : "",
                                         group ? group : "");
     return project->last.ok ? 1 : 0;
 }
 
 int ride_add_existing(RIDEProject* project, const char* absolute, const char* group) {
+    if (!project) return 0;
     project->last = editor::addExisting(project->project, absolute ? absolute : "",
                                         group ? group : "");
     return project->last.ok ? 1 : 0;
@@ -667,12 +719,14 @@ int ride_remember_open(RIDEProject* project, const char* absolute) {
 }
 
 int ride_remove_from_project(RIDEProject* project, const char* absolute) {
+    if (!project) return 0;
     project->last = editor::removeExisting(project->project, absolute ? absolute : "");
     return project->last.ok ? 1 : 0;
 }
 
 int ride_begin_project(RIDEProject* project, const char* directory, const char* name,
                       const char* firstFile) {
+    if (!project) return 0;
     project->last = editor::beginProject(project->project, directory ? directory : ".",
                                          name ? name : "Project",
                                          firstFile ? firstFile : "");
@@ -814,8 +868,29 @@ int ride_remember_ti(const char* dir, const char* lib) {
 }
 
 int ride_save_project(RIDEProject* project) {
+    if (!project) return 0;
     project->last = editor::saveProject(project->project);
     return project->last.ok ? 1 : 0;
+}
+
+int ride_parse_diagnostic(const char* text, const char* source, int* line, int* column,
+                          const char** file, const char** message) {
+    static std::string* keptFile = new std::string();
+    static std::string* keptMessage = new std::string();
+    editor::Diagnostic d = editor::parseDiagnostic(text ? text : "", source ? source : "");
+    *keptFile = d.present ? d.file : std::string();
+    *keptMessage = d.present ? d.message : std::string();
+    if (line) *line = d.present ? static_cast<int>(d.line) : 0;
+    if (column) *column = d.present ? static_cast<int>(d.col) : 0;
+    if (file) *file = keptFile->c_str();
+    if (message) *message = keptMessage->c_str();
+    return d.present ? 1 : 0;
+}
+
+const char* ride_compiler_name(int which) {
+    if (which == RIDE_COMPILER_CPP) return editor::product::kCompilerCpp;
+    if (which == RIDE_COMPILER_SHALIMAR) return editor::product::kCompilerShalimar;
+    return editor::product::kCompilerC;
 }
 
 const char* ride_arch(int index) {
@@ -901,30 +976,34 @@ RIDERan* ride_run(RIDEProject* project, const char* cc1, const char* cl, const c
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDERan* out = new RIDERan();
+    editor::BuildScope scope;
     out->ran = editor::runProgram(tool, static_cast<editor::ToolchainKind>(kind),
                                   source ? source : "",
                                   static_cast<editor::Language>(language),
                                   arch ? arch : "",
                                   static_cast<editor::Configuration>(config));
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
 void ride_run_free(RIDERan* ran) { delete ran; }
 
-int ride_ran_built(RIDERan* ran) { return ran->ran.built ? 1 : 0; }
-int ride_ran_ran(RIDERan* ran) { return ran->ran.ran ? 1 : 0; }
-int ride_ran_status(RIDERan* ran) { return ran->ran.status; }
-const char* ride_ran_output(RIDERan* ran) { return ran->ran.output.c_str(); }
-int ride_ran_has_error(RIDERan* ran) { return ran->ran.diag.present ? 1 : 0; }
-int ride_ran_error_line(RIDERan* ran) { return static_cast<int>(ran->ran.diag.line); }
-int ride_ran_error_column(RIDERan* ran) { return static_cast<int>(ran->ran.diag.col); }
-const char* ride_ran_error_message(RIDERan* ran) { return ran->ran.diag.message.c_str(); }
+int ride_ran_built(RIDERan* ran) { return ran && ran->ran.built ? 1 : 0; }
+int ride_ran_ran(RIDERan* ran) { return ran && ran->ran.ran ? 1 : 0; }
+int ride_ran_status(RIDERan* ran) { return ran ? ran->ran.status : 0; }
+const char* ride_ran_output(RIDERan* ran) { return ran ? ran->ran.output.c_str() : ""; }
+int ride_ran_has_error(RIDERan* ran) { return ran && ran->ran.diag.present ? 1 : 0; }
+int ride_ran_error_line(RIDERan* ran) { return ran ? static_cast<int>(ran->ran.diag.line) : 0; }
+int ride_ran_error_column(RIDERan* ran) { return ran ? static_cast<int>(ran->ran.diag.col) : 0; }
+const char* ride_ran_error_message(RIDERan* ran) { return ran ? ran->ran.diag.message.c_str() : ""; }
+const char* ride_ran_error_file(RIDERan* ran) { return ran ? ran->ran.diag.file.c_str() : ""; }
 
 RIDEProgram* ride_build_program(RIDEProject* project, const char* cc1, const char* cl, const char* shc, const char* cxx1, int kind, const char* source,
                               int language, const char* arch, int config) {
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDEProgram* out = new RIDEProgram();
+    editor::BuildScope scope;
     out->built = editor::buildProgram(tool, static_cast<editor::ToolchainKind>(kind),
                                       source ? source : "",
                                       static_cast<editor::Language>(language),
@@ -939,18 +1018,24 @@ void ride_program_free(RIDEProgram* built) {
     delete built;
 }
 
-int ride_program_ok(RIDEProgram* built) { return built->built.ok ? 1 : 0; }
-const char* ride_program_path(RIDEProgram* built) { return built->built.program.c_str(); }
-const char* ride_program_output(RIDEProgram* built) { return built->built.output.c_str(); }
-int ride_program_has_error(RIDEProgram* built) { return built->built.diag.present ? 1 : 0; }
+int ride_program_ok(RIDEProgram* built) { return built && built->built.ok ? 1 : 0; }
+const char* ride_program_path(RIDEProgram* built) { return built ? built->built.program.c_str() : ""; }
+const char* ride_program_output(RIDEProgram* built) { return built ? built->built.output.c_str() : ""; }
+int ride_program_has_error(RIDEProgram* built) { return built && built->built.diag.present ? 1 : 0; }
 int ride_program_error_line(RIDEProgram* built) {
+    if (!built) return 0;
     return static_cast<int>(built->built.diag.line);
 }
 int ride_program_error_column(RIDEProgram* built) {
+    if (!built) return 0;
     return static_cast<int>(built->built.diag.col);
 }
 const char* ride_program_error_message(RIDEProgram* built) {
+    if (!built) return "";
     return built->built.diag.message.c_str();
+}
+const char* ride_program_error_file(RIDEProgram* built) {
+    return built ? built->built.diag.file.c_str() : "";
 }
 
 int ride_debugger_for(int kind, const char* arch) {
@@ -996,6 +1081,7 @@ void ride_debugger_free(RIDEDebugger* debugger) { delete debugger; }
 
 int ride_debugger_start(RIDEDebugger* debugger, int kind, const char* arch,
                        const char* program) {
+    if (!debugger) return 0;
     debugger->stop = editor::Stop();
     debugger->locals.clear();
     debugger->stack.clear();
@@ -1011,14 +1097,17 @@ int ride_debugger_start(RIDEDebugger* debugger, int kind, const char* arch,
 }
 
 int ride_debugger_running(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return (debugger->debugger.running() || debugger->shm.running()) ? 1 : 0;
 }
 
 int ride_debugging_shalimar(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return debugger->shm.running() ? 1 : 0;
 }
 
 void ride_debugger_stop(RIDEDebugger* debugger) {
+    if (!debugger) return;
     debugger->debugger.stop();
     debugger->shm.stop();
     debugger->stop = editor::Stop();
@@ -1028,6 +1117,7 @@ void ride_debugger_stop(RIDEDebugger* debugger) {
 }
 
 int ride_debugger_break(RIDEDebugger* debugger, const char* file, int line) {
+    if (!debugger) return 0;
     if (line < 1) return 0;
     if (debugger->shm.running())
         return debugger->shm.breakAt(file ? file : "", static_cast<size_t>(line)) ? 1 : 0;
@@ -1035,6 +1125,7 @@ int ride_debugger_break(RIDEDebugger* debugger, const char* file, int line) {
 }
 
 int ride_debugger_clear(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     if (debugger->shm.running()) return debugger->shm.clearBreakpoints() ? 1 : 0;
     return debugger->debugger.clearBreakpoints() ? 1 : 0;
 }
@@ -1059,39 +1150,46 @@ void afterMoving(RIDEDebugger* debugger, const editor::Stop& stop, bool itself) 
 }
 
 void ride_debugger_run(RIDEDebugger* debugger) {
+    if (!debugger) return;
     const bool itself = debugger->shm.running();
     afterMoving(debugger, itself ? debugger->shm.run() : debugger->debugger.run(), itself);
 }
 void ride_debugger_resume(RIDEDebugger* debugger) {
+    if (!debugger) return;
     const bool itself = debugger->shm.running();
     afterMoving(debugger, itself ? debugger->shm.resume() : debugger->debugger.resume(), itself);
 }
 void ride_debugger_step_over(RIDEDebugger* debugger) {
+    if (!debugger) return;
     const bool itself = debugger->shm.running();
     afterMoving(debugger, itself ? debugger->shm.stepOver() : debugger->debugger.stepOver(), itself);
 }
 void ride_debugger_step_into(RIDEDebugger* debugger) {
+    if (!debugger) return;
     const bool itself = debugger->shm.running();
     afterMoving(debugger, itself ? debugger->shm.stepInto() : debugger->debugger.stepInto(), itself);
 }
 void ride_debugger_step_out(RIDEDebugger* debugger) {
+    if (!debugger) return;
     const bool itself = debugger->shm.running();
     afterMoving(debugger, itself ? debugger->shm.stepOut() : debugger->debugger.stepOut(), itself);
 }
 
-int ride_stop_stopped(RIDEDebugger* debugger) { return debugger->stop.stopped ? 1 : 0; }
-int ride_stop_exited(RIDEDebugger* debugger) { return debugger->stop.exited ? 1 : 0; }
-int ride_stop_status(RIDEDebugger* debugger) { return debugger->stop.status; }
-const char* ride_stop_file(RIDEDebugger* debugger) { return debugger->stop.file.c_str(); }
-int ride_stop_line(RIDEDebugger* debugger) { return static_cast<int>(debugger->stop.line); }
-const char* ride_stop_function(RIDEDebugger* debugger) { return debugger->stop.function.c_str(); }
-const char* ride_stop_said(RIDEDebugger* debugger) { return debugger->stop.said.c_str(); }
+int ride_stop_stopped(RIDEDebugger* debugger) { return debugger && debugger->stop.stopped ? 1 : 0; }
+int ride_stop_exited(RIDEDebugger* debugger) { return debugger && debugger->stop.exited ? 1 : 0; }
+int ride_stop_status(RIDEDebugger* debugger) { return debugger ? debugger->stop.status : 0; }
+const char* ride_stop_file(RIDEDebugger* debugger) { return debugger ? debugger->stop.file.c_str() : ""; }
+int ride_stop_line(RIDEDebugger* debugger) { return debugger ? static_cast<int>(debugger->stop.line) : 0; }
+const char* ride_stop_function(RIDEDebugger* debugger) { return debugger ? debugger->stop.function.c_str() : ""; }
+const char* ride_stop_said(RIDEDebugger* debugger) { return debugger ? debugger->stop.said.c_str() : ""; }
 
 int ride_stop_no_source(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return editor::dbg_stoppedWithNoSource(debugger->stop.said) ? 1 : 0;
 }
 
 const char* ride_stop_output(RIDEDebugger* debugger) {
+    if (!debugger) return "";
 
     if (debugger->shm.ownsTheStop()) {
         debugger->output = debugger->stop.said;
@@ -1103,6 +1201,7 @@ const char* ride_stop_output(RIDEDebugger* debugger) {
 }
 
 int ride_locals_count(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return static_cast<int>(debugger->locals.size());
 }
 
@@ -1113,16 +1212,20 @@ bool holds(RIDEDebugger* debugger, int index) {
 }
 
 const char* ride_local_name(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return holds(debugger, index) ? debugger->locals[index].name.c_str() : "";
 }
 const char* ride_local_type(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return holds(debugger, index) ? debugger->locals[index].type.c_str() : "";
 }
 const char* ride_local_value(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return holds(debugger, index) ? debugger->locals[index].value.c_str() : "";
 }
 
 int ride_stack_count(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return static_cast<int>(debugger->stack.size());
 }
 
@@ -1133,16 +1236,20 @@ bool reaches(RIDEDebugger* debugger, int index) {
 }
 
 const char* ride_stack_function(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return reaches(debugger, index) ? debugger->stack[index].function.c_str() : "";
 }
 const char* ride_stack_file(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return reaches(debugger, index) ? debugger->stack[index].file.c_str() : "";
 }
 int ride_stack_line(RIDEDebugger* debugger, int index) {
+    if (!debugger) return 0;
     return reaches(debugger, index) ? static_cast<int>(debugger->stack[index].line) : 0;
 }
 
 const char* ride_stack_text(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
 
     debugger->frameLine =
         reaches(debugger, index)
@@ -1153,6 +1260,7 @@ const char* ride_stack_text(RIDEDebugger* debugger, int index) {
 }
 
 const char* ride_local_text(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     debugger->variableLine = holds(debugger, index)
                                  ? editor::dbg_variableLine(debugger->locals[index])
                                  : std::string();
@@ -1160,11 +1268,13 @@ const char* ride_local_text(RIDEDebugger* debugger, int index) {
 }
 
 int ride_locals_on_line(RIDEDebugger* debugger, const char* line) {
+    if (!debugger) return 0;
     size_t which = editor::dbg_variableOnLine(debugger->locals, line ? line : "");
     return which < debugger->locals.size() ? static_cast<int>(which) : -1;
 }
 
 int ride_set_variable(RIDEDebugger* debugger, const char* name, const char* value) {
+    if (!debugger) return 0;
     debugger->complaint.clear();
     if (!debugger->debugger.setVariable(name ? name : "", value ? value : "",
                                         &debugger->complaint))
@@ -1174,13 +1284,15 @@ int ride_set_variable(RIDEDebugger* debugger, const char* name, const char* valu
     return 1;
 }
 
-const char* ride_set_complaint(RIDEDebugger* debugger) { return debugger->complaint.c_str(); }
+const char* ride_set_complaint(RIDEDebugger* debugger) { return debugger ? debugger->complaint.c_str() : ""; }
 
 void ride_watch_add(RIDEDebugger* debugger, const char* expression) {
+    if (!debugger) return;
     debugger->debugger.addWatch(expression ? expression : "");
 }
 
 int ride_watch_count(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return static_cast<int>(debugger->debugger.watches().size());
 }
 
@@ -1191,6 +1303,7 @@ bool watched(RIDEDebugger* debugger, int index) {
 }
 
 const char* ride_watch_text(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     debugger->watchLine = watched(debugger, index)
                               ? editor::dbg_watchLine(debugger->debugger.watches()[index])
                               : std::string();
@@ -1198,22 +1311,26 @@ const char* ride_watch_text(RIDEDebugger* debugger, int index) {
 }
 
 const char* ride_watch_expression(RIDEDebugger* debugger, int index) {
+    if (!debugger) return "";
     return watched(debugger, index)
                ? debugger->debugger.watches()[index].expression.c_str()
                : "";
 }
 
 int ride_watch_on_line(RIDEDebugger* debugger, const char* line) {
+    if (!debugger) return 0;
     size_t which = editor::dbg_watchOnLine(debugger->debugger.watches(), line ? line : "");
     return which < debugger->debugger.watches().size() ? static_cast<int>(which) : -1;
 }
 
 void ride_watch_set(RIDEDebugger* debugger, int index, const char* expression) {
+    if (!debugger) return;
     if (!watched(debugger, index)) return;
     debugger->debugger.setWatch(static_cast<size_t>(index), expression ? expression : "");
 }
 
 int ride_debugger_look_at(RIDEDebugger* debugger, int which) {
+    if (!debugger) return 0;
     if (!reaches(debugger, which)) return 0;
 
     if (debugger->shm.running()) {
@@ -1229,6 +1346,7 @@ int ride_debugger_look_at(RIDEDebugger* debugger, int which) {
 }
 
 const char* ride_locals_none_because(RIDEDebugger* debugger) {
+    if (!debugger) return "";
     debugger->refusal = debugger->shm.running()
                             ? "  (" + std::string(shalimar::saysWhereOnly()) + ")"
                             : std::string("  (nothing in scope here)");
@@ -1236,6 +1354,7 @@ const char* ride_locals_none_because(RIDEDebugger* debugger) {
 }
 
 const char* ride_cannot_watch(RIDEDebugger* debugger) {
+    if (!debugger) return "";
 
     debugger->refusal = debugger->shm.running()
                             ? std::string(shalimar::saysWhereOnly()) +
@@ -1245,6 +1364,7 @@ const char* ride_cannot_watch(RIDEDebugger* debugger) {
 }
 
 const char* ride_cannot_walk_stack(RIDEDebugger* debugger) {
+    if (!debugger) return "";
 
     debugger->refusal = debugger->shm.running() ? std::string(shalimar::saysHowDeepOnly())
                                                 : std::string();
@@ -1260,10 +1380,12 @@ const char* ride_stop_line_text(const char* file, int line, const char* function
 }
 
 int ride_looking_at(RIDEDebugger* debugger) {
+    if (!debugger) return 0;
     return static_cast<int>(debugger->looking);
 }
 
 const char* ride_looking_text(RIDEDebugger* debugger) {
+    if (!debugger) return "";
     debugger->lookingLine =
         (debugger->looking > 0 && debugger->looking < debugger->stack.size())
             ? editor::dbg_lookingAt(debugger->stack[debugger->looking])
@@ -1272,6 +1394,7 @@ const char* ride_looking_text(RIDEDebugger* debugger) {
 }
 
 int ride_stack_on_line(RIDEDebugger* debugger, const char* line) {
+    if (!debugger) return 0;
     size_t which = editor::dbg_frameOnLine(debugger->stack, line ? line : "");
     return which < debugger->stack.size() ? static_cast<int>(which) : -1;
 }
@@ -1437,9 +1560,11 @@ RIDEBuild* ride_build_target(RIDEProject* project, const char* cc1, const char* 
     tool.kind = static_cast<editor::ToolchainKind>(kind);
 
     RIDEBuild* out = new RIDEBuild();
+    editor::BuildScope scope;
     editor::Built made = editor::buildParts(
         tool, project->parts, arch ? arch : "",
         static_cast<editor::Configuration>(config), project->program);
+    out->stopped = editor::buildCancelled();
 
     out->built.ok = made.ok;
     out->built.diag = made.diag;
@@ -1449,12 +1574,15 @@ RIDEBuild* ride_build_target(RIDEProject* project, const char* cc1, const char* 
 
 RIDERan* ride_run_built(const char* program) {
     RIDERan* out = new RIDERan();
+    editor::BuildScope scope;
     out->ran = editor::runBuilt(program ? program : "");
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
 struct RIDEConversion {
     editor::Conversion made;
+    bool stopped = false;
 };
 
 int ride_converts_from(int language, int* toShalimar) {
@@ -1477,18 +1605,22 @@ char* ride_converted_name(const char* source, int toShalimar) {
 RIDEConversion* ride_convert(const char* converter, const char* source,
                                    const char* output, int toShalimar) {
     RIDEConversion* out = new RIDEConversion();
+    editor::BuildScope scope;
     out->made = editor::convert(converter ? converter : "", source ? source : "",
                                 output ? output : "", toShalimar != 0);
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
 void ride_conversion_free(RIDEConversion* made) { delete made; }
-int ride_conversion_ran(RIDEConversion* made) { return made->made.ran ? 1 : 0; }
-int ride_conversion_ok(RIDEConversion* made) { return made->made.ok ? 1 : 0; }
+int ride_conversion_ran(RIDEConversion* made) { return made && made->made.ran ? 1 : 0; }
+int ride_conversion_ok(RIDEConversion* made) { return made && made->made.ok ? 1 : 0; }
 const char* ride_conversion_produced(RIDEConversion* made) {
+    if (!made) return "";
     return made->made.produced.c_str();
 }
 const char* ride_conversion_output(RIDEConversion* made) {
+    if (!made) return "";
     return made->made.output.c_str();
 }
 
@@ -1497,36 +1629,272 @@ RIDEBuild* ride_build(RIDEProject* project, const char* cc1, const char* cl, con
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDEBuild* out = new RIDEBuild();
+    editor::BuildScope scope;
     out->built = editor::build(tool, static_cast<editor::ToolchainKind>(kind),
                                source ? source : "",
                                static_cast<editor::Language>(language),
                                arch ? arch : "",
                                static_cast<editor::Configuration>(config));
     out->assembly = join(out->built.asmLines);
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
 void ride_build_free(RIDEBuild* built) { delete built; }
 
-int ride_build_ok(RIDEBuild* built) { return built->built.ok ? 1 : 0; }
-const char* ride_build_output(RIDEBuild* built) { return built->built.output.c_str(); }
-const char* ride_build_assembly(RIDEBuild* built) { return built->assembly.c_str(); }
+int ride_build_ok(RIDEBuild* built) { return built && built->built.ok ? 1 : 0; }
+const char* ride_build_output(RIDEBuild* built) { return built ? built->built.output.c_str() : ""; }
+const char* ride_build_assembly(RIDEBuild* built) { return built ? built->assembly.c_str() : ""; }
 int ride_build_assembly_lines(RIDEBuild* built) {
+    if (!built) return 0;
     return static_cast<int>(built->built.asmLines.size());
 }
-int ride_build_has_error(RIDEBuild* built) { return built->built.diag.present ? 1 : 0; }
+int ride_build_has_error(RIDEBuild* built) { return built && built->built.diag.present ? 1 : 0; }
 const char* ride_build_error_file(RIDEBuild* built) {
     return built ? built->built.diag.file.c_str() : "";
 }
 
 int ride_build_error_line(RIDEBuild* built) {
+    if (!built) return 0;
     return static_cast<int>(built->built.diag.line);
 }
 int ride_build_error_column(RIDEBuild* built) {
+    if (!built) return 0;
     return static_cast<int>(built->built.diag.col);
 }
 const char* ride_build_error_message(RIDEBuild* built) {
+    if (!built) return "";
     return built->built.diag.message.c_str();
 }
+
+// ---- a program that runs while the window watches (bridge.h) --------------------------------
+
+// Two locks: `state` for what the run has come to, which Stop takes and never waits in; `input`
+// for the input's handle, which a send may hold while the program is slow to read.
+struct RIDERunning {
+    RIDEOutput onOutput;
+    void* user;
+
+    bool fromSource;
+    editor::Toolchain tool;
+    editor::ToolchainKind kind;
+    std::string source;
+    editor::Language language;
+    std::string arch;
+    editor::Configuration config;
+    std::string program;
+
+    editor::Process process;
+    std::thread worker;
+    std::mutex state;
+    std::mutex input;
+    std::condition_variable over;
+
+    std::string waiting;         // sent before the program started
+    bool closeWanted = false;
+    bool stopWanted = false;
+    bool started = false;
+    bool finished = false;
+    std::atomic<int> done{0};
+
+    bool built = false;
+    bool ran = false;
+    int status = 0;
+    bool stopped = false;
+    editor::Diagnostic diag;
+    std::string buildOutput;
+};
+
+namespace {
+
+void runningLine(void* context, const std::string& line) {
+    RIDERunning* running = static_cast<RIDERunning*>(context);
+    std::string text = line + "\n";
+    if (running->onOutput)
+        running->onOutput(running->user, text.data(), static_cast<int>(text.size()), RIDE_STREAM_BUILD);
+}
+
+void runningChunk(void* context, const char* bytes, size_t size, bool isStderr) {
+    RIDERunning* running = static_cast<RIDERunning*>(context);
+    if (running->onOutput)
+        running->onOutput(running->user, bytes, static_cast<int>(size),
+                          isStderr ? RIDE_STREAM_ERR : RIDE_STREAM_OUT);
+}
+
+void runTheProgram(RIDERunning* running) {
+    editor::BuildScope scope;
+    bool stopFirst = false;
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        stopFirst = running->stopWanted;
+    }
+    editor::Built made;
+    bool shalimar = false;
+    std::string program = running->program;
+    if (running->fromSource && !stopFirst) {
+        made = editor::buildProgram(running->tool, running->kind, running->source, running->language,
+                                    running->arch, running->config, runningLine, running);
+        running->buildOutput = made.output;
+        running->diag = made.diag;
+        program = made.ok ? made.program : std::string();
+        shalimar = made.shalimar;
+    }
+
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        std::lock_guard<std::mutex> in(running->input);
+        running->built = !program.empty() && !stopFirst;
+        if (running->built && !running->stopWanted && !editor::buildCancelled()) {
+            running->ran = editor::startProgram(running->process, program, shalimar);
+            if (running->ran) {
+                if (!running->waiting.empty())
+                    running->process.send(running->waiting.data(), running->waiting.size());
+                if (running->closeWanted) running->process.closeInput();
+            }
+        }
+        running->waiting.clear();
+        running->started = true;
+    }
+
+    // Read until the output closes, then wait - with no lock held, so Stop can still end a program
+    // that closed its output and went on - and only then let the process go, under both locks.
+    if (running->ran) {
+        editor::pumpProgram(running->process, runningChunk, running);
+        while (!running->process.ended(0)) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (running->fromSource) editor::removeProgram(made);
+
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        std::lock_guard<std::mutex> in(running->input);
+        running->status = running->ran ? running->process.finish() : 0;
+        running->stopped = running->stopWanted;
+        running->finished = true;
+        running->done = 1;
+    }
+    running->over.notify_all();
+    if (running->onOutput) running->onOutput(running->user, NULL, 0, RIDE_STREAM_OUT);
+}
+
+RIDERunning* startRunning(RIDERunning* running) {
+    try {
+        running->worker = std::thread(runTheProgram, running);
+    } catch (...) {
+        delete running;
+        return 0;
+    }
+    return running;
+}
+
+}
+
+RIDERunning* ride_run_start(RIDEProject* project, const char* cc1, const char* cl, const char* shc,
+                            const char* cxx1, int kind, const char* source, int language,
+                            const char* arch, int config, RIDEOutput onOutput, void* user) {
+    RIDERunning* running = new RIDERunning();
+    running->onOutput = onOutput;
+    running->user = user;
+    running->fromSource = true;
+    running->tool = toolFrom(project, cc1, cl, shc, cxx1);
+    running->kind = static_cast<editor::ToolchainKind>(kind);
+    running->source = source ? source : "";
+    running->language = static_cast<editor::Language>(language);
+    running->arch = arch ? arch : "";
+    running->config = static_cast<editor::Configuration>(config);
+    return startRunning(running);
+}
+
+RIDERunning* ride_run_built_start(const char* program, RIDEOutput onOutput, void* user) {
+    RIDERunning* running = new RIDERunning();
+    running->onOutput = onOutput;
+    running->user = user;
+    running->fromSource = false;
+    running->kind = editor::ToolAuto;
+    running->language = editor::LangPlain;
+    running->config = editor::ConfigDebug;
+    running->program = program ? program : "";
+    return startRunning(running);
+}
+
+int ride_running_send(RIDERunning* running, const char* bytes, int size) {
+    if (!running || !bytes || size < 0) return 0;
+    std::lock_guard<std::mutex> in(running->input);
+    if (running->finished || running->closeWanted) return 0;
+    if (!running->started) {
+        running->waiting.append(bytes, static_cast<size_t>(size));
+        return 1;
+    }
+    if (!running->ran) return 0;
+    return running->process.send(bytes, static_cast<size_t>(size)) ? 1 : 0;
+}
+
+void ride_running_close_input(RIDERunning* running) {
+    if (!running) return;
+    std::lock_guard<std::mutex> in(running->input);
+    if (running->finished || running->closeWanted) return;
+    running->closeWanted = true;
+    if (running->started && running->ran) running->process.closeInput();
+}
+
+void ride_running_stop(RIDERunning* running) {
+    if (!running) return;
+    std::lock_guard<std::mutex> held(running->state);
+    if (running->finished) return;
+    running->stopWanted = true;
+    if (!running->started) editor::cancelBuilds();
+    else if (running->ran) running->process.kill();
+}
+
+int ride_running_wait(RIDERunning* running, int timeoutMs) {
+    if (!running) return 1;
+    std::unique_lock<std::mutex> held(running->state);
+    if (timeoutMs < 0) {
+        running->over.wait(held, [running] { return running->done.load() != 0; });
+        return 1;
+    }
+    return running->over.wait_for(held, std::chrono::milliseconds(timeoutMs),
+                                  [running] { return running->done.load() != 0; }) ? 1 : 0;
+}
+
+int ride_running_done(RIDERunning* running) { return running && running->done.load() ? 1 : 0; }
+
+namespace {
+bool isOver(RIDERunning* running) { return running && running->done.load() != 0; }
+}
+
+int ride_running_built(RIDERunning* running) { return isOver(running) && running->built ? 1 : 0; }
+int ride_running_ran(RIDERunning* running) { return isOver(running) && running->ran ? 1 : 0; }
+int ride_running_status(RIDERunning* running) { return isOver(running) ? running->status : 0; }
+int ride_running_stopped(RIDERunning* running) { return isOver(running) && running->stopped ? 1 : 0; }
+const char* ride_running_build_output(RIDERunning* running) {
+    return isOver(running) ? running->buildOutput.c_str() : "";
+}
+int ride_running_has_error(RIDERunning* running) {
+    return isOver(running) && running->diag.present ? 1 : 0;
+}
+const char* ride_running_error_file(RIDERunning* running) {
+    return isOver(running) ? running->diag.file.c_str() : "";
+}
+int ride_running_error_line(RIDERunning* running) {
+    return isOver(running) ? static_cast<int>(running->diag.line) : 0;
+}
+int ride_running_error_column(RIDERunning* running) {
+    return isOver(running) ? static_cast<int>(running->diag.col) : 0;
+}
+const char* ride_running_error_message(RIDERunning* running) {
+    return isOver(running) ? running->diag.message.c_str() : "";
+}
+
+void ride_running_free(RIDERunning* running) {
+    if (!running) return;
+    ride_running_stop(running);
+    if (running->worker.joinable()) running->worker.join();
+    delete running;
+}
+
+void ride_cancel_builds(void) { editor::cancelBuilds(); }
+int ride_build_stopped(RIDEBuild* built) { return built && built->stopped ? 1 : 0; }
+int ride_ran_stopped(RIDERan* ran) { return ran && ran->stopped ? 1 : 0; }
+int ride_conversion_stopped(RIDEConversion* made) { return made && made->stopped ? 1 : 0; }
 
 }

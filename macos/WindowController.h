@@ -11,7 +11,7 @@
 @interface WindowController
     : NSWindowController <NSWindowDelegate, NSTextViewDelegate, NSOutlineViewDataSource,
                           NSOutlineViewDelegate, NSTableViewDataSource, NSTableViewDelegate,
-                          NSSplitViewDelegate, NSMenuDelegate, NSMenuItemValidation,
+                          NSSplitViewDelegate, NSMenuDelegate, NSMenuItemValidation, NSTextFieldDelegate,
                           CodeViewHost>
 
 - (instancetype)init;
@@ -24,6 +24,9 @@
 
 // Asks about every unsaved file; NO when the person cancelled.
 - (BOOL)mayClose;
+
+// Ends the program running and any build, and waits a moment for them: the application is going.
+- (void)stopEverything;
 
 // The main menu, built once: File, Edit, View, Project, Build, Target, Option, Help, with the application and Window menus macOS expects around them.
 - (NSMenu*)makeMainMenu;

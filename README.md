@@ -611,6 +611,49 @@ Where one compiler makes the whole of it, it does the linking too - `c90 a.c
 b.c -o prog`, since several inputs link together, and cl the same when it is
 not given `/c`.
 
+### Input, and Stop
+
+**A program run from a window reads what you type under its Output, and Stop
+ends it.** Until 4.5 every run had the null device for its input, so `scanf`
+saw end of file at once and a program that asked for a number carried on with
+whatever was in the variable - and a program that never ended wedged the
+window, since there was nothing to press. The fix is in the core and the
+bridge, so both windows have it the same way.
+
+`ride_run_start` and `ride_run_built_start` (`winforms/bridge.h`) run the
+program on a worker thread and hand its output to the window as it comes, a
+call per piece, marked as standard output, standard error, or what the build
+said before it; `ride_running_send` passes bytes to its input,
+`ride_running_close_input` is end of file (Ctrl-D on a Mac, Ctrl-Z on
+Windows), and `ride_running_stop` kills the program and everything it started
+- its process group on macOS and Linux, a job object on Windows.
+
+**What the program sees is a terminal on every system.** On macOS and Linux its
+input and output are a pseudo-terminal, and on Windows a pseudo-console
+(`CreatePseudoConsole`, Windows 10 1809 and later): either way its C library
+writes a line at a time and flushes a prompt before it reads, exactly as at a
+shell, and the terminal echoes what is sent - so the window shows the input
+once, from the program's side, and does not echo it itself. Two differences
+remain. A console has one output, so on Windows the program's standard error
+arrives with its standard output; on macOS and Linux it is a pipe of its own and
+comes marked as such. And a pseudo-console writes escape sequences - the window
+title, cursor moves, colours - which the core takes out before the window sees
+the bytes, a cursor sent down a row becoming a newline. On a Windows too old for
+a pseudo-console the program has pipes: no echo, stderr apart, and a prompt with
+no `fflush` shows after it is answered. A terminal's line is at most a thousand
+bytes or so on macOS, its own limit and not the editor's.
+
+**Stop reaches builds too.** `ride_cancel_builds` kills every compiler, linker
+and converter the core is running, on any thread; the build it belonged to
+fails with `[stopped]` at the end of its output and runs nothing more. A
+compiler that hangs no longer holds the window. Every command a build runs goes
+through `runCaptured`, which since 4.5 starts it on `Process` rather than
+through `popen` - the only way to have a process to kill - with the null
+device for its input, as before, and its two streams as one.
+
+The terminal editor keeps its own run, which waits for the program and gives
+it no input: it has one screen, and the program's output goes into it.
+
 ### A compiler per group
 
 **A target can hold C and C++ together.** Each group compiles to objects with
@@ -804,6 +847,44 @@ Its menus are File, Edit, View, Project, Build, Target, Option and Help, and its
 panel's three tabs are Errors (every diagnostic the build printed, read with
 the core's own parser), Progress (each step, timed) and Output. Builds run off
 the main thread. The debugger is not in it yet. `macos/README.md` has the rest.
+
+### The seam
+
+`winforms/bridge.h` is the whole of what either window knows about the core,
+and it is C so that C++/CLI and Objective-C++ can both call it. What it
+promises, written down because a window that guesses gets it wrong on the
+other thread:
+
+- **A `const char*` it answers is its own**, and good until the next call that
+  answers one on the same object - a project's `answer`, a debugger's lines -
+  or, for a call that takes no object, the next such call, since those share
+  one string. Copy it before calling again. A `char*` it hands over is the
+  caller's, freed with `ride_free`.
+- **One thread at a time per `RIDEProject`.** A build reads the project on the
+  thread it runs on; a window that builds off its main thread must not load,
+  close or change the project while one runs. `ride_run_start` reads it on the
+  calling thread and not again.
+- **Errors come back three ways**: a buffer the caller passes
+  (`ride_project_load`, `_allows`, `_save_as`, cut on a character boundary),
+  `ride_outcome_message` after a project operation, and a result's own
+  accessors (`ride_build_error_*`, `ride_ran_error_*`, `ride_running_error_*`).
+  A 0 from a `ride_remember_*` or `ride_set_*` means the settings file could
+  not be written, and there is nothing more to say.
+- **Side effects that are not in a name**: `ride_program_free` deletes the
+  program it built; `ride_project_set_arch`, `_set_toolchain`,
+  `_set_includes` and `_set_libraries` write the `.pro` at once;
+  `ride_project_target_ready` is the first half of every `ride_project_target_*`
+  answer and is re-run inside `ride_build_target` and `ride_project_debug_plan`.
+- **Every accessor takes NULL** and answers 0 or `""`, so a build that returned
+  nothing reads as one that failed.
+- **Threads**: the `RIDEOutput` callback and the `ride_ask_native` question
+  come on whichever thread is building or running; a window marshals both to
+  its own. `ride_ask_native` takes no user pointer - a window reaches itself
+  through the one it has.
+
+The Mac window reads diagnostics through `ride_parse_diagnostic` and the
+compilers' names through `ride_compiler_name`, so neither window includes a
+core header; `tests/test.cpp` checks both answers against the core's own.
 
 ## The manual
 

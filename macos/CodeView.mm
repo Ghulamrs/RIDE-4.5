@@ -1,49 +1,127 @@
 #import "CodeView.h"
 
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 #import "Text.h"
 
-@implementation CodeView
+@implementation CodeView {
+    // Where each row begins: 0, then one past every '\n'. Kept for the storage in the view.
+    std::vector<NSUInteger> starts_;
+    __weak NSTextStorage* indexed_;
+}
 
-// ---- rows and columns -------------------------------------------------------
+- (instancetype)initWithFrame:(NSRect)frame textContainer:(NSTextContainer*)container {
+    self = [super initWithFrame:frame textContainer:container];
+    if (self) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(storageEdited:)
+                                                     name:NSTextStorageDidProcessEditingNotification
+                                                   object:nil];
+        [self textStorageChanged];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// ---- the row index ----------------------------------------------------------
+
+static void newlinesIn(NSString* text, NSRange range, std::vector<NSUInteger>& into) {
+    unichar buffer[4096];
+    NSUInteger at = range.location, end = NSMaxRange(range);
+    while (at < end) {
+        NSUInteger take = MIN((NSUInteger)4096, end - at);
+        [text getCharacters:buffer range:NSMakeRange(at, take)];
+        for (NSUInteger i = 0; i < take; ++i)
+            if (buffer[i] == '\n') into.push_back(at + i + 1);
+        at += take;
+    }
+}
+
+- (void)textStorageChanged {
+    NSTextStorage* storage = self.textStorage;
+    indexed_ = storage;
+    starts_.assign(1, 0);
+    if (storage != nil) newlinesIn(storage.string, NSMakeRange(0, storage.length), starts_);
+}
+
+// An edit replaces the row starts inside what it changed and moves the ones after it; the rest
+// stand. The host hears which rows went and came, so colouring can start there.
+- (void)storageEdited:(NSNotification*)note {
+    NSTextStorage* storage = note.object;
+    if (storage != self.textStorage) return;
+    if (storage != indexed_) { [self textStorageChanged]; return; }
+    if (!(storage.editedMask & NSTextStorageEditedCharacters)) return;
+
+    NSRange edited = storage.editedRange;
+    NSInteger delta = storage.changeInLength;
+    NSUInteger loc = edited.location;
+    NSUInteger oldEnd = (NSUInteger)((NSInteger)NSMaxRange(edited) - delta);
+    auto first = std::upper_bound(starts_.begin(), starts_.end(), loc);
+    auto last = std::upper_bound(starts_.begin(), starts_.end(), oldEnd);
+    NSInteger firstRow = (NSInteger)(first - starts_.begin()) - 1;
+    NSInteger removed = (NSInteger)(last - first);
+    size_t at = (size_t)(first - starts_.begin());
+    starts_.erase(first, last);
+    for (size_t i = at; i < starts_.size(); ++i) starts_[i] = (NSUInteger)((NSInteger)starts_[i] + delta);
+    std::vector<NSUInteger> added;
+    newlinesIn(storage.string, edited, added);
+    starts_.insert(starts_.begin() + (long)at, added.begin(), added.end());
+
+    id<CodeViewHost> host = self.host;
+    if ([host respondsToSelector:@selector(codeView:rowsFrom:before:after:)])
+        [host codeView:self rowsFrom:firstRow before:removed + 1 after:(NSInteger)added.size() + 1];
+}
+
+- (NSInteger)lineCount { return (NSInteger)starts_.size(); }
 
 - (NSInteger)rowOfIndex:(NSUInteger)index {
-    NSString* all = self.string;
-    NSUInteger stop = MIN(index, all.length);
-    NSInteger row = 0;
-    for (NSUInteger i = 0; i < stop; ++i)
-        if ([all characterAtIndex:i] == '\n') ++row;
-    return row;
+    auto after = std::upper_bound(starts_.begin(), starts_.end(), index);
+    return (NSInteger)(after - starts_.begin()) - 1;
 }
 
 - (NSUInteger)indexOfRow:(NSInteger)row {
     if (row <= 0) return 0;
-    NSString* all = self.string;
-    NSInteger seen = 0;
-    for (NSUInteger i = 0; i < all.length; ++i) {
-        if ([all characterAtIndex:i] == '\n' && ++seen == row) return i + 1;
-    }
-    return NSNotFound;
+    if (row >= (NSInteger)starts_.size()) return NSNotFound;
+    return starts_[(size_t)row];
 }
 
 - (NSInteger)caretRow { return [self rowOfIndex:self.selectedRange.location]; }
 
 - (NSInteger)caretColumn {
     NSUInteger caret = self.selectedRange.location;
-    NSRange line = [self.string lineRangeForRange:NSMakeRange(caret, 0)];
-    return (NSInteger)(caret - line.location);
+    return (NSInteger)(caret - [self indexOfRow:[self rowOfIndex:caret]]);
+}
+
+- (NSInteger)caretByteColumn {
+    NSUInteger caret = self.selectedRange.location;
+    NSUInteger start = [self indexOfRow:[self rowOfIndex:caret]];
+    NSString* before = [self.string substringWithRange:NSMakeRange(start, caret - start)];
+    return (NSInteger)std::strlen(Utf8(before));
 }
 
 - (NSRange)contentsOfRow:(NSInteger)row {
     NSUInteger start = [self indexOfRow:row];
     if (start == NSNotFound) return NSMakeRange(NSNotFound, 0);
-    NSString* all = self.string;
-    NSRange line = [all lineRangeForRange:NSMakeRange(start, 0)];
-    NSUInteger end = NSMaxRange(line);
-    if (end > line.location && end <= all.length && [all characterAtIndex:end - 1] == '\n')
-        --end;
-    return NSMakeRange(line.location, end - line.location);
+    NSUInteger next = [self indexOfRow:row + 1];
+    NSUInteger end = next == NSNotFound ? self.string.length : next - 1;
+    return NSMakeRange(start, end - start);
+}
+
+- (NSRange)rowsOfRange:(NSRange)range {
+    NSInteger first = [self rowOfIndex:range.location];
+    NSUInteger end = NSMaxRange(range);
+    // A selection ending at the start of a row does not take that row.
+    if (range.length > 0 && end > 0 && [self rowOfIndex:end - 1] < [self rowOfIndex:end]) --end;
+    NSInteger last = [self rowOfIndex:end];
+    NSUInteger start = [self indexOfRow:first];
+    NSUInteger next = [self indexOfRow:last + 1];
+    NSUInteger stop = next == NSNotFound ? self.string.length : next;
+    return NSMakeRange(start, stop - start);
 }
 
 static NSUInteger leadingSpace(NSString* line) {
@@ -61,8 +139,19 @@ static NSUInteger leadingSpace(NSString* line) {
     NSUInteger start = [self indexOfRow:line - 1];
     if (start == NSNotFound) start = self.string.length;
     NSRange contents = [self contentsOfRow:line - 1];
-    NSUInteger room = contents.location == NSNotFound ? 0 : contents.length;
-    NSUInteger at = start + (NSUInteger)MIN((NSInteger)room, MAX((NSInteger)0, column - 1));
+    NSUInteger at = start;
+    if (contents.location != NSNotFound) {
+        // The compiler's column counts bytes of UTF-8; the view counts UTF-16 units (M1).
+        NSString* text = [self.string substringWithRange:contents];
+        NSInteger bytes = 0, wanted = MAX((NSInteger)0, column - 1);
+        NSUInteger unit = 0;
+        while (unit < text.length && bytes < wanted) {
+            NSRange one = [text rangeOfComposedCharacterSequenceAtIndex:unit];
+            bytes += (NSInteger)std::strlen(Utf8([text substringWithRange:one]));
+            unit = NSMaxRange(one);
+        }
+        at = start + unit;
+    }
     self.selectedRange = NSMakeRange(at, 0);
     [self scrollRangeToVisible:NSMakeRange(at, 0)];
     [self showFindIndicatorForRange:(contents.location == NSNotFound
@@ -71,10 +160,20 @@ static NSUInteger leadingSpace(NSString* line) {
 
 // ---- editing ------------------------------------------------------------------
 
+// With the typing attributes, so text put into an empty file has the code font (L9).
 - (void)replaceRange:(NSRange)range with:(NSString*)text {
     if (![self shouldChangeTextInRange:range replacementString:text]) return;
-    [self.textStorage replaceCharactersInRange:range withString:text];
+    NSAttributedString* styled = [[NSAttributedString alloc] initWithString:text
+                                                                 attributes:self.typingAttributes];
+    [self.textStorage replaceCharactersInRange:range withAttributedString:styled];
     [self didChangeText];
+}
+
+// A row's layout reads only the rows above it and itself, so only those are handed over.
+- (NSString*)textThroughRow:(NSInteger)row {
+    NSRange contents = [self contentsOfRow:row];
+    NSUInteger end = contents.location == NSNotFound ? self.string.length : NSMaxRange(contents);
+    return [self.string substringToIndex:end];
 }
 
 - (NSString*)indentUnit {
@@ -94,7 +193,7 @@ static NSUInteger leadingSpace(NSString* line) {
     NSString* line = [self.string substringWithRange:contents];
     NSUInteger lead = leadingSpace(line);
 
-    NSString* want = Take(ride_indent_for(Utf8(self.string), (int)row,
+    NSString* want = Take(ride_indent_for(Utf8([self textThroughRow:row]), (int)row,
                                               [host indentWidth], [host indentTabs],
                                               [host indentCase], [host indentDialect]));
     if ([want isEqualToString:[line substringToIndex:lead]]) return;
@@ -115,16 +214,14 @@ static NSUInteger leadingSpace(NSString* line) {
         [super insertNewline:sender];
         return;
     }
-    NSString* all = self.string;
     NSRange selection = self.selectedRange;
     NSInteger row = [self rowOfIndex:selection.location];
-    NSRange line = [all lineRangeForRange:NSMakeRange(selection.location, 0)];
-    NSString* before = [all substringWithRange:NSMakeRange(line.location,
-                                                           selection.location - line.location)];
+    NSUInteger start = [self indexOfRow:row];
+    NSString* before = [self.string substringWithRange:NSMakeRange(start, selection.location - start)];
     // The core counts columns in bytes of UTF-8, as it counts everything.
     int column = (int)std::strlen(Utf8(before));
 
-    NSString* lead = Take(ride_indent_after_newline(Utf8(all), (int)row, column,
+    NSString* lead = Take(ride_indent_after_newline(Utf8([self textThroughRow:row]), (int)row, column,
                                                         [host indentWidth], [host indentTabs],
                                                         [host indentCase], [host indentDialect]));
     [self insertText:[@"\n" stringByAppendingString:lead] replacementRange:selection];

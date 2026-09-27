@@ -21,9 +21,16 @@ endif
 # The core's own flags, as ../Makefile has them. The window's files add ARC
 # and leave out -pedantic, which argues with Objective-C syntax rather than
 # with anything written here.
+# ARCHS names what the program runs on - one, as the machine building it, unless asked for both:
+# `make ARCHS="arm64 x86_64"` builds a universal RIDE. DEBUG=1 adds -g, and a .dSYM beside the app.
+# A deprecation the next SDK brings is a warning, not a failed build, even under -Werror (L14).
 MACOS_MIN ?= 12.0
-WERROR ?= -Werror
-CXXFLAGS := -std=c++14 -Wall -Wextra $(WERROR) -O2 -mmacosx-version-min=$(MACOS_MIN)
+WERROR ?= -Werror -Wno-error=deprecated-declarations
+ARCHS ?=
+ARCH_FLAGS := $(foreach a,$(ARCHS),-arch $(a))
+DEBUG ?=
+DEBUG_FLAGS := $(if $(DEBUG),-g)
+CXXFLAGS := -std=c++14 -Wall -Wextra $(WERROR) -O2 -mmacosx-version-min=$(MACOS_MIN) $(ARCH_FLAGS) $(DEBUG_FLAGS)
 CORE_FLAGS := $(CXXFLAGS) -pedantic
 MAC_FLAGS := $(CXXFLAGS) -fobjc-arc -I../src -I../winforms
 FRAMEWORKS := -framework Cocoa
@@ -50,6 +57,11 @@ MAC_OBJ := $(patsubst %.mm,$(OBJDIR)/mac/%.o,$(MAC_SRC))
 
 EXE := $(APP)/Contents/MacOS/RIDE
 
+# Ad hoc, for this Mac, by default. For another's: SIGN="Developer ID Application: ..." and
+# HARDENED=--options=runtime, then notarize - macos/README.md, "Signing".
+SIGN ?= -
+HARDENED ?=
+
 all: $(APP)
 
 mac-only:
@@ -67,7 +79,8 @@ $(OBJDIR)/mac/%.o: %.mm | mac-only
 
 $(EXE): $(CORE_OBJ) $(MAC_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -fobjc-arc $(FRAMEWORKS) -o $@ $(CORE_OBJ) $(MAC_OBJ)
+	$(CXX) $(CXXFLAGS) $(FRAMEWORKS) -o $@ $(CORE_OBJ) $(MAC_OBJ)
+	@if [ -n "$(DEBUG)" ]; then dsymutil $@ -o $(APP).dSYM; fi
 
 # The bundle: the program, its Info.plist, the manual, and - docked beside the
 # editor as on Windows - whatever compilers ../bin holds, with the Shalimar
@@ -85,7 +98,10 @@ $(APP): $(EXE) Info.plist RIDE.icns
 	@rm -rf $(APP)/Contents/Resources/help && cp -R ../help $(APP)/Contents/Resources/help
 	@for d in projects programs; do rm -rf $(APP)/Contents/Resources/$$d; cp -R ../$$d $(APP)/Contents/Resources/$$d; done
 	cp RIDE.icns $(APP)/Contents/Resources/RIDE.icns
-	codesign --force --deep --sign - $(APP)
+	@# Each Mach-O helper signed on its own, then the app - not --deep, which Apple has deprecated and
+	@# which would treat a non-Mach-O file as code (L12). SIGN names a Developer ID for distribution.
+	@for tool in $(APP)/Contents/MacOS/*; do 	    [ "$$tool" = "$(EXE)" ] && continue; 	    [ -f "$$tool" ] && file -b "$$tool" | grep -q Mach-O && codesign --force $(HARDENED) --sign "$(SIGN)" "$$tool"; 	done; true
+	codesign --force $(HARDENED) --sign "$(SIGN)" $(APP)
 	@touch $(APP)
 	@echo "built $(APP)"
 
