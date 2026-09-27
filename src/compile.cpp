@@ -1,21 +1,19 @@
 #include "compile.h"
 
 #include "path.h"
+#include "process.h"
 #include "product.h"
 #include "settings.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
-#define POPEN  _popen
-#define PCLOSE _pclose
 #else
-#include <sys/wait.h>
 #include <unistd.h>
-#define POPEN  popen
-#define PCLOSE pclose
 #endif
 
 namespace editor {
@@ -175,48 +173,130 @@ std::string temporaryDirectory(const char* what) {
 
 }
 
-int runCaptured(const std::string& command, std::string& output,
-                LineSink sink, void* context) {
-    // Nothing run from here may read the editor's own input: a compiler that inherits it eats the
-    // keystrokes not yet read, and on Windows the editor's next read saw end of file and quit, so
-    // every key after a build was silently the last. The run step said this; the build step did not.
-#ifdef _WIN32
-    const char* noInput = " < NUL";
-#else
-    const char* noInput = " < /dev/null";
-#endif
-    std::string cmd = command + noInput + " 2>&1";
+namespace {
 
-#ifdef _WIN32
+// **Stop, for whatever a build or a run is running.** Each command runCaptured starts is on this
+// list while it runs; cancelBuilds() kills every one and moves the epoch on, and a build that began
+// before the move runs nothing more. A spin lock and a fixed table: nothing here has a destructor.
+std::atomic<unsigned> cancelEpoch(0);
+std::atomic_flag liveLock = ATOMIC_FLAG_INIT;
+const int kLive = 64;
+Process* live[kLive];
 
-    cmd = "\"" + cmd + "\"";
-#endif
+thread_local unsigned scopeEpoch = 0;
+thread_local int scopeDepth = 0;
 
-    FILE* pipe = POPEN(cmd.c_str(), "r");
-    if (!pipe) return -1;
+void lockLive() {
+    while (liveLock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+}
+void unlockLive() { liveLock.clear(std::memory_order_release); }
 
-    char chunk[512];
+int enlist(Process* child) {
+    lockLive();
+    int slot = -1;
+    for (int i = 0; i < kLive && slot < 0; ++i)
+        if (live[i] == 0) { live[i] = child; slot = i; }
+    unlockLive();
+    return slot;
+}
+
+void unlist(int slot) {
+    if (slot < 0) return;
+    lockLive();
+    live[slot] = 0;
+    unlockLive();
+}
+
+unsigned epochNow() { return scopeDepth > 0 ? scopeEpoch : cancelEpoch.load(); }
+
+int saidStopped(std::string& output, LineSink sink, void* context) {
+    output += "[stopped]\n";
+    if (sink) sink(context, "[stopped]");
+    return kStoppedStatus;
+}
+
+// Every line the sink is handed, and on Windows the output without the carriage returns the pipe
+// used to drop - popen read it in text mode, and everything that reads it expects "\n".
+struct Lines {
+    std::string& output;
+    LineSink sink;
+    void* context;
     std::string pending;
-    while (std::fgets(chunk, sizeof chunk, pipe)) {
-        output += chunk;
-        if (!sink) continue;
-        for (const char* p = chunk; *p; ++p) {
-            if (*p == '\n') {
+    bool carriage;
+
+    Lines(std::string& o, LineSink s, void* c) : output(o), sink(s), context(c), carriage(false) {}
+
+    void add(const std::string& bytes) {
+        for (size_t i = 0; i < bytes.size(); ++i) {
+            char c = bytes[i];
+#ifdef _WIN32
+            if (carriage && c != '\n') output += '\r';
+            carriage = c == '\r';
+            if (carriage) continue;
+#endif
+            output += c;
+            if (!sink) continue;
+            if (c == '\n') {
                 sink(context, pending);
                 pending.clear();
-            } else if (*p != '\r') {
-                pending += *p;
+            } else if (c != '\r') {
+                pending += c;
             }
         }
     }
-    if (sink && !pending.empty()) sink(context, pending);
 
-    int status = PCLOSE(pipe);
-#ifndef _WIN32
+    void end() {
+        if (carriage) output += '\r';
+        carriage = false;
+        if (sink && !pending.empty()) sink(context, pending);
+        pending.clear();
+    }
+};
 
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-#endif
+}
+
+BuildScope::BuildScope() {
+    if (scopeDepth++ == 0) scopeEpoch = cancelEpoch.load();
+}
+
+BuildScope::~BuildScope() { --scopeDepth; }
+
+bool buildCancelled() { return scopeDepth > 0 && scopeEpoch != cancelEpoch.load(); }
+
+void cancelBuilds() {
+    lockLive();
+    cancelEpoch.fetch_add(1);
+    for (int i = 0; i < kLive; ++i)
+        if (live[i] != 0) live[i]->kill();
+    unlockLive();
+}
+
+int runCaptured(const std::string& command, std::string& output,
+                LineSink sink, void* context) {
+    // Nothing run from here may read the editor's own input: a compiler that inherits it eats the
+    // keystrokes not yet read, and on Windows the editor's next read saw end of file and quit. The
+    // child's input is the null device, as the " < NUL" once on the command made it.
+    unsigned epoch = epochNow();
+    if (cancelEpoch.load() != epoch) return saidStopped(output, sink, context);
+
+    Process child;
+    if (!child.startCaptured(command)) return -1;
+    int slot = enlist(&child);
+    if (cancelEpoch.load() != epoch) child.kill();
+
+    Lines lines(output, sink, context);
+    std::string chunk;
+    for (;;) {
+        chunk.clear();
+        int said = child.readAny(chunk, 0, 200);
+        if (said < 0) break;
+        if (said > 0) lines.add(chunk);
+    }
+    lines.end();
+
+    unlist(slot);
+    int status = child.finish();
+    if (cancelEpoch.load() != epoch) return saidStopped(output, sink, context);
     return status;
 }
 
@@ -311,6 +391,7 @@ template <class Again>
 Built withNativeFallback(Built first, const std::string& arch, LineSink sink, void* context,
                          Again again) {
     std::string question;
+    if (buildCancelled()) return first;
     if (!nativeFallbackWanted(first.ok, first.diag.present, arch, question)) {
         if (!question.empty()) {
             first.output += question + "\n";
@@ -844,19 +925,39 @@ Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sou
     result.built = made.ok;
 
     if (result.built) {
-
-#ifdef _WIN32
-        const char* noInput = " < NUL";
-#else
-        const char* noInput = " < /dev/null";
-#endif
         result.ran = true;
-        result.status = runCaptured(launchCommand(made.program, kind == ToolShc) + noInput,
+        result.status = runCaptured(launchCommand(made.program, kind == ToolShc),
                                     result.output, sink, context);
     }
 
     removeProgram(made);
     return result;
+}
+
+
+bool startProgram(Process& process, const std::string& program, bool shalimar,
+                  const std::vector<std::string>& args) {
+    if (program.empty()) return false;
+    return process.startInteractive(launchCommand(program, shalimar, args));
+}
+
+// Until the program's output closes: handed over as it comes. A program that has ended but left a
+// child holding its output open is given a moment for the last of it, not forever.
+void pumpProgram(Process& process, ChunkSink sink, void* context) {
+    std::string chunk;
+    int quiet = 0;
+    for (;;) {
+        chunk.clear();
+        bool isStderr = false;
+        int said = process.readAny(chunk, &isStderr, 50);
+        if (said < 0) break;
+        if (said > 0) {
+            quiet = 0;
+            if (sink) sink(context, chunk.data(), chunk.size(), isStderr);
+            continue;
+        }
+        if (process.ended(0) && ++quiet >= 6) break;
+    }
 }
 
 }

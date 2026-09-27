@@ -1,10 +1,15 @@
 
 #include "bridge.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -258,10 +263,12 @@ editor::Toolchain toolFrom(RIDEProject* project, const char* cc1, const char* cl
 struct RIDEBuild {
     editor::Build built;
     std::string assembly;
+    bool stopped = false;
 };
 
 struct RIDERan {
     editor::Ran ran;
+    bool stopped = false;
 };
 
 struct RIDEProgram {
@@ -901,11 +908,13 @@ RIDERan* ride_run(RIDEProject* project, const char* cc1, const char* cl, const c
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDERan* out = new RIDERan();
+    editor::BuildScope scope;
     out->ran = editor::runProgram(tool, static_cast<editor::ToolchainKind>(kind),
                                   source ? source : "",
                                   static_cast<editor::Language>(language),
                                   arch ? arch : "",
                                   static_cast<editor::Configuration>(config));
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
@@ -925,6 +934,7 @@ RIDEProgram* ride_build_program(RIDEProject* project, const char* cc1, const cha
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDEProgram* out = new RIDEProgram();
+    editor::BuildScope scope;
     out->built = editor::buildProgram(tool, static_cast<editor::ToolchainKind>(kind),
                                       source ? source : "",
                                       static_cast<editor::Language>(language),
@@ -1437,9 +1447,11 @@ RIDEBuild* ride_build_target(RIDEProject* project, const char* cc1, const char* 
     tool.kind = static_cast<editor::ToolchainKind>(kind);
 
     RIDEBuild* out = new RIDEBuild();
+    editor::BuildScope scope;
     editor::Built made = editor::buildParts(
         tool, project->parts, arch ? arch : "",
         static_cast<editor::Configuration>(config), project->program);
+    out->stopped = editor::buildCancelled();
 
     out->built.ok = made.ok;
     out->built.diag = made.diag;
@@ -1449,12 +1461,15 @@ RIDEBuild* ride_build_target(RIDEProject* project, const char* cc1, const char* 
 
 RIDERan* ride_run_built(const char* program) {
     RIDERan* out = new RIDERan();
+    editor::BuildScope scope;
     out->ran = editor::runBuilt(program ? program : "");
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
 struct RIDEConversion {
     editor::Conversion made;
+    bool stopped = false;
 };
 
 int ride_converts_from(int language, int* toShalimar) {
@@ -1477,8 +1492,10 @@ char* ride_converted_name(const char* source, int toShalimar) {
 RIDEConversion* ride_convert(const char* converter, const char* source,
                                    const char* output, int toShalimar) {
     RIDEConversion* out = new RIDEConversion();
+    editor::BuildScope scope;
     out->made = editor::convert(converter ? converter : "", source ? source : "",
                                 output ? output : "", toShalimar != 0);
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
@@ -1497,12 +1514,14 @@ RIDEBuild* ride_build(RIDEProject* project, const char* cc1, const char* cl, con
     editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
 
     RIDEBuild* out = new RIDEBuild();
+    editor::BuildScope scope;
     out->built = editor::build(tool, static_cast<editor::ToolchainKind>(kind),
                                source ? source : "",
                                static_cast<editor::Language>(language),
                                arch ? arch : "",
                                static_cast<editor::Configuration>(config));
     out->assembly = join(out->built.asmLines);
+    out->stopped = editor::buildCancelled();
     return out;
 }
 
@@ -1528,5 +1547,235 @@ int ride_build_error_column(RIDEBuild* built) {
 const char* ride_build_error_message(RIDEBuild* built) {
     return built->built.diag.message.c_str();
 }
+
+// ---- a program that runs while the window watches (bridge.h) --------------------------------
+
+// Two locks: `state` for what the run has come to, which Stop takes and never waits in; `input`
+// for the input's handle, which a send may hold while the program is slow to read.
+struct RIDERunning {
+    RIDEOutput onOutput;
+    void* user;
+
+    bool fromSource;
+    editor::Toolchain tool;
+    editor::ToolchainKind kind;
+    std::string source;
+    editor::Language language;
+    std::string arch;
+    editor::Configuration config;
+    std::string program;
+
+    editor::Process process;
+    std::thread worker;
+    std::mutex state;
+    std::mutex input;
+    std::condition_variable over;
+
+    std::string waiting;         // sent before the program started
+    bool closeWanted = false;
+    bool stopWanted = false;
+    bool started = false;
+    bool finished = false;
+    std::atomic<int> done{0};
+
+    bool built = false;
+    bool ran = false;
+    int status = 0;
+    bool stopped = false;
+    editor::Diagnostic diag;
+    std::string buildOutput;
+};
+
+namespace {
+
+void runningLine(void* context, const std::string& line) {
+    RIDERunning* running = static_cast<RIDERunning*>(context);
+    std::string text = line + "\n";
+    if (running->onOutput)
+        running->onOutput(running->user, text.data(), static_cast<int>(text.size()), RIDE_STREAM_BUILD);
+}
+
+void runningChunk(void* context, const char* bytes, size_t size, bool isStderr) {
+    RIDERunning* running = static_cast<RIDERunning*>(context);
+    if (running->onOutput)
+        running->onOutput(running->user, bytes, static_cast<int>(size),
+                          isStderr ? RIDE_STREAM_ERR : RIDE_STREAM_OUT);
+}
+
+void runTheProgram(RIDERunning* running) {
+    editor::BuildScope scope;
+    bool stopFirst = false;
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        stopFirst = running->stopWanted;
+    }
+    editor::Built made;
+    bool shalimar = false;
+    std::string program = running->program;
+    if (running->fromSource && !stopFirst) {
+        made = editor::buildProgram(running->tool, running->kind, running->source, running->language,
+                                    running->arch, running->config, runningLine, running);
+        running->buildOutput = made.output;
+        running->diag = made.diag;
+        program = made.ok ? made.program : std::string();
+        shalimar = made.shalimar;
+    }
+
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        std::lock_guard<std::mutex> in(running->input);
+        running->built = !program.empty() && !stopFirst;
+        if (running->built && !running->stopWanted && !editor::buildCancelled()) {
+            running->ran = editor::startProgram(running->process, program, shalimar);
+            if (running->ran) {
+                if (!running->waiting.empty())
+                    running->process.send(running->waiting.data(), running->waiting.size());
+                if (running->closeWanted) running->process.closeInput();
+            }
+        }
+        running->waiting.clear();
+        running->started = true;
+    }
+
+    // Read until the output closes, then wait - with no lock held, so Stop can still end a program
+    // that closed its output and went on - and only then let the process go, under both locks.
+    if (running->ran) {
+        editor::pumpProgram(running->process, runningChunk, running);
+        while (!running->process.ended(0)) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (running->fromSource) editor::removeProgram(made);
+
+    {
+        std::lock_guard<std::mutex> held(running->state);
+        std::lock_guard<std::mutex> in(running->input);
+        running->status = running->ran ? running->process.finish() : 0;
+        running->stopped = running->stopWanted;
+        running->finished = true;
+        running->done = 1;
+    }
+    running->over.notify_all();
+    if (running->onOutput) running->onOutput(running->user, NULL, 0, RIDE_STREAM_OUT);
+}
+
+RIDERunning* startRunning(RIDERunning* running) {
+    try {
+        running->worker = std::thread(runTheProgram, running);
+    } catch (...) {
+        delete running;
+        return 0;
+    }
+    return running;
+}
+
+}
+
+RIDERunning* ride_run_start(RIDEProject* project, const char* cc1, const char* cl, const char* shc,
+                            const char* cxx1, int kind, const char* source, int language,
+                            const char* arch, int config, RIDEOutput onOutput, void* user) {
+    RIDERunning* running = new RIDERunning();
+    running->onOutput = onOutput;
+    running->user = user;
+    running->fromSource = true;
+    running->tool = toolFrom(project, cc1, cl, shc, cxx1);
+    running->kind = static_cast<editor::ToolchainKind>(kind);
+    running->source = source ? source : "";
+    running->language = static_cast<editor::Language>(language);
+    running->arch = arch ? arch : "";
+    running->config = static_cast<editor::Configuration>(config);
+    return startRunning(running);
+}
+
+RIDERunning* ride_run_built_start(const char* program, RIDEOutput onOutput, void* user) {
+    RIDERunning* running = new RIDERunning();
+    running->onOutput = onOutput;
+    running->user = user;
+    running->fromSource = false;
+    running->kind = editor::ToolAuto;
+    running->language = editor::LangPlain;
+    running->config = editor::ConfigDebug;
+    running->program = program ? program : "";
+    return startRunning(running);
+}
+
+int ride_running_send(RIDERunning* running, const char* bytes, int size) {
+    if (!running || !bytes || size < 0) return 0;
+    std::lock_guard<std::mutex> in(running->input);
+    if (running->finished || running->closeWanted) return 0;
+    if (!running->started) {
+        running->waiting.append(bytes, static_cast<size_t>(size));
+        return 1;
+    }
+    if (!running->ran) return 0;
+    return running->process.send(bytes, static_cast<size_t>(size)) ? 1 : 0;
+}
+
+void ride_running_close_input(RIDERunning* running) {
+    if (!running) return;
+    std::lock_guard<std::mutex> in(running->input);
+    if (running->finished || running->closeWanted) return;
+    running->closeWanted = true;
+    if (running->started && running->ran) running->process.closeInput();
+}
+
+void ride_running_stop(RIDERunning* running) {
+    if (!running) return;
+    std::lock_guard<std::mutex> held(running->state);
+    if (running->finished) return;
+    running->stopWanted = true;
+    if (!running->started) editor::cancelBuilds();
+    else if (running->ran) running->process.kill();
+}
+
+int ride_running_wait(RIDERunning* running, int timeoutMs) {
+    if (!running) return 1;
+    std::unique_lock<std::mutex> held(running->state);
+    if (timeoutMs < 0) {
+        running->over.wait(held, [running] { return running->done.load() != 0; });
+        return 1;
+    }
+    return running->over.wait_for(held, std::chrono::milliseconds(timeoutMs),
+                                  [running] { return running->done.load() != 0; }) ? 1 : 0;
+}
+
+int ride_running_done(RIDERunning* running) { return running && running->done.load() ? 1 : 0; }
+
+namespace {
+bool isOver(RIDERunning* running) { return running && running->done.load() != 0; }
+}
+
+int ride_running_built(RIDERunning* running) { return isOver(running) && running->built ? 1 : 0; }
+int ride_running_ran(RIDERunning* running) { return isOver(running) && running->ran ? 1 : 0; }
+int ride_running_status(RIDERunning* running) { return isOver(running) ? running->status : 0; }
+int ride_running_stopped(RIDERunning* running) { return isOver(running) && running->stopped ? 1 : 0; }
+const char* ride_running_build_output(RIDERunning* running) {
+    return isOver(running) ? running->buildOutput.c_str() : "";
+}
+int ride_running_has_error(RIDERunning* running) {
+    return isOver(running) && running->diag.present ? 1 : 0;
+}
+const char* ride_running_error_file(RIDERunning* running) {
+    return isOver(running) ? running->diag.file.c_str() : "";
+}
+int ride_running_error_line(RIDERunning* running) {
+    return isOver(running) ? static_cast<int>(running->diag.line) : 0;
+}
+int ride_running_error_column(RIDERunning* running) {
+    return isOver(running) ? static_cast<int>(running->diag.col) : 0;
+}
+const char* ride_running_error_message(RIDERunning* running) {
+    return isOver(running) ? running->diag.message.c_str() : "";
+}
+
+void ride_running_free(RIDERunning* running) {
+    if (!running) return;
+    ride_running_stop(running);
+    if (running->worker.joinable()) running->worker.join();
+    delete running;
+}
+
+void ride_cancel_builds(void) { editor::cancelBuilds(); }
+int ride_build_stopped(RIDEBuild* built) { return built && built->stopped ? 1 : 0; }
+int ride_ran_stopped(RIDERan* ran) { return ran && ran->stopped ? 1 : 0; }
+int ride_conversion_stopped(RIDEConversion* made) { return made && made->stopped ? 1 : 0; }
 
 }

@@ -282,6 +282,56 @@ int ride_ran_error_line(RIDERan* ran);
 int ride_ran_error_column(RIDERan* ran);
 const char* ride_ran_error_message(RIDERan* ran);
 
+/* ---- a program that runs while the window watches (README.md, "Input, and Stop") -------------
+   RIDEOutput runs on a worker thread: marshal to the window's own and never wait there for a thread
+   that may call ride_running_free. Bytes are not kept after the call; bytes NULL means it is over. */
+enum { RIDE_STREAM_OUT = 0, RIDE_STREAM_ERR = 1, RIDE_STREAM_BUILD = 2 };
+typedef void (*RIDEOutput)(void* user, const char* bytes, int size, int stream);
+
+typedef struct RIDERunning RIDERunning;
+
+/* ride_run's build, its lines as RIDE_STREAM_BUILD, then the program with a real input; the program
+   is removed afterwards. The project is read here, on this thread, and not again. */
+RIDERunning* ride_run_start(RIDEProject* project, const char* cc1, const char* cl, const char* shc,
+                            const char* cxx1, int kind, const char* source, int language,
+                            const char* arch, int config, RIDEOutput onOutput, void* user);
+/* A program already built, as ride_run_built runs it; it is left where it is. */
+RIDERunning* ride_run_built_start(const char* program, RIDEOutput onOutput, void* user);
+
+/* Bytes to its input as they are - a line wants its "\n"; held until it starts. 0 once it has
+   ended or its input was closed. Any thread, as are the next three. */
+int ride_running_send(RIDERunning* running, const char* bytes, int size);
+/* End of input: its next read sees end of file. */
+void ride_running_close_input(RIDERunning* running);
+/* Ends the build, or the program and all it started; the run ends as usual, stopped. */
+void ride_running_stop(RIDERunning* running);
+/* Up to timeoutMs (negative: for ever) for the run to end; 1 when it has. */
+int ride_running_wait(RIDERunning* running, int timeoutMs);
+
+/* Answered once done is 1, 0 or "" before; the strings live as long as the RIDERunning. */
+int ride_running_done(RIDERunning* running);
+int ride_running_built(RIDERunning* running);   /* there was a program to run */
+int ride_running_ran(RIDERunning* running);     /* and it started */
+int ride_running_status(RIDERunning* running);  /* exit code, or 128 + the signal */
+int ride_running_stopped(RIDERunning* running); /* Stop ended it, or its build */
+const char* ride_running_build_output(RIDERunning* running);
+int ride_running_has_error(RIDERunning* running);
+const char* ride_running_error_file(RIDERunning* running);
+int ride_running_error_line(RIDERunning* running);
+int ride_running_error_column(RIDERunning* running);
+const char* ride_running_error_message(RIDERunning* running);
+
+/* Stops a run still going, joins its worker, lets it go. Not from inside RIDEOutput. */
+void ride_running_free(RIDERunning* running);
+
+/* Stop for a build, any thread: every compiler, linker and converter the calls here are running is
+   killed, and each call returns failed with "[stopped]" in its output and its _stopped answer 1.
+   A blocking ride_run or ride_run_built has its program ended the same way. */
+void ride_cancel_builds(void);
+int ride_build_stopped(RIDEBuild* built);
+int ride_ran_stopped(RIDERan* ran);
+int ride_conversion_stopped(RIDEConversion* made);
+
 const char* ride_shown_run_command(RIDEProject* project, const char* cc1, const char* cl, const char* shc, const char* cxx1, int kind,
                                   const char* source, int language, const char* arch,
                                   int config);

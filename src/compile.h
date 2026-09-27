@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "process.h"
 #include "project.h"
 #include "toolchain.h"
 
@@ -44,6 +45,21 @@ bool nativeFallbackWanted(bool ok, bool sourceFault, const std::string& arch,
 
 int runCaptured(const std::string& command, std::string& output,
                 LineSink sink = 0, void* context = 0);
+
+// What runCaptured answers for a command it was stopped from running, or that was killed.
+const int kStoppedStatus = 130;
+// Kills every command runCaptured is running, on any thread; a build inside a BuildScope that
+// began before this runs nothing more and fails with "[stopped]". Outside one, only the command.
+void cancelBuilds();
+struct BuildScope {
+    BuildScope();
+    ~BuildScope();
+private:
+    BuildScope(const BuildScope&);
+    BuildScope& operator=(const BuildScope&);
+};
+// Whether this thread's BuildScope has been cancelled since it began.
+bool buildCancelled();
 
 Build build(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
             Language lang, const std::string& arch, Configuration config,
@@ -102,6 +118,13 @@ void removeProgram(const Built& built);
 Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
                Language lang, const std::string& arch, Configuration config,
                LineSink sink = 0, void* context = 0);
+
+// A built program run with a real input (README.md, "Input"): started on a Process another thread
+// may send to, close or kill, and read here until its output closes; then Process::finish.
+typedef void (*ChunkSink)(void* context, const char* bytes, size_t size, bool isStderr);
+bool startProgram(Process& process, const std::string& program, bool shalimar = false,
+                  const std::vector<std::string>& args = std::vector<std::string>());
+void pumpProgram(Process& process, ChunkSink sink, void* context);
 
 Diagnostic parseDiagnostic(const std::string& text, const std::string& source = std::string());
 
