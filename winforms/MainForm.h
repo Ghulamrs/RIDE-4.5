@@ -1210,6 +1210,7 @@ private:
     array<Byte>^ WholeText() { return Utf8Of(text_->Text->Replace("\r\n", "\n")); }
 
     Sheet^ Current() {
+        if (files_ == nullptr || sheets_ == nullptr) return nullptr;
         int at = files_->SelectedIndex;
         if (at < 0 || at >= sheets_->Count) return nullptr;
         return sheets_[at];
