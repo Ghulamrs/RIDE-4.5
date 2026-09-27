@@ -93,6 +93,9 @@
   <ItemGroup>
     <ClCompile Include="Program.cpp" />
     <ClInclude Include="MainForm.h" />
+    <ClInclude Include="Marshal.h" />
+    <ClInclude Include="TextFile.h" />
+    <ClInclude Include="children.h" />
     <ClInclude Include="bridge.h" />
   </ItemGroup>
   <ItemGroup>

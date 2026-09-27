@@ -1,19 +1,29 @@
 #pragma once
 
 #include "bridge.h"
+#include "children.h"
+#include "Marshal.h"
+#include "TextFile.h"
 #include <cstring>
+#include <msclr/auto_handle.h>
 
 namespace ridegui {
 
 using namespace System;
 using namespace System::Windows::Forms;
 
+// One open file: its box and gutter, and what belongs to it rather than to the window.
 ref class Sheet {
 public:
     String^ path;
     RichTextBox^ box;
     Panel^ gutter;
     TabPage^ page;
+    TextFile^ file;        // how it was on disk, so that a save writes it the same way
+    int language;          // the Language menu's choice for this file, or -1 for its suffix's
+    int lines;             // how many lines, kept by OnTextChanged so nobody asks the box for all of them
+
+    Sheet() : file(gcnew TextFile()), language(-1), lines(1) {}
 };
 
 ref class Gutter : public Panel {
@@ -78,7 +88,8 @@ protected:
     }
 
     virtual void OnMouseDown(System::Windows::Forms::MouseEventArgs^ e) override {
-        for (int i = 0; i < this->TabCount; ++i) {
+        // The left button closes; the right and the middle ones over the × are not a click on it.
+        for (int i = 0; e->Button == System::Windows::Forms::MouseButtons::Left && i < this->TabCount; ++i) {
             if (CloseRect(this->GetTabRect(i)).Contains(e->Location)) {
                 TabCloseRequested(i);
                 return;
@@ -86,6 +97,47 @@ protected:
         }
         System::Windows::Forms::TabControl::OnMouseDown(e);
     }
+};
+
+// One piece of work for the worker thread. Everything it reads is pinned here, on the window's
+// thread, before it starts - the worker never reads the window's own fields, which the window may
+// change while it waits. What it makes is left on the job for the window to take and free.
+ref class Job {
+public:
+    literal int Build = 1;          // one file compiled: build
+    literal int Run = 2;            // one file compiled and run: ran
+    literal int BuildTarget = 3;    // the project built: build
+    literal int RunBuilt = 4;       // the project's program run: ran
+    literal int Convert = 5;        // c2s: converted
+    literal int BuildProgram = 6;   // one file built for the debugger: made
+    literal int DebugStart = 7;     // the debugger started on program: result
+    literal int DebugGo = 8;
+    literal int DebugResume = 9;
+    literal int StepOver = 10;
+    literal int StepInto = 11;
+    literal int StepOut = 12;
+
+    int what;
+    Toolchain^ tools;
+    Utf8^ source;       // the file, or the converter's input
+    Utf8^ program;      // the program to run or debug, or c2s itself
+    Utf8^ into;         // c2s's output
+    int kind;
+    int language;
+    int config;
+    int toolKind;
+    int toShalimar;
+
+    RIDEBuild* build;
+    RIDERan* ran;
+    RIDEProgram* made;
+    RIDEConversion* converted;
+    int result;
+    bool stopped;       // Build > Stop ended it: what it made is what was there when it died
+
+    Job(int what) : what(what), build(nullptr), ran(nullptr), made(nullptr), converted(nullptr),
+                    result(0), stopped(false) {}
+    ~Job() { delete tools; delete source; delete program; delete into; }
 };
 
 public ref class MainForm : public Form {
@@ -104,23 +156,45 @@ protected:
     }
 
     virtual bool ProcessCmdKey(System::Windows::Forms::Message% message, Keys keys) override {
+        if (keys == static_cast<Keys>(Keys::Control | Keys::PageDown)) { StepFile(1); return true; }
+        if (keys == static_cast<Keys>(Keys::Control | Keys::PageUp)) { StepFile(-1); return true; }
+        bool moving = keys == static_cast<Keys>(Keys::Control | Keys::D) ||
+                      keys == static_cast<Keys>(Keys::Control | Keys::K) ||
+                      keys == static_cast<Keys>(Keys::Control | Keys::T);
+        // While the worker has the core, a key whose item is greyed says so rather than reaching the box.
+        if (busy_ && (moving || GatedKey(keys))) { what_->Text = StillWorking(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::D)) { NextConfig(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::K)) { NextTool(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::T)) { NextTarget(); return true; }
-        if (keys == static_cast<Keys>(Keys::Control | Keys::Up)) { LookAlongStack(1); return true; }
-        if (keys == static_cast<Keys>(Keys::Control | Keys::Down)) {
-            LookAlongStack(-1);
+        // Ctrl+Up and Ctrl+Down walk the stack only while something is stopped; otherwise they are the box's.
+        bool up = keys == static_cast<Keys>(Keys::Control | Keys::Up);
+        if ((up || keys == static_cast<Keys>(Keys::Control | Keys::Down)) && !busy_ &&
+            ride_debugger_running(debugger_) != 0 && ride_stack_count(debugger_) > 0) {
+            LookAlongStack(up ? 1 : -1);
             return true;
         }
         return Form::ProcessCmdKey(message, keys);
     }
 
     virtual void OnFormClosing(System::Windows::Forms::FormClosingEventArgs^ e) override {
+        // Nothing the worker holds is freed under it: the close waits for the work to stop.
+        if (busy_) {
+            e->Cancel = true;
+            if (closeWhenIdle_) return;
+            System::Windows::Forms::DialogResult answer = MessageBox::Show(
+                this, "A build, a run or the debugger is still working.\r\n\r\nStop it and close the window?",
+                ProductName(), MessageBoxButtons::YesNo, MessageBoxIcon::Warning, MessageBoxDefaultButton::Button2);
+            if (answer != System::Windows::Forms::DialogResult::Yes) return;
+            closeWhenIdle_ = true;
+            StopWork();
+            return;
+        }
         for (int i = 0; i < sheets_->Count; ++i)
             if (!MayDiscard(sheets_[i])) {
                 e->Cancel = true;
                 return;
             }
+        if (ride_debugger_running(debugger_) != 0) EndDebugging();
         RememberOpen();
         Form::OnFormClosing(e);
     }
@@ -149,15 +223,20 @@ protected:
     // neither. One place, so opening, loading or closing a project and saving-as all say it the same way.
     void RefreshTitle() {
         String^ title = ProductName() + " " + FromUtf8(ride_version());
-        String^ project = project_ == nullptr ? nullptr
-                                              : FromUtf8(ride_project_name(project_));
+        // The worker may be inside the project; its name is the one read before it started.
+        if (!busy_) projectName_ = project_ == nullptr ? nullptr : FromUtf8(ride_project_name(project_));
+        String^ project = projectName_;
         if (project != nullptr && project->Length > 0) title += " - " + project;
         if (path_ != nullptr && path_->Length > 0)
             title += " - " + System::IO::Path::GetFileName(path_);
         Text = title;
     }
 
-    ~MainForm() { this->!MainForm(); }
+    ~MainForm() {
+        delete settle_;
+        delete recolourTimer_;
+        this->!MainForm();
+    }
     !MainForm() {
         if (project_ != nullptr) {
             ride_project_free(project_);
@@ -198,13 +277,16 @@ private:
     ToolStripMenuItem^ upTheStack_;
     ToolStripMenuItem^ downTheStack_;
     ToolStripMenuItem^ watchItem_;
+    // The worker: while busy_ the core is its, the items that reach the core are greyed, and
+    // closing waits. README.md, "One thing at a time", has the whole of it.
     bool busy_;
-    int pending_;
-    int workResult_;
-    int workKind_;
-    int workLanguage_;
-
-    String^ workProgram_;
+    Job^ job_;
+    bool closeWhenIdle_;
+    bool treeStale_;
+    String^ projectName_;
+    ToolStripMenuItem^ stopItem_;
+    System::Collections::Generic::List<ToolStripMenuItem^>^ gated_;
+    System::Collections::Generic::List<ToolStripItem^>^ live_;
 
     RIDEBuild* targetBuilt_;
 
@@ -218,11 +300,14 @@ private:
     String^ errorFile_;
     String^ stopFile_;
     String^ stopFunction_;
+    String^ debugSource_;     // the one file being debugged, or nullptr for a project
     String^ lookingFile_;
     int lookingLine_;
     int stopLine_;
 
     int highlightRow_;
+    Sheet^ highlightSheet_;   // the sheet highlightRow_ was painted in
+    int digitWidth_;          // a digit of codeFont_ in the gutter, measured once per font
 
     Panel^ stopBar_;
 
@@ -289,23 +374,7 @@ private:
         return out;
     }
 
-    static String^ FromUtf8(const char* text) {
-        if (text == nullptr) return String::Empty;
-        int length = 0;
-        while (text[length] != '\0') ++length;
-        if (length == 0) return String::Empty;
-
-        array<Byte>^ bytes = gcnew array<Byte>(length);
-        Runtime::InteropServices::Marshal::Copy(IntPtr(const_cast<char*>(text)), bytes, 0,
-                                                length);
-        return System::Text::Encoding::UTF8->GetString(bytes);
-    }
-
-    static String^ TakeUtf8(char* text) {
-        String^ out = FromUtf8(text);
-        ride_free(text);
-        return out;
-    }
+    static String^ StillWorking() { return "still working - Build > Stop (Ctrl+Break) ends it"; }
 
     void Start(String^ projectDirectory, array<String^>^ files) {
         project_ = ride_project_new();
@@ -320,17 +389,16 @@ private:
         shc_ = Named("SHALIMAR", "shalimar");
         cxx1_ = Named("CPP11", "cpp11");
         toolKind_ = ride_default_compiler();
-        languageChoice_ = -1;
         config_ = RIDE_CONFIG_DEBUG;
         debugger_ = ride_debugger_new();
         built_ = nullptr;
         targetBuilt_ = nullptr;
-        workProgram_ = nullptr;
         busy_ = false;
-        pending_ = 0;
-        workResult_ = 0;
-        workKind_ = 0;
-        workLanguage_ = 0;
+        job_ = nullptr;
+        closeWhenIdle_ = false;
+        treeStale_ = false;
+        projectName_ = nullptr;
+        highlightSheet_ = nullptr;
         breaks_ = gcnew System::Collections::Generic::Dictionary<String^,
             System::Collections::Generic::List<int>^>();
         breakNames_ = gcnew System::Collections::Generic::Dictionary<String^, String^>();
@@ -341,6 +409,7 @@ private:
         highlightRow_ = -1;
         stopBar_ = nullptr;
         codeFont_ = RememberedFont();
+        digitWidth_ = DigitWidth(codeFont_);
         numbers_ = true;
         ForgetError();
         indentWidth_ = ride_default_indent_width();
@@ -370,9 +439,7 @@ private:
         // the spare OpenPath would have taken, so it goes when unused.
         if (sheets_->Count == 1 && sheets_[0]->path == nullptr &&
             sheets_[0]->box->TextLength == 0 && !sheets_[0]->box->Modified) {
-            Sheet^ spare = sheets_[0];
-            sheets_->Remove(spare);
-            files_->TabPages->Remove(spare->page);
+            DropSheet(sheets_[0]);
             text_ = nullptr;
             path_ = nullptr;
             if (ride_project_loaded(project_) == 0) paneMode_ = PaneMode::PaneFiles;
@@ -405,10 +472,18 @@ private:
         settle_->Tick += gcnew EventHandler(this, &MainForm::OnSettled);
 
         MenuStrip^ bar = gcnew MenuStrip();
+        live_ = gcnew System::Collections::Generic::List<ToolStripItem^>();
 
         ToolStripMenuItem^ file = gcnew ToolStripMenuItem("&File");
-        file->DropDownItems->Add("New", nullptr,
-                                 gcnew EventHandler(this, &MainForm::OnNewBuffer));
+        live_->Add(file->DropDownItems->Add("New", nullptr,
+                                            gcnew EventHandler(this, &MainForm::OnNewBuffer)));
+        // Here as well as on the Project menu: File is where somebody making something new looks.
+        ToolStripMenuItem^ newFile = gcnew ToolStripMenuItem(
+            "New file...", nullptr, gcnew EventHandler(this, &MainForm::OnNewFile));
+        newFile->ShortcutKeyDisplayString = "Ctrl+N";
+        file->DropDownItems->Add(newFile);
+        file->DropDownItems->Add("New project...", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnNewProject));
 
         file->DropDownItems->Add(gcnew ToolStripSeparator());
         file->DropDownItems->Add("Open file...", nullptr,
@@ -417,10 +492,12 @@ private:
             "Save", nullptr, gcnew EventHandler(this, &MainForm::OnSave));
         save->ShortcutKeys = static_cast<Keys>(Keys::Control | Keys::S);
         file->DropDownItems->Add(save);
+        live_->Add(save);
         file->DropDownItems->Add("Save as...", nullptr,
                                  gcnew EventHandler(this, &MainForm::OnSaveAs));
-        file->DropDownItems->Add(
-            Item("Close", Keys::Control | Keys::W, gcnew EventHandler(this, &MainForm::OnCloseFile)));
+        ToolStripMenuItem^ close = Item("Close", Keys::Control | Keys::W, gcnew EventHandler(this, &MainForm::OnCloseFile));
+        file->DropDownItems->Add(close);
+        live_->Add(close);
         file->DropDownItems->Add(gcnew ToolStripSeparator());
         // The last three files opened on their own, most recent first. Next
         // and previous file keep their keys, Ctrl+PageDown and Ctrl+PageUp,
@@ -435,8 +512,9 @@ private:
             file->DropDownItems->Add(one);
         }
         file->DropDownItems->Add(gcnew ToolStripSeparator());
-        file->DropDownItems->Add(
-            Item("Exit", Keys::Control | Keys::Q, gcnew EventHandler(this, &MainForm::OnExit)));
+        ToolStripMenuItem^ exit = Item("Exit", Keys::Control | Keys::Q, gcnew EventHandler(this, &MainForm::OnExit));
+        file->DropDownItems->Add(exit);
+        live_->Add(exit);
         bar->Items->Add(file);
 
         ToolStripMenuItem^ edit = gcnew ToolStripMenuItem("&Edit");
@@ -481,8 +559,8 @@ private:
                                     gcnew EventHandler(this, &MainForm::OnRemoveFromProject));
         // Rename, Delete and Move to group: the handlers were here from the
         // start and nothing reached them until the audit of 2026-09-19.
-        project->DropDownItems->Add("Rename File...", nullptr,
-                                    gcnew EventHandler(this, &MainForm::OnRenameFile));
+        project->DropDownItems->Add(Item("Rename File...", Keys::F2,
+                                         gcnew EventHandler(this, &MainForm::OnRenameFile)));
         project->DropDownItems->Add("Delete File...", nullptr,
                                     gcnew EventHandler(this, &MainForm::OnDeleteFile));
         project->DropDownItems->Add("Move to Group...", nullptr,
@@ -526,6 +604,13 @@ private:
             "Release build", nullptr, gcnew EventHandler(this, &MainForm::OnReleaseConfig));
         releaseConfigItem_->ShortcutKeyDisplayString = "Ctrl+D";
         build->DropDownItems->Add(releaseConfigItem_);
+        build->DropDownItems->Add(gcnew ToolStripSeparator());
+        // Ctrl+Break, Visual Studio's key for it: ends the build, the run or the debugged program.
+        stopItem_ = Item("Stop", Keys::Control | Keys::Cancel, gcnew EventHandler(this, &MainForm::OnStop));
+        stopItem_->ShortcutKeyDisplayString = "Ctrl+Break";
+        stopItem_->Enabled = false;
+        build->DropDownItems->Add(stopItem_);
+        live_->Add(stopItem_);
         bar->Items->Add(build);
 
         ToolStripMenuItem^ debug = gcnew ToolStripMenuItem("&Debug");
@@ -562,8 +647,8 @@ private:
             gcnew EventHandler(this, &MainForm::OnDebugMenuOpening);
 
         debug->DropDownItems->Add(gcnew ToolStripSeparator());
-        debug->DropDownItems->Add("Stop debugging", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnDebugStop));
+        live_->Add(debug->DropDownItems->Add("Stop debugging", nullptr,
+                                             gcnew EventHandler(this, &MainForm::OnDebugStop)));
         bar->Items->Add(debug);
 
         ToolStripMenuItem^ view = gcnew ToolStripMenuItem("&View");
@@ -684,6 +769,8 @@ private:
         bar->Items->Add(target);
 
         ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");
+        help->DropDownItems->Add("Contents", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnHelpContents));
         help->DropDownItems->Add(Item("Keys", Keys::F1,
                                       gcnew EventHandler(this, &MainForm::OnKeys)));
         help->DropDownItems->Add("About", nullptr,
@@ -711,6 +798,12 @@ private:
 
         MainMenuStrip = bar;
         Controls->Add(bar);
+        // Editing, looking and asking touch no core the worker holds, so they stay live while it works.
+        for each (ToolStripMenuItem^ top in gcnew array<ToolStripMenuItem^>{edit, view, help, language})
+            for each (ToolStripItem^ each in top->DropDownItems)
+                if (each != convertItem_) live_->Add(each);
+        gated_ = gcnew System::Collections::Generic::List<ToolStripMenuItem^>();
+        GateBelow(bar->Items);
         ShowChoices();
 
         outer_ = gcnew SplitContainer();
@@ -936,6 +1029,8 @@ private:
         return text->Replace("\r\n", "\n")->Replace("\r", "\n")->Replace("\n", "\r\n");
     }
 
+    // A tool by its full path: the variable, then beside the editor, then the first on PATH. A bare
+    // name would be searched for in the current directory before PATH, where a project could have put one.
     static String^ Named(String^ variable, String^ orElse) {
         String^ said = Environment::GetEnvironmentVariable(variable);
         if (said != nullptr && said->Length != 0) return said;
@@ -944,16 +1039,17 @@ private:
             String^ beside = System::IO::Path::Combine(here, orElse + ".exe");
             if (System::IO::File::Exists(beside)) return beside;
         }
+        String^ path = Environment::GetEnvironmentVariable("PATH");
+        if (path != nullptr)
+            for each (String^ dir in path->Split(';')) {
+                if (dir->Trim()->Length == 0) continue;
+                try {
+                    String^ found = System::IO::Path::Combine(dir->Trim()->Trim('"'), orElse + ".exe");
+                    if (System::IO::File::Exists(found)) return found;
+                } catch (ArgumentException^) { }
+            }
         return orElse;
     }
-
-    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
-    static int GetWindowLong(System::IntPtr window, int index);
-    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
-    static int SetWindowLong(System::IntPtr window, int index, int value);
-    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
-    static bool SetLayeredWindowAttributes(System::IntPtr window, int key, unsigned char alpha,
-                                           int flags);
 
     System::Drawing::Font^ RememberedFont() {
         String^ said = FromUtf8(ride_code_font());
@@ -987,7 +1083,7 @@ private:
     String^ Ask(String^ title, String^ initial) { return Ask(title, nullptr, initial); }
 
     String^ Ask(String^ title, String^ note, String^ initial) {
-        Form^ box = gcnew Form();
+        msclr::auto_handle<Form> box(gcnew Form());
         box->Text = title;
         box->FormBorderStyle = System::Windows::Forms::FormBorderStyle::FixedDialog;
         box->StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
@@ -1032,9 +1128,58 @@ private:
         return entry->Text;
     }
 
+    // ---- one line at a time ------------------------------------------------------
+    // Rich Edit's own messages, so that a keystroke reads the line it is on and not the document:
+    // RichTextBox::Lines and ::Text copy all of it, which on a large file is the whole cost of typing.
+
+    literal int kLineLength = 0x00C1;   // EM_LINELENGTH
+    literal int kTextRange = 0x044B;    // EM_GETTEXTRANGE
+
+    value struct TextRange {
+        int from;
+        int to;
+        IntPtr text;
+    };
+
+    [System::Runtime::InteropServices::DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    static IntPtr Tell(IntPtr window, int message, IntPtr one, TextRange% range);
+
+    // The characters from..to of a box, its paragraph marks as "\n".
+    static String^ TextBetween(RichTextBox^ box, int from, int to) {
+        if (to <= from) return String::Empty;
+        array<wchar_t>^ room = gcnew array<wchar_t>(to - from + 1);
+        pin_ptr<wchar_t> pinned = &room[0];
+        TextRange range;
+        range.from = from;
+        range.to = to;
+        range.text = IntPtr(pinned);
+        int got = Tell(box->Handle, kTextRange, IntPtr::Zero, range).ToInt32();
+        if (got <= 0) return String::Empty;
+        return (gcnew String(room, 0, Math::Min(got, to - from)))->Replace("\r\n", "\n")->Replace('\r', '\n');
+    }
+
+    static String^ LineText(RichTextBox^ box, int row) {
+        if (box == nullptr || row < 0) return String::Empty;
+        int start = box->GetFirstCharIndexFromLine(row);
+        if (start < 0) return String::Empty;
+        int length = Tell(box->Handle, kLineLength, IntPtr(start), IntPtr::Zero).ToInt32();
+        return TextBetween(box, start, start + length);
+    }
+
+    static int LineCount(RichTextBox^ box) {
+        return box == nullptr ? 0 : box->GetLineFromCharIndex(box->TextLength) + 1;
+    }
+
+    // What the indenter reads: every line down to and including row - it never looks below.
+    array<Byte>^ TextThrough(int row) {
+        int end = text_->GetFirstCharIndexFromLine(row);
+        if (end < 0) end = text_->TextLength;
+        else end += Tell(text_->Handle, kLineLength, IntPtr(end), IntPtr::Zero).ToInt32();
+        return Utf8Of(TextBetween(text_, 0, end));
+    }
+
     int LeadingOf(int row) {
-        if (row < 0 || row >= text_->Lines->Length) return 0;
-        String^ line = text_->Lines[row];
+        String^ line = LineText(text_, row);
         int lead = 0;
         while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
         return lead;
@@ -1046,8 +1191,8 @@ private:
     }
 
     int CharacterColumn(int row, int byteColumn) {
-        if (row < 0 || row >= text_->Lines->Length) return 0;
-        array<Byte>^ bytes = Utf8Of(text_->Lines[row]);
+        if (row < 0 || row >= LineCount(text_)) return 0;
+        array<Byte>^ bytes = Utf8Of(LineText(text_, row));
         int usable = bytes->Length - 1;
         if (byteColumn > usable) byteColumn = usable;
         if (byteColumn <= 0) return 0;
@@ -1055,8 +1200,8 @@ private:
     }
 
     int ByteColumn(int row, int characterColumn) {
-        if (row < 0 || row >= text_->Lines->Length) return 0;
-        String^ line = text_->Lines[row];
+        if (row < 0 || row >= LineCount(text_)) return 0;
+        String^ line = LineText(text_, row);
         if (characterColumn > line->Length) characterColumn = line->Length;
         if (characterColumn <= 0) return 0;
         return System::Text::Encoding::UTF8->GetByteCount(line->Substring(0, characterColumn));
@@ -1124,9 +1269,12 @@ private:
         menu->Items[7]->Enabled = box->TextLength > 0;
     }
 
-    Sheet^ MakeSheet(String^ path, String^ contents) {
+    Sheet^ MakeSheet(String^ path, String^ contents) { return MakeSheet(path, contents, gcnew TextFile()); }
+
+    Sheet^ MakeSheet(String^ path, String^ contents, TextFile^ file) {
         Sheet^ sheet = gcnew Sheet();
         sheet->path = path;
+        sheet->file = file;
 
         sheet->box = gcnew RichTextBox();
         sheet->box->Dock = DockStyle::Fill;
@@ -1137,7 +1285,7 @@ private:
         sheet->box->BorderStyle = System::Windows::Forms::BorderStyle::Fixed3D;
         sheet->box->Text = contents == nullptr ? "" : contents;
         sheet->box->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnKeyDown);
-        sheet->box->KeyUp += gcnew KeyEventHandler(this, &MainForm::OnKeyUp);
+        sheet->box->KeyPress += gcnew KeyPressEventHandler(this, &MainForm::OnKeyPressed);
         sheet->box->SelectionChanged += gcnew EventHandler(this, &MainForm::OnCaretMoved);
         // The right-click menu: the Edit menu's own handlers, so that a paste
         // from here is the paste Ctrl-V does. A RichTextBox has none of its
@@ -1148,16 +1296,14 @@ private:
 
         sheet->gutter = gcnew Gutter();
         sheet->gutter->Dock = DockStyle::Left;
-        sheet->gutter->Width = 52;
+        sheet->gutter->Width = GutterWidth(1);
         sheet->gutter->BackColor = System::Drawing::Color::FromArgb(245, 245, 245);
         sheet->gutter->Tag = sheet->box;
         sheet->gutter->Paint += gcnew PaintEventHandler(this, &MainForm::OnGutterPaint);
         sheet->gutter->Visible = numbers_;
         sheet->box->Tag = sheet->gutter;
 
-        sheet->page = gcnew TabPage(path == nullptr
-                                        ? "untitled"
-                                        : System::IO::Path::GetFileName(path));
+        sheet->page = gcnew TabPage(TabName(sheet));
         sheet->page->Controls->Add(sheet->box);
         sheet->page->Controls->Add(sheet->gutter);
         sheet->box->BringToFront();
@@ -1173,6 +1319,23 @@ private:
         return sheet;
     }
 
+    // A sheet leaves the window: its tab, its box, its gutter and its menu go with it, now rather
+    // than whenever the finalizer gets round to them; the stopped-line highlight goes if it was here.
+    void DropSheet(Sheet^ sheet) {
+        if (highlightSheet_ == sheet) { highlightSheet_ = nullptr; highlightRow_ = -1; }
+        sheets_->Remove(sheet);
+        files_->TabPages->Remove(sheet->page);
+        System::Windows::Forms::ContextMenuStrip^ menu = sheet->box->ContextMenuStrip;
+        delete sheet->page;
+        delete menu;
+    }
+
+    // One name for a tab with no file behind it, everywhere it is shown.
+    static String^ Untitled() { return "untitled"; }
+    static String^ TabName(Sheet^ sheet) {
+        return sheet->path == nullptr ? Untitled() : System::IO::Path::GetFileName(sheet->path);
+    }
+
     void OnSheetChanged(Object^, EventArgs^) {
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
@@ -1181,11 +1344,10 @@ private:
         path_ = sheet->path;
         RefreshTitle();
         what_->Text = path_ == nullptr
-                          ? "untitled"
-                          : System::IO::Path::GetFileName(path_) + "  " +
-                                text_->Lines->Length + " lines";
+                          ? Untitled()
+                          : System::IO::Path::GetFileName(path_) + "  " + LineCount(text_) + " lines";
         text_->Focus();
-        SayBuild();
+        ShowChoices();
         PlaceStopBar();
         sheet->gutter->Invalidate();
 
@@ -1217,15 +1379,19 @@ private:
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
 
-        int digits = sheet->box->Lines->Length < 1 ? 1
-                                                   : sheet->box->Lines->Length.ToString()->Length;
-        int wanted = 22 + 9 * digits;
+        int lines = LineCount(sheet->box);
+        bool lineCountMoved = lines != sheet->lines;
+        sheet->lines = lines;
+        int wanted = GutterWidth(lines);
         if (wanted > sheet->gutter->Width) sheet->gutter->Width = wanted;
         sheet->gutter->Invalidate();
 
         if (sender == text_) {
-
-            RecolourLine(CaretRow());
+            // The lexer state kept for stateRow_ holds while nothing above that row changed: a
+            // line added or taken away, or an edit above it, is what moves it.
+            int row = CaretRow();
+            if (lineCountMoved || row < stateRow_) stateGood_ = false;
+            RecolourLine(row);
             settle_->Stop();
             settle_->Start();
             MarkTab(sheet);
@@ -1233,6 +1399,8 @@ private:
     }
 
     void OnScrolled(Object^, EventArgs^) {
+        // Recolour puts the scroll position back itself, and Rich Edit reports that as a scroll too.
+        if (colouring_) return;
         PlaceStopBar();
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
@@ -1249,49 +1417,47 @@ private:
         if (sheet != nullptr) sheet->gutter->Invalidate();
     }
 
+    // Room for the dot or arrow, the digits in the code's own face, and a margin.
+    int GutterWidth(int lines) {
+        int digits = Math::Max(2, (lines < 1 ? 1 : lines).ToString()->Length);
+        return 16 + digitWidth_ * digits + 8;
+    }
+
+    static int DigitWidth(System::Drawing::Font^ font) {
+        return System::Windows::Forms::TextRenderer::MeasureText(
+            "0", font, System::Drawing::Size(100, 100),
+            System::Windows::Forms::TextFormatFlags::NoPadding).Width;
+    }
+
+    // The gutter's pens and brushes, made once: it repaints on every keystroke and caret move.
+    static System::Drawing::Pen^ edgePen_ = gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(228, 228, 228));
+    static System::Drawing::Pen^ lookPen_ = gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(40, 150, 60));
+    static System::Drawing::Brush^ breakBrush_ = gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(200, 60, 60));
+    static System::Drawing::Brush^ stopBrush_ = gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(40, 150, 60));
+
     void OnGutterPaint(Object^ sender, PaintEventArgs^ e) {
         Panel^ panel = safe_cast<Panel^>(sender);
         RichTextBox^ box = safe_cast<RichTextBox^>(panel->Tag);
         if (box == nullptr) return;
 
-        System::Drawing::Pen^ edge =
-            gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(228, 228, 228));
-        e->Graphics->DrawLine(edge, panel->Width - 1, 0, panel->Width - 1, panel->Height);
+        e->Graphics->DrawLine(edgePen_, panel->Width - 1, 0, panel->Width - 1, panel->Height);
 
-        int lines = box->Lines->Length;
+        Sheet^ sheet = nullptr;
+        for each (Sheet^ one in sheets_)
+            if (one->gutter == panel) sheet = one;
+        int lines = sheet != nullptr ? sheet->lines : LineCount(box);
         if (lines < 1) lines = 1;
 
         int first = box->GetLineFromCharIndex(box->GetCharIndexFromPosition(
             System::Drawing::Point(1, 1)));
         int caretLine = box->GetLineFromCharIndex(box->SelectionStart);
 
-        System::Drawing::Brush^ quiet =
-            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(150, 150, 150));
-        System::Drawing::Brush^ here =
-            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(60, 60, 60));
-
-        String^ file = nullptr;
-        for each (Sheet^ sheet in sheets_)
-            if (sheet->gutter == panel) file = sheet->path;
-
+        String^ file = sheet == nullptr ? nullptr : sheet->path;
         System::Collections::Generic::List<int>^ marks = nullptr;
         if (file != nullptr) breaks_->TryGetValue(OneName(file), marks);
 
-        bool sameFile = file != nullptr && stopFile_ != nullptr &&
-                        System::IO::Path::GetFileName(file) ==
-                            System::IO::Path::GetFileName(stopFile_);
-
-        System::Drawing::Brush^ breakMark =
-            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(200, 60, 60));
-        System::Drawing::Brush^ stopMark =
-            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(40, 150, 60));
-
-        System::Drawing::Pen^ lookMark =
-            gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(40, 150, 60));
-
-        bool sameLookFile = file != nullptr && lookingFile_ != nullptr &&
-                            System::IO::Path::GetFileName(file) ==
-                                System::IO::Path::GetFileName(lookingFile_);
+        bool sameFile = SamePath(file, stopFile_);
+        bool sameLookFile = SamePath(file, lookingFile_);
 
         for (int row = first; row < lines; ++row) {
             int at = box->GetFirstCharIndexFromLine(row);
@@ -1307,18 +1473,20 @@ private:
                 arrow[0] = System::Drawing::PointF(3.0f, top);
                 arrow[1] = System::Drawing::PointF(12.0f, top + 4.5f);
                 arrow[2] = System::Drawing::PointF(3.0f, top + 9.0f);
-                if (standingHere) e->Graphics->FillPolygon(stopMark, arrow);
-                else e->Graphics->DrawPolygon(lookMark, arrow);
+                if (standingHere) e->Graphics->FillPolygon(stopBrush_, arrow);
+                else e->Graphics->DrawPolygon(lookPen_, arrow);
             } else if (marks != nullptr && marks->Contains(row + 1)) {
-                e->Graphics->FillEllipse(breakMark, 3.0f, top, 9.0f, 9.0f);
+                e->Graphics->FillEllipse(breakBrush_, 3.0f, top, 9.0f, 9.0f);
             }
 
-            String^ number = (row + 1).ToString();
-            System::Drawing::SizeF size = e->Graphics->MeasureString(number, box->Font);
-            e->Graphics->DrawString(number, box->Font,
-                                    row == caretLine ? here : quiet,
-                                    panel->Width - size.Width - 6,
-                                    static_cast<float>(where.Y));
+            System::Drawing::Rectangle room(0, where.Y, panel->Width - 6, box->Font->Height);
+            System::Windows::Forms::TextRenderer::DrawText(
+                e->Graphics, (row + 1).ToString(), box->Font, room,
+                row == caretLine ? System::Drawing::Color::FromArgb(60, 60, 60)
+                                 : System::Drawing::Color::FromArgb(150, 150, 150),
+                static_cast<System::Windows::Forms::TextFormatFlags>(
+                    static_cast<int>(System::Windows::Forms::TextFormatFlags::Right) |
+                    static_cast<int>(System::Windows::Forms::TextFormatFlags::NoPadding)));
         }
     }
 
@@ -1355,16 +1523,34 @@ private:
         SayDebugTab(assembly_->Text->Replace("\r\n", "\n"));
     }
 
-    int languageChoice_;
-
+    // The Language menu's choice is the file's own: it stays with the tab, and another file keeps its suffix's.
     int LanguageNow() {
-        if (languageChoice_ >= 0) return languageChoice_;
+        Sheet^ sheet = Current();
+        if (sheet != nullptr && sheet->language >= 0) return sheet->language;
         array<Byte>^ bytes = Utf8Of(path_ == nullptr ? "" : path_);
         pin_ptr<Byte> pinned = &bytes[0];
         return ride_language_for(reinterpret_cast<const char*>(pinned));
     }
 
     int DialectNow() { return ride_dialect_for(LanguageNow()); }
+
+    // Put text in place of from..to as one step Ctrl+Z takes back: SelectedText, since assigning Text
+    // empties Rich Edit's undo (measured on the box - CanUndo is false after it). The view stays put.
+    void ReplaceRange(int from, int to, String^ with, int caret) {
+        Spot scrolled;
+        Tell(text_->Handle, kWhereScrolled, IntPtr::Zero, scrolled);
+        Drawing(text_, false);
+        try {
+            text_->Select(from, to - from);
+            text_->SelectedText = with;
+            text_->Select(Math::Max(0, Math::Min(caret, text_->TextLength)), 0);
+            Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
+        } finally {
+            Drawing(text_, true);
+        }
+        stateGood_ = false;
+        Recolour();
+    }
 
     void OnLayOut(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
@@ -1378,53 +1564,95 @@ private:
         int caret = text_->SelectionStart;
         int length = text_->SelectionLength;
 
-        array<String^>^ was = text_->Lines;
         array<String^>^ now = laid->Split('\n');
-
         int howManyNow = now->Length;
         if (howManyNow > 0 && now[howManyNow - 1]->Length == 0) --howManyNow;
+        int rows = LineCount(text_);
 
-        if (length > 0 && howManyNow == was->Length) {
+        if (length > 0 && howManyNow == rows) {
             int first = text_->GetLineFromCharIndex(caret);
             int last = text_->GetLineFromCharIndex(caret + length - 1);
-            if (last >= was->Length) last = was->Length - 1;
+            if (last >= rows) last = rows - 1;
 
-            for (int row = first; row <= last; ++row) was[row] = now[row];
-
-            text_->Text = String::Join("\r\n", was);
-            text_->SelectionStart = Math::Min(caret, text_->TextLength);
-            text_->SelectionLength = 0;
-            Recolour();
+            // Only the selected lines are replaced, so undo takes back only them.
+            int from = text_->GetFirstCharIndexFromLine(first);
+            int lastStart = text_->GetFirstCharIndexFromLine(last);
+            int to = lastStart + LineText(text_, last)->Length;
+            array<String^>^ block = gcnew array<String^>(last - first + 1);
+            for (int row = first; row <= last; ++row) block[row - first] = now[row];
+            ReplaceRange(from, to, String::Join("\n", block), caret);
             int howMany = last - first + 1;
-            what_->Text = String::Format("laid out {0} line{1} of the selection",
+            what_->Text = String::Format("laid out {0} line{1} of the selection - Ctrl+Z puts them back",
                                          howMany, howMany == 1 ? "" : "s");
             return;
         }
 
-        text_->Text = laid->Replace("\n", "\r\n");
-        text_->SelectionStart = Math::Min(caret, text_->TextLength);
-        Recolour();
-        what_->Text = String::Format("laid out - {0} lines", text_->Lines->Length);
+        ReplaceRange(0, text_->TextLength, laid, caret);
+        what_->Text = String::Format("laid out - {0} lines - Ctrl+Z puts it back", LineCount(text_));
+    }
+
+    // Tab and Shift+Tab over a selection of whole lines: one level in or out on each, one undo step.
+    void ShiftLines(bool outwards) {
+        int start = text_->SelectionStart;
+        int first = text_->GetLineFromCharIndex(start);
+        int last = text_->GetLineFromCharIndex(start + Math::Max(0, text_->SelectionLength - 1));
+        String^ level = indentTabs_ != 0 ? "\t" : gcnew String(' ', indentWidth_);
+        array<String^>^ block = gcnew array<String^>(last - first + 1);
+        for (int row = first; row <= last; ++row) {
+            String^ line = LineText(text_, row);
+            if (!outwards) {
+                block[row - first] = line->Length == 0 ? line : level + line;
+                continue;
+            }
+            int cut = 0;
+            if (line->Length > 0 && line[0] == '\t') cut = 1;
+            else while (cut < indentWidth_ && cut < line->Length && line[cut] == ' ') ++cut;
+            block[row - first] = line->Substring(cut);
+        }
+        int from = text_->GetFirstCharIndexFromLine(first);
+        int to = text_->GetFirstCharIndexFromLine(last) + LineText(text_, last)->Length;
+        String^ joined = String::Join("\n", block);
+        int caret = first == last ? Math::Max(from, start + joined->Length - (to - from)) : from;
+        ReplaceRange(from, to, joined, caret);
+        if (first != last) text_->Select(from, joined->Length);
     }
 
     void OnKeyDown(Object^, KeyEventArgs^ e) {
-        if (e->KeyCode == Keys::Tab && !e->Control && !e->Shift) {
+        if (text_ == nullptr) return;
+        // Shift+Insert is Rich Edit's own paste and would bring the formatting OnPaste leaves behind.
+        if (e->KeyCode == Keys::Insert && e->Shift && !e->Control) {
             e->SuppressKeyPress = true;
+            OnPaste(nullptr, nullptr);
+            return;
+        }
+
+        if (e->KeyCode == Keys::Tab && !e->Control) {
+            e->SuppressKeyPress = true;
+            int start = text_->SelectionStart;
+            bool lines = text_->SelectionLength > 0 &&
+                         text_->GetLineFromCharIndex(start) !=
+                             text_->GetLineFromCharIndex(start + text_->SelectionLength - 1);
+            if (e->Shift || lines) { ShiftLines(e->Shift); return; }
 
             int row = CaretRow();
             int column = CaretColumn();
-            String^ line = text_->Lines->Length > row ? text_->Lines[row] : "";
+            String^ line = LineText(text_, row);
             int lead = 0;
             while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
 
-            if (column <= lead) {
+            if (column <= lead && text_->SelectionLength == 0) {
                 Realign(row);
                 text_->SelectionStart = text_->GetFirstCharIndexFromLine(row) +
                                         LeadingOf(row);
             } else if (indentTabs_ != 0) {
                 text_->SelectedText = "\t";
             } else {
-                text_->SelectedText = gcnew String(' ', indentWidth_);
+                // Spaces to the next stop, counting a tab already in the line as reaching one.
+                int seen = 0;
+                for (int i = 0; i < column && i < line->Length; ++i)
+                    seen = line[i] == '\t' ? (seen / indentWidth_ + 1) * indentWidth_ : seen + 1;
+                int width = Math::Max(1, indentWidth_);
+                text_->SelectedText = gcnew String(' ', width - seen % width);
             }
             return;
         }
@@ -1435,7 +1663,7 @@ private:
         int row = text_->GetLineFromCharIndex(caret);
         int column = caret - text_->GetFirstCharIndexFromLine(row);
 
-        array<Byte>^ bytes = Utf8Of(text_->Text->Replace("\r\n", "\n"));
+        array<Byte>^ bytes = TextThrough(row);
         pin_ptr<Byte> pinned = &bytes[0];
 
         String^ lead = TakeUtf8(ride_indent_after_newline(
@@ -1446,6 +1674,8 @@ private:
         text_->SelectedText = "\r\n" + lead;
     }
 
+    // Every pair below is closed in a finally: one exception between the two used to leave the
+    // box unpainted, undo unrecorded and every later colouring pass skipped as already running.
     void BeginColouring() {
         colouring_ = true;
         if (text_ != nullptr && text_->IsHandleCreated)
@@ -1458,29 +1688,39 @@ private:
         colouring_ = false;
     }
 
-    void PaintRow(int row, bool on) {
-        if (text_ == nullptr || row < 0 || row >= text_->Lines->Length) return;
-        int start = text_->GetFirstCharIndexFromLine(row);
-        int length = text_->Lines[row]->Length;
-        if (row < text_->Lines->Length - 1) length += 1;
-        int caret = text_->SelectionStart;
-        int chosen = text_->SelectionLength;
-        bool touched = text_->Modified;
+    // The stopped-at background, painted into the sheet it belongs to, whichever is in front.
+    void PaintRow(Sheet^ sheet, int row, bool on) {
+        if (sheet == nullptr) return;
+        RichTextBox^ box = sheet->box;
+        if (box == nullptr || box->IsDisposed || row < 0 || row >= LineCount(box)) return;
+        int start = box->GetFirstCharIndexFromLine(row);
+        int length = LineText(box, row)->Length;
+        if (row < LineCount(box) - 1) length += 1;
+        int caret = box->SelectionStart;
+        int chosen = box->SelectionLength;
+        bool touched = box->Modified;
 
+        RichTextBox^ was = text_;
+        text_ = box;
         BeginColouring();
-        text_->Select(start, length);
-        text_->SelectionBackColor =
-            on ? System::Drawing::Color::FromArgb(214, 234, 255) : text_->BackColor;
-        text_->Select(caret, chosen);
-        text_->Modified = touched;
-        EndColouring();
+        try {
+            box->Select(start, length);
+            box->SelectionBackColor =
+                on ? System::Drawing::Color::FromArgb(214, 234, 255) : box->BackColor;
+            box->Select(caret, chosen);
+            box->Modified = touched;
+        } finally {
+            EndColouring();
+            text_ = was;
+        }
     }
 
-    void ShowStoppedLine(int row) {
-        if (highlightRow_ != row) {
-            if (highlightRow_ >= 0) PaintRow(highlightRow_, false);
+    void ShowStoppedLine(Sheet^ sheet, int row) {
+        if (highlightSheet_ != sheet || highlightRow_ != row) {
+            if (highlightRow_ >= 0) PaintRow(highlightSheet_, highlightRow_, false);
+            highlightSheet_ = row >= 0 ? sheet : nullptr;
             highlightRow_ = row;
-            if (row >= 0) PaintRow(row, true);
+            if (row >= 0) PaintRow(sheet, row, true);
         }
         PlaceStopBar();
     }
@@ -1497,17 +1737,13 @@ private:
 
     void PlaceStopBar() {
         MakeStopBar();
-        if (text_ == nullptr || highlightRow_ < 0 || !text_->IsHandleCreated) {
+        Sheet^ sheet = Current();
+        if (text_ == nullptr || highlightRow_ < 0 || !text_->IsHandleCreated ||
+            sheet == nullptr || sheet != highlightSheet_) {
             stopBar_->Visible = false;
             return;
         }
-
-        if (path_ == nullptr || stopFile_ == nullptr ||
-            System::IO::Path::GetFileName(stopFile_) != System::IO::Path::GetFileName(path_)) {
-            stopBar_->Visible = false;
-            return;
-        }
-        if (highlightRow_ >= text_->Lines->Length) { stopBar_->Visible = false; return; }
+        if (highlightRow_ >= LineCount(text_)) { stopBar_->Visible = false; return; }
 
         int index = text_->GetFirstCharIndexFromLine(highlightRow_);
         System::Drawing::Point where = text_->GetPositionFromCharIndex(index);
@@ -1518,7 +1754,7 @@ private:
             return;
         }
 
-        int after = index + text_->Lines[highlightRow_]->Length;
+        int after = index + LineText(text_, highlightRow_)->Length;
         System::Drawing::Point ends = text_->GetPositionFromCharIndex(after);
         int from = ends.Y == where.Y ? ends.X : where.X;
 
@@ -1532,88 +1768,95 @@ private:
         stopBar_->BringToFront();
     }
 
+    // Colours one line's runs from the lexer's kinds, starting at character at.
+    void ColourRuns(int at, array<Byte>^ bytes, array<Byte>^ kinds, int howMany) {
+        int column = 0;
+        int byte = 0;
+        while (byte < howMany) {
+            Byte kind = kinds[byte];
+            int end = byte;
+            while (end < howMany && kinds[end] == kind) ++end;
+
+            int width = System::Text::Encoding::UTF8->GetString(bytes, byte, end - byte)->Length;
+            if (width > 0 && kind != RIDE_KIND_NORMAL) {
+                text_->Select(at + column, width);
+                text_->SelectionColor = ColourOf(kind);
+            }
+            column += width;
+            byte = end;
+        }
+    }
+
+    // One line through the lexer, state carried in and out; its kinds, and how many it filled.
+    static array<Byte>^ Lex(String^ line, int language, int% state, array<Byte>^% bytes, int% howMany) {
+        bytes = Utf8Of(line);
+        pin_ptr<Byte> linePin = &bytes[0];
+        array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
+        pin_ptr<Byte> kindPin = &kinds[0];
+        int carried = state;
+        howMany = ride_highlight(reinterpret_cast<const char*>(linePin), language, &carried,
+                                 kindPin, kinds->Length);
+        state = carried;
+        return kinds;
+    }
+
     void Recolour() {
         if (colouring_) return;
         if (text_ == nullptr || !text_->IsHandleCreated) return;
         BeginColouring();
-
-        array<String^>^ all = text_->Lines;
-        int language = LanguageNow();
-
-        int top = text_->GetLineFromCharIndex(
-            text_->GetCharIndexFromPosition(System::Drawing::Point(1, 1)));
-        int bottom = text_->GetLineFromCharIndex(text_->GetCharIndexFromPosition(
-            System::Drawing::Point(1, Math::Max(1, text_->ClientSize.Height - 2))));
-        int deep = Math::Max(1, bottom - top + 1);
-        int from = Math::Max(0, top - deep);
-        int to = Math::Min(all->Length - 1, bottom + deep);
-
-        bool touched = text_->Modified;
-        int caret = text_->SelectionStart;
-        int length = text_->SelectionLength;
-
+        bool drawingOff = false;
         Spot scrolled;
-        stateGood_ = false;
-        Tell(text_->Handle, kWhereScrolled, IntPtr::Zero, scrolled);
-        Drawing(text_, false);
+        try {
+            array<String^>^ all = text_->Lines;
+            int language = LanguageNow();
 
-        int state = 0;
-        for (int row = 0; row < from; ++row) {
-            array<Byte>^ above = Utf8Of(all[row]);
-            pin_ptr<Byte> abovePin = &above[0];
-            array<Byte>^ ignored = gcnew array<Byte>(above->Length);
-            pin_ptr<Byte> ignoredPin = &ignored[0];
-            ride_highlight(reinterpret_cast<const char*>(abovePin), language, &state,
-                          ignoredPin, ignored->Length);
-        }
+            int top = text_->GetLineFromCharIndex(
+                text_->GetCharIndexFromPosition(System::Drawing::Point(1, 1)));
+            int bottom = text_->GetLineFromCharIndex(text_->GetCharIndexFromPosition(
+                System::Drawing::Point(1, Math::Max(1, text_->ClientSize.Height - 2))));
+            int deep = Math::Max(1, bottom - top + 1);
+            int from = Math::Max(0, top - deep);
+            int to = Math::Min(all->Length - 1, bottom + deep);
 
-        if (from <= to) {
-            int start = text_->GetFirstCharIndexFromLine(from);
-            int end = to + 1 < all->Length ? text_->GetFirstCharIndexFromLine(to + 1)
-                                           : text_->TextLength;
-            if (start >= 0 && end > start) {
-                text_->Select(start, end - start);
-                text_->SelectionColor = System::Drawing::Color::Black;
-            }
-        }
+            bool touched = text_->Modified;
+            int caret = text_->SelectionStart;
+            int length = text_->SelectionLength;
 
-        for (int row = from; row <= to; ++row) {
-            array<Byte>^ bytes = Utf8Of(all[row]);
-            pin_ptr<Byte> linePin = &bytes[0];
+            stateGood_ = false;
+            Tell(text_->Handle, kWhereScrolled, IntPtr::Zero, scrolled);
+            Drawing(text_, false);
+            drawingOff = true;
 
-            array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
-            pin_ptr<Byte> kindPin = &kinds[0];
+            int state = 0;
+            array<Byte>^ bytes;
+            int howMany = 0;
+            for (int row = 0; row < from; ++row) Lex(all[row], language, state, bytes, howMany);
 
-            int howMany = ride_highlight(reinterpret_cast<const char*>(linePin), language,
-                                        &state, kindPin, kinds->Length);
-
-            int at = text_->GetFirstCharIndexFromLine(row);
-            if (at < 0) break;
-
-            int column = 0;
-            int byte = 0;
-            while (byte < howMany) {
-                Byte kind = kinds[byte];
-                int end = byte;
-                while (end < howMany && kinds[end] == kind) ++end;
-
-                int width =
-                    System::Text::Encoding::UTF8->GetString(bytes, byte, end - byte)->Length;
-                if (width > 0 && kind != RIDE_KIND_NORMAL) {
-                    text_->Select(at + column, width);
-                    text_->SelectionColor = ColourOf(kind);
+            if (from <= to) {
+                int start = text_->GetFirstCharIndexFromLine(from);
+                int end = to + 1 < all->Length ? text_->GetFirstCharIndexFromLine(to + 1)
+                                               : text_->TextLength;
+                if (start >= 0 && end > start) {
+                    text_->Select(start, end - start);
+                    text_->SelectionColor = System::Drawing::Color::Black;
                 }
-                column += width;
-                byte = end;
             }
-        }
 
-        text_->Select(caret, length);
-        text_->SelectionColor = System::Drawing::Color::Black;
-        Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
-        text_->Modified = touched;
-        Drawing(text_, true);
-        EndColouring();
+            for (int row = from; row <= to; ++row) {
+                array<Byte>^ kinds = Lex(all[row], language, state, bytes, howMany);
+                int at = text_->GetFirstCharIndexFromLine(row);
+                if (at < 0) break;
+                ColourRuns(at, bytes, kinds, howMany);
+            }
+
+            text_->Select(caret, length);
+            text_->SelectionColor = System::Drawing::Color::Black;
+            Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
+            text_->Modified = touched;
+        } finally {
+            if (drawingOff) Drawing(text_, true);
+            EndColouring();
+        }
     }
 
     void OnSettled(Object^, EventArgs^) {
@@ -1623,68 +1866,46 @@ private:
 
     void RecolourLine(int row) {
         if (colouring_ || text_ == nullptr || !text_->IsHandleCreated) return;
-
-        array<String^>^ all = text_->Lines;
-        if (row < 0 || row >= all->Length) return;
+        if (row < 0 || row >= LineCount(text_)) return;
 
         BeginColouring();
-        int language = LanguageNow();
+        try {
+            int language = LanguageNow();
+            array<Byte>^ bytes;
+            int howMany = 0;
 
-        int state = 0;
-        if (stateGood_ && stateRow_ == row) {
-            state = stateAt_;
-        } else {
-            for (int above = 0; above < row; ++above) {
-                array<Byte>^ bytes = Utf8Of(all[above]);
-                pin_ptr<Byte> linePin = &bytes[0];
-                array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
-                pin_ptr<Byte> kindPin = &kinds[0];
-                ride_highlight(reinterpret_cast<const char*>(linePin), language, &state,
-                              kindPin, kinds->Length);
+            int state = 0;
+            if (stateGood_ && stateRow_ == row) {
+                state = stateAt_;
+            } else {
+                // Once per row the caret settles on: every line above, lexed for the state it leaves.
+                array<String^>^ all = text_->Lines;
+                for (int above = 0; above < row && above < all->Length; ++above)
+                    Lex(all[above], language, state, bytes, howMany);
+                stateGood_ = true;
+                stateRow_ = row;
+                stateAt_ = state;
             }
-            stateGood_ = true;
-            stateRow_ = row;
-            stateAt_ = state;
-        }
 
-        bool touched = text_->Modified;
-        int caret = text_->SelectionStart;
-        int length = text_->SelectionLength;
+            bool touched = text_->Modified;
+            int caret = text_->SelectionStart;
+            int length = text_->SelectionLength;
 
-        int at = text_->GetFirstCharIndexFromLine(row);
-        if (at >= 0) {
-            text_->Select(at, all[row]->Length);
+            int at = text_->GetFirstCharIndexFromLine(row);
+            if (at >= 0) {
+                String^ line = LineText(text_, row);
+                text_->Select(at, line->Length);
+                text_->SelectionColor = System::Drawing::Color::Black;
+                array<Byte>^ kinds = Lex(line, language, state, bytes, howMany);
+                ColourRuns(at, bytes, kinds, howMany);
+            }
+
+            text_->Select(caret, length);
             text_->SelectionColor = System::Drawing::Color::Black;
-
-            array<Byte>^ bytes = Utf8Of(all[row]);
-            pin_ptr<Byte> linePin = &bytes[0];
-            array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
-            pin_ptr<Byte> kindPin = &kinds[0];
-            int howMany = ride_highlight(reinterpret_cast<const char*>(linePin), language,
-                                        &state, kindPin, kinds->Length);
-
-            int column = 0;
-            int byte = 0;
-            while (byte < howMany) {
-                Byte kind = kinds[byte];
-                int end = byte;
-                while (end < howMany && kinds[end] == kind) ++end;
-
-                int width =
-                    System::Text::Encoding::UTF8->GetString(bytes, byte, end - byte)->Length;
-                if (width > 0 && kind != RIDE_KIND_NORMAL) {
-                    text_->Select(at + column, width);
-                    text_->SelectionColor = ColourOf(kind);
-                }
-                column += width;
-                byte = end;
-            }
+            text_->Modified = touched;
+        } finally {
+            EndColouring();
         }
-
-        text_->Select(caret, length);
-        text_->SelectionColor = System::Drawing::Color::Black;
-        text_->Modified = touched;
-        EndColouring();
     }
 
     System::Drawing::Color ColourOf(Byte kind) {
@@ -1706,22 +1927,27 @@ private:
 
         if (!text_->CanUndo) { what_->Text = "nothing to undo"; return; }
         text_->Undo();
+        stateGood_ = false;
     }
     void OnRedo(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
         if (!text_->CanRedo) { what_->Text = "nothing to redo"; return; }
         text_->Redo();
+        stateGood_ = false;
     }
     void OnCut(Object^, EventArgs^) { if (text_ != nullptr) text_->Cut(); }
     void OnCopy(Object^, EventArgs^) { if (text_ != nullptr) text_->Copy(); }
     void OnPaste(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
 
-        if (!text_->CanPaste(DataFormats::GetFormat(DataFormats::Text))) {
+        if (!Clipboard::ContainsText()) {
             what_->Text = "there is nothing to paste";
             return;
         }
-        text_->Paste();
+        // The text alone: Paste() takes the richest format there, and Word's fonts or a
+        // browser's pictures have no place in a source file.
+        text_->Paste(DataFormats::GetFormat(DataFormats::UnicodeText));
+        stateGood_ = false;
         Recolour();
     }
     void OnSelectAll(Object^, EventArgs^) { if (text_ != nullptr) text_->SelectAll(); }
@@ -1807,23 +2033,20 @@ private:
             return;
         }
 
-        int caret = text_->SelectionStart;
-        text_->Text = changed->Replace("\n", "\r\n");
-        text_->SelectionStart = Math::Min(caret, text_->TextLength);
+        ReplaceRange(0, text_->TextLength, changed, text_->SelectionStart);
         needle_ = with;
-        Recolour();
         what_->Text = String::Format("{0} change{1} - Ctrl-Z puts them back", howMany,
                                      howMany == 1 ? "" : "s");
     }
 
     void Realign(int row) {
-        if (row < 0 || row >= text_->Lines->Length) return;
+        if (row < 0 || row >= LineCount(text_)) return;
 
-        String^ line = text_->Lines[row];
+        String^ line = LineText(text_, row);
         int lead = 0;
         while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
 
-        array<Byte>^ text = WholeText();
+        array<Byte>^ text = TextThrough(row);
         pin_ptr<Byte> textPin = &text[0];
         String^ want = TakeUtf8(ride_indent_for(reinterpret_cast<const char*>(textPin), row,
                                                indentWidth_, indentTabs_, indentCase_,
@@ -1839,127 +2062,144 @@ private:
                                                        text_->TextLength));
     }
 
-    void OnKeyUp(Object^, KeyEventArgs^) {
+    // The core's indenter reads code; a JSON or plain file is left as typed.
+    bool IndentsCode() {
+        int language = LanguageNow();
+        return language == RIDE_LANG_C || language == RIDE_LANG_CPP || language == RIDE_LANG_SHALIMAR;
+    }
 
+    // Typing }, # or : may move the line to where it belongs. Asked of the character typed - never of a
+    // key that only moves - and after it is in the box, which a posted call is.
+    void OnKeyPressed(Object^, KeyPressEventArgs^ e) {
+        if (e->KeyChar != '}' && e->KeyChar != '#' && e->KeyChar != ':') return;
+        if (text_ == nullptr || text_->ReadOnly || !IndentsCode()) return;
+        BeginInvoke(gcnew Action(this, &MainForm::RealignTyped));
+    }
+
+    void RealignTyped() {
+        if (text_ == nullptr || text_->SelectionLength != 0) return;
         int caret = text_->SelectionStart;
-        if (caret <= 0 || caret > text_->TextLength) return;
-
-        wchar_t just = text_->Text[caret - 1];
+        if (caret <= 0) return;
+        int row = text_->GetLineFromCharIndex(caret - 1);
+        String^ line = LineText(text_, row);
+        int column = (caret - 1) - text_->GetFirstCharIndexFromLine(row);
+        if (column < 0 || column >= line->Length) return;
+        wchar_t just = line[column];
         if (just != '}' && just != '#' && just != ':') return;
 
-        int row = text_->GetLineFromCharIndex(caret - 1);
-        String^ line = text_->Lines[row];
-        int column = (caret - 1) - text_->GetFirstCharIndexFromLine(row);
-
+        int lead = 0;
+        while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
         if (just != ':') {
-
-            for (int i = 0; i < column && i < line->Length; ++i)
-                if (line[i] != ' ' && line[i] != '\t') return;
+            if (column != lead) return;   // only a } or # that opens its line
+        } else {
+            // A case, a default or an access specifier - not a ternary, a :: or a string. A plain
+            // goto label is left alone too: "std:" looks like one until the second colon arrives.
+            if (column + 1 < line->Length && line[column + 1] == ':') return;
+            if (column > 0 && line[column - 1] == ':') return;
+            String^ head = line->Substring(lead, column - lead)->TrimEnd();
+            String^ word = head;
+            int space = head->IndexOfAny(gcnew array<wchar_t>{' ', '\t', '('});
+            if (space >= 0) word = head->Substring(0, space);
+            bool caseLike = word == "case" || word == "default";
+            bool access = head == "public" || head == "private" || head == "protected";
+            if (!caseLike && !access) return;
+            if (head->IndexOf('"') >= 0) return;
         }
         Realign(row);
     }
 
-    void OnCaretMoved(Object^, EventArgs^) {
+    void OnCaretMoved(Object^ sender, EventArgs^) {
 
         if (colouring_) return;
-        stateGood_ = false;
+        RichTextBox^ box = dynamic_cast<RichTextBox^>(sender);
+        if (box == nullptr || box != text_) return;
 
-        int caret = text_->SelectionStart;
-        int row = text_->GetLineFromCharIndex(caret);
+        int caret = box->SelectionStart;
+        int row = box->GetLineFromCharIndex(caret);
         where_->Text =
-            String::Format("{0}:{1}", row + 1, caret - text_->GetFirstCharIndexFromLine(row) + 1);
+            String::Format("{0}:{1}", row + 1, caret - box->GetFirstCharIndexFromLine(row) + 1);
 
         Sheet^ sheet = Current();
         if (sheet != nullptr) sheet->gutter->Invalidate();
     }
 
-    void OnOpenProject(Object^, EventArgs^) {
-        FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
-        if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
-            what_->Text = "no project opened";
-            return;
-        }
-        LoadProject(pick->SelectedPath);
-    }
-
-    void LoadProject(String^ where) {
-
-        paneMode_ = PaneMode::PaneProject;
-        bool named = System::IO::File::Exists(where);
-
-        String^ directory = named ? System::IO::Path::GetDirectoryName(where) : where;
-        projectDirectory_ = directory;
-        tree_->Nodes->Clear();
-
-        array<Byte>^ bytes = Utf8Of(where);
-        pin_ptr<Byte> pinned = &bytes[0];
-
-        array<Byte>^ error = gcnew array<Byte>(512);
-        pin_ptr<Byte> errorPin = &error[0];
-
-        int loaded = ride_project_load(project_, reinterpret_cast<const char*>(pinned),
-                                      reinterpret_cast<char*>(errorPin), error->Length);
-        if (loaded == 0) {
-            String^ why = FromUtf8(reinterpret_cast<const char*>(errorPin));
-
-            array<Byte>^ dirBytes = Utf8Of(directory);
-            pin_ptr<Byte> dirPin = &dirBytes[0];
-            if (why->Length == 0 &&
-                ride_begin_from_what_is_there(project_,
-                                             reinterpret_cast<const char*>(dirPin)) != 0) {
-                FillTree();
-                indentWidth_ = ride_project_indent_width(project_);
-                indentTabs_ = ride_project_indent_tabs(project_);
-                indentCase_ = ride_project_case_indent(project_);
-                toolKind_ = ride_project_toolchain(project_) != RIDE_TOOL_AUTO
-                        ? ride_project_toolchain(project_) : ride_default_compiler();
-                config_ = ride_configuration();
-                arch_ = FromUtf8(ride_project_arch(project_));
-                ShowChoices();
-                ride_remember_project(reinterpret_cast<const char*>(pinned));
-                RefreshRecent();
-                what_->Text = FromUtf8(ride_outcome_message(project_));
-                SayWhere();
-                RefreshTitle();
-                return;
-            }
-
-            what_->Text = why->Length > 0 ? why : "no .pro project in that directory";
-
-            ride_project_set_root(project_, reinterpret_cast<const char*>(pinned));
-            SayWhere();
-            return;
-        }
-
-        FillTree();
-
+    // The project's own settings, read when it is opened or begun - never on the way to a tab, where
+    // they used to put back a compiler the Tools menu had just changed. AUTO stays AUTO: "By language".
+    void TakeProjectSettings() {
         indentWidth_ = ride_project_indent_width(project_);
         indentTabs_ = ride_project_indent_tabs(project_);
         indentCase_ = ride_project_case_indent(project_);
-        toolKind_ = ride_project_toolchain(project_) != RIDE_TOOL_AUTO
-                        ? ride_project_toolchain(project_) : ride_default_compiler();
+        toolKind_ = ride_project_toolchain(project_);
         config_ = ride_configuration();
         arch_ = FromUtf8(ride_project_arch(project_));
         ShowChoices();
+    }
 
-        array<Byte>^ opened = Utf8Of(directory);
-        pin_ptr<Byte> openedPin = &opened[0];
-        ride_remember_project(reinterpret_cast<const char*>(openedPin));
+    // The installation's, when no project is open.
+    void TakeInstallationSettings() {
+        indentWidth_ = ride_default_indent_width();
+        indentTabs_ = ride_default_indent_tabs();
+        indentCase_ = 0;
+        toolKind_ = ride_default_compiler();
+        arch_ = "x86_64-windows";
+        ShowChoices();
+    }
+
+    // A .pro file, or a directory with one in it. Tried on a project of its own, so a load that
+    // fails leaves the one already open exactly as it was.
+    void LoadProject(String^ where) {
+        bool named = System::IO::File::Exists(where);
+        String^ directory = named ? System::IO::Path::GetDirectoryName(where) : where;
+
+        RIDEProject* trying = ride_project_new();
+        Utf8 whereText(where);
+        array<Byte>^ error = gcnew array<Byte>(512);
+        pin_ptr<Byte> errorPin = &error[0];
+
+        int loaded = ride_project_load(trying, whereText.c(), reinterpret_cast<char*>(errorPin), error->Length);
+        String^ said = nullptr;
+        if (loaded == 0) {
+            String^ why = FromUtf8(reinterpret_cast<const char*>(errorPin));
+            Utf8 dirText(directory);
+            if (why->Length > 0 || ride_begin_from_what_is_there(trying, dirText.c()) == 0) {
+                ride_project_free(trying);
+                what_->Text = why->Length > 0 ? why : "no .pro project in that directory";
+                // With nothing open, the directory asked for is where a new file would go.
+                if (ride_project_loaded(project_) == 0 && System::IO::Directory::Exists(directory)) {
+                    ride_project_set_root(project_, dirText.c());
+                    projectDirectory_ = directory;
+                    SayWhere();
+                }
+                return;
+            }
+            said = FromUtf8(ride_outcome_message(trying));
+        }
+
+        ride_project_free(project_);
+        project_ = trying;
+        projectDirectory_ = directory;
+        paneMode_ = PaneMode::PaneProject;
+        FillTree();
+        TakeProjectSettings();
+
+        Utf8 remembered(said != nullptr ? where : directory);
+        ride_remember_project(remembered.c());
         RefreshRecent();
 
-        what_->Text = String::Format("ready - {0}, {1} groups",
-                                     FromUtf8(ride_project_name(project_)),
-                                     ride_project_groups(project_));
+        what_->Text = said != nullptr ? said
+                                      : String::Format("ready - {0}, {1} groups",
+                                                       FromUtf8(ride_project_name(project_)),
+                                                       ride_project_groups(project_));
         SayWhere();
         RefreshTitle();
 
         // The project's own file comes to the front whichever way the
         // project was opened - Start() asks the same after the command
         // line's files, and skips this when one of them is named.
-        if (started_) {
-            String^ said = what_->Text;
+        if (started_ && said == nullptr) {
+            String^ kept = what_->Text;
             OpenFirstOfProject();
-            what_->Text = said;
+            what_->Text = kept;
         }
     }
 
@@ -1970,52 +2210,58 @@ private:
         FillTree();
     }
 
+    // The pane and nothing else: what is open, or the project's groups. Kept for later while the
+    // worker is in the project, and its selection and scroll are put back after.
     void FillTree() {
-        tree_->Nodes->Clear();
+        if (busy_) { treeStale_ = true; return; }
+        treeStale_ = false;
+        String^ chosen = tree_->SelectedNode == nullptr ? nullptr : tree_->SelectedNode->FullPath;
+        TreeNode^ topNode = tree_->TopNode;
+        String^ top = topNode == nullptr ? nullptr : topNode->FullPath;
 
-        if (paneMode_ == PaneMode::PaneFiles || ride_project_loaded(project_) == 0) {
-            for (int i = 0; i < sheets_->Count; ++i) {
-                String^ full = sheets_[i]->path;
+        tree_->BeginUpdate();
+        try {
+            tree_->Nodes->Clear();
 
-                String^ shown = (full == nullptr || full->Length == 0)
-                                    ? "untitled"
-                                    : System::IO::Path::GetFileName(full);
-                TreeNode^ leaf = gcnew TreeNode(shown);
-                leaf->Tag = full;
-                tree_->Nodes->Add(leaf);
+            if (paneMode_ == PaneMode::PaneFiles || ride_project_loaded(project_) == 0) {
+                for (int i = 0; i < sheets_->Count; ++i) {
+                    TreeNode^ leaf = gcnew TreeNode(TabName(sheets_[i]));
+                    leaf->Tag = sheets_[i]->path;
+                    tree_->Nodes->Add(leaf);
+                }
+            } else {
+                int groups = ride_project_groups(project_);
+                for (int group = 0; group < groups; ++group) {
+                    TreeNode^ node = gcnew TreeNode(FromUtf8(ride_project_group_name(project_, group)));
+                    int files = ride_project_files(project_, group);
+                    for (int file = 0; file < files; ++file) {
+                        String^ relative = FromUtf8(ride_project_file(project_, group, file));
+                        TreeNode^ leaf = gcnew TreeNode(relative);
+                        Utf8 rel(relative);
+                        leaf->Tag = FromUtf8(ride_project_absolute(project_, rel.c()));
+                        node->Nodes->Add(leaf);
+                    }
+                    tree_->Nodes->Add(node);
+                }
+                tree_->ExpandAll();
             }
-            return;
+            TreeNode^ again = FindNode(tree_->Nodes, chosen);
+            if (again != nullptr) tree_->SelectedNode = again;
+            TreeNode^ above = FindNode(tree_->Nodes, top);
+            if (above != nullptr) tree_->TopNode = above;
+        } finally {
+            tree_->EndUpdate();
         }
+    }
 
-        int groups = ride_project_groups(project_);
-        for (int group = 0; group < groups; ++group) {
-            TreeNode^ node = gcnew TreeNode(FromUtf8(ride_project_group_name(project_, group)));
-            int files = ride_project_files(project_, group);
-            for (int file = 0; file < files; ++file) {
-                String^ relative = FromUtf8(ride_project_file(project_, group, file));
-                TreeNode^ leaf = gcnew TreeNode(relative);
-
-                array<Byte>^ rel = Utf8Of(relative);
-                pin_ptr<Byte> relPin = &rel[0];
-                leaf->Tag = FromUtf8(
-                    ride_project_absolute(project_, reinterpret_cast<const char*>(relPin)));
-                node->Nodes->Add(leaf);
-            }
-            tree_->Nodes->Add(node);
+    static TreeNode^ FindNode(TreeNodeCollection^ nodes, String^ path) {
+        if (path == nullptr) return nullptr;
+        for each (TreeNode^ node in nodes) {
+            if (node->FullPath == path) return node;
+            TreeNode^ below = FindNode(node->Nodes, path);
+            if (below != nullptr) return below;
         }
-        tree_->ExpandAll();
-
-        indentWidth_ = ride_project_indent_width(project_);
-        indentTabs_ = ride_project_indent_tabs(project_);
-        indentCase_ = ride_project_case_indent(project_);
-        toolKind_ = ride_project_toolchain(project_) != RIDE_TOOL_AUTO
-                        ? ride_project_toolchain(project_) : ride_default_compiler();
-        config_ = ride_configuration();
-        arch_ = FromUtf8(ride_project_arch(project_));
-        ShowChoices();
-
-        what_->Text = String::Format("ready - {0}, {1} groups",
-                                     FromUtf8(ride_project_name(project_)), groups);
+        return nullptr;
     }
 
     String^ TargetFile() {
@@ -2099,7 +2345,7 @@ private:
     }
 
     void OnFont(Object^, EventArgs^) {
-        FontDialog^ pick = gcnew FontDialog();
+        msclr::auto_handle<FontDialog> pick(gcnew FontDialog());
         pick->Font = codeFont_;
         pick->FixedPitchOnly = true;
         pick->ShowEffects = false;
@@ -2124,11 +2370,13 @@ private:
 
     void UseFont(System::Drawing::Font^ chosen) {
         codeFont_ = chosen;
+        digitWidth_ = DigitWidth(codeFont_);
         for each (Sheet^ sheet in sheets_) {
             bool touched = sheet->box->Modified;
             sheet->box->Font = codeFont_;
             sheet->box->Modified = touched;
-            if (sheet->gutter != nullptr) sheet->gutter->Invalidate();
+            sheet->gutter->Width = GutterWidth(sheet->lines);
+            sheet->gutter->Invalidate();
         }
         Recolour();
         PlaceStopBar();
@@ -2163,9 +2411,7 @@ private:
         what_->Text = "new file - Ctrl+S names it";
     }
 
-    void OnNextFile(Object^, EventArgs^) { StepFile(1); }
-    void OnPreviousFile(Object^, EventArgs^) { StepFile(-1); }
-
+    // Ctrl+PageDown and Ctrl+PageUp, caught in ProcessCmdKey: off the menu, as the File menu says.
     void StepFile(int by) {
         int count = files_->TabPages->Count;
         if (count < 2) { what_->Text = "only one file is open"; return; }
@@ -2244,22 +2490,20 @@ private:
         pin_ptr<Byte> pathPin = &path[0];
         if (!Did(ride_delete_file(project_, reinterpret_cast<const char*>(pathPin)))) return;
 
+        String^ said = what_->Text;
         for (int i = sheets_->Count - 1; i >= 0; --i) {
             if (sheets_[i]->path == nullptr) continue;
             if (!SamePath(sheets_[i]->path, target)) continue;
-            Sheet^ sheet = sheets_[i];
-            sheets_->Remove(sheet);
-            files_->TabPages->Remove(sheet->page);
-            PaneFollowsTabs();
+            DropSheet(sheets_[i]);
         }
 
         String^ key = OneName(target);
         breaks_->Remove(key);
         breakNames_->Remove(key);
 
-        if (sheets_->Count == 0) MakeSheet(nullptr, "");
-        OnSheetChanged(nullptr, nullptr);
-        FillTree();
+        // The last tab gone leaves the empty environment CloseSheet leaves, not a spare untitled one.
+        AfterSheetsGone();
+        what_->Text = said;
     }
 
     void OnMoveToGroup(Object^, EventArgs^) {
@@ -2405,7 +2649,7 @@ private:
     void OnLocateVcvars(Object^, EventArgs^) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
-        OpenFileDialog^ pick = gcnew OpenFileDialog();
+        msclr::auto_handle<OpenFileDialog> pick(gcnew OpenFileDialog());
         pick->Title = "Locate vcvars64.bat (Visual Studio\\VC\\Auxiliary\\Build)";
         pick->Filter = "vcvars64.bat|vcvars64.bat|Batch files (*.bat)|*.bat";
         String^ now = FromUtf8(ride_vcvars());
@@ -2428,7 +2672,7 @@ private:
     void OnLocateAssembler(Object^, EventArgs^) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
-        OpenFileDialog^ pick = gcnew OpenFileDialog();
+        msclr::auto_handle<OpenFileDialog> pick(gcnew OpenFileDialog());
         pick->Title = "The assembler for x86_64-windows (asm.exe)";
         pick->Filter = "Programs (*.exe)|*.exe";
         String^ now = FromUtf8(ride_assembler());
@@ -2452,7 +2696,7 @@ private:
     void PickLinker(bool ti) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
-        OpenFileDialog^ pick = gcnew OpenFileDialog();
+        msclr::auto_handle<OpenFileDialog> pick(gcnew OpenFileDialog());
         pick->Title = ti ? "The linker for tms6747 (lnk6x.exe)" : "The linker for x86_64-windows (link.exe)";
         pick->Filter = "Programs (*.exe)|*.exe";
         String^ now = FromUtf8(ti ? ride_tilinker() : ride_linker());
@@ -2480,7 +2724,7 @@ private:
     void OnLocateTi(Object^, EventArgs^) {
         String^ file = FromUtf8(ride_install_file());
         if (file->Length == 0) { what_->Text = "no installation directory to keep this in"; return; }
-        FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
+        msclr::auto_handle<FolderBrowserDialog> pick(gcnew FolderBrowserDialog());
         pick->Description = "TI's C6000 compiler directory - the one with bin\\lnk6x.exe";
         String^ now = FromUtf8(ride_ti());
         if (now->Length > 0) pick->SelectedPath = now;
@@ -2489,7 +2733,7 @@ private:
             return;
         }
         String^ dir = pick->SelectedPath;
-        FolderBrowserDialog^ lib = gcnew FolderBrowserDialog();
+        msclr::auto_handle<FolderBrowserDialog> lib(gcnew FolderBrowserDialog());
         lib->Description = "A directory with rts6740_elf_eh.lib, the exception-handling runtime (Cancel for none)";
         String^ nowLib = FromUtf8(ride_tilib());
         if (nowLib->Length > 0) lib->SelectedPath = nowLib;
@@ -2553,7 +2797,7 @@ private:
     }
 
     void OnNewProject(Object^, EventArgs^) {
-        FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
+        msclr::auto_handle<FolderBrowserDialog> pick(gcnew FolderBrowserDialog());
         pick->Description = "Where to put the project";
         pick->ShowNewFolderButton = true;
         pick->SelectedPath = ProjectsDir();
@@ -2580,7 +2824,9 @@ private:
                                   reinterpret_cast<const char*>(calledPin),
                                   reinterpret_cast<const char*>(firstPin)))) {
             projectDirectory_ = pick->SelectedPath;
+            paneMode_ = PaneMode::PaneProject;
             FillTree();
+            TakeProjectSettings();
             SayWhere();
             RefreshTitle();
         }
@@ -2589,7 +2835,7 @@ private:
     void OnOpenProjectFile(Object^, EventArgs^) {
         String^ suffix = FromUtf8(ride_project_suffix());
 
-        OpenFileDialog^ pick = gcnew OpenFileDialog();
+        msclr::auto_handle<OpenFileDialog> pick(gcnew OpenFileDialog());
         pick->Title = "Open project file";
         pick->Filter = ProductName() + " projects (*" + suffix + ")|*" + suffix +
                        "|All files (*.*)|*.*";
@@ -2611,7 +2857,7 @@ private:
         String^ suffix = FromUtf8(ride_project_suffix());
         String^ offered = FromUtf8(ride_project_name(project_)) + suffix;
 
-        SaveFileDialog^ pick = gcnew SaveFileDialog();
+        msclr::auto_handle<SaveFileDialog> pick(gcnew SaveFileDialog());
         pick->Title = "Save as project file";
         pick->FileName = offered;
         pick->Filter = ProductName() + " projects (*" + suffix + ")|*" + suffix;
@@ -2659,24 +2905,41 @@ private:
         for (int i = 0; i < theirs->Count; ++i)
             if (!MayDiscard(theirs[i])) { what_->Text = "not closed - " + System::IO::Path::GetFileName(theirs[i]->path) + " has unsaved changes"; return; }
         int closed = theirs->Count;
+        // A program of the project's under the debugger goes with it, and so do the breakpoints
+        // in its files, the last error and the project's own compiler, target and layout.
+        if (ride_debugger_running(debugger_) != 0) EndDebugging();
         for (int i = 0; i < theirs->Count; ++i) {
-            sheets_->Remove(theirs[i]);
-            files_->TabPages->Remove(theirs[i]->page);
+            String^ key = OneName(theirs[i]->path);
+            breaks_->Remove(key);
+            breakNames_->Remove(key);
+            DropSheet(theirs[i]);
         }
-        if (sheets_->Count == 0) { text_ = nullptr; path_ = nullptr; }
-        else if (files_->SelectedTab != nullptr) {
-            Sheet^ now = SheetForPage(files_->SelectedTab);
-            if (now != nullptr) { text_ = now->box; path_ = now->path; }
-        }
+        ForgetError();
 
         ride_project_close(project_);
+        TakeInstallationSettings();
 
         paneMode_ = PaneMode::PaneFiles;
-        FillTree();
-        RefreshTitle();
-        SayBuild();
+        AfterSheetsGone();
         console_->Text = "";
         what_->Text = was + " closed" + (closed > 0 ? String::Format(", and its {0} file(s) with it", closed) : "");
+    }
+
+    // What every way of removing tabs ends with: the one in front made current, or - none left -
+    // the genuinely empty environment, with no untitled buffer and no entry in the pane.
+    void AfterSheetsGone() {
+        if (sheets_->Count == 0) {
+            text_ = nullptr;
+            path_ = nullptr;
+            ForgetError();
+            what_->Text = "no file open";
+        } else {
+            OnSheetChanged(nullptr, nullptr);
+        }
+        RefreshTitle();
+        FillTree();
+        SayBuild();
+        SayWhere();
     }
 
 
@@ -2715,7 +2978,7 @@ private:
     void OnOpenFile(Object^, EventArgs^) {
 
         paneMode_ = PaneMode::PaneFiles;
-        OpenFileDialog^ pick = gcnew OpenFileDialog();
+        msclr::auto_handle<OpenFileDialog> pick(gcnew OpenFileDialog());
         pick->Filter = "Sources|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx;*.shl;*.s;*.json;*.pro"
                        "|C and C++|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx|Shalimar|*.shl|All files|*.*";
         pick->InitialDirectory = ProgramsDir();
@@ -2741,8 +3004,11 @@ private:
         }
 
         String^ contents;
+        TextFile^ file = nullptr;
         try {
-            contents = System::IO::File::ReadAllText(path);
+            String^ why = nullptr;
+            contents = TextFile::Read(path, file, why);
+            if (contents == nullptr) { what_->Text = why; return; }
         } catch (Exception^ problem) {
             what_->Text = problem->Message;
             return;
@@ -2753,6 +3019,7 @@ private:
         if (spare != nullptr && spare->path == nullptr && spare->box->TextLength == 0 &&
             !spare->box->Modified) {
             spare->path = path;
+            spare->file = file;
             spare->box->Text = contents;
 
             spare->box->Modified = false;
@@ -2760,12 +3027,13 @@ private:
 
             PaneFollowsTabs();
         } else {
-            sheet = MakeSheet(path, contents);
+            sheet = MakeSheet(path, contents, file);
         }
         text_ = sheet->box;
         path_ = path;
+        stateGood_ = false;
         RefreshTitle();
-        SayBuild();
+        ShowChoices();
         Recolour();
         OnTextChanged(nullptr, nullptr);
 
@@ -2773,7 +3041,7 @@ private:
         MarkTab(sheet);
         text_->Select(0, 0);
         text_->Focus();
-        what_->Text = System::IO::Path::GetFileName(path) + "  " + text_->Lines->Length + " lines";
+        what_->Text = System::IO::Path::GetFileName(path) + "  " + LineCount(text_) + " lines";
     }
 
     void OnCloseFile(Object^, EventArgs^) { CloseSheet(Current()); }
@@ -2782,25 +3050,12 @@ private:
         if (sheet == nullptr) return;
         if (!MayDiscard(sheet)) return;
 
-        sheets_->Remove(sheet);
-        files_->TabPages->Remove(sheet->page);
-        PaneFollowsTabs();
-
-        if (sheets_->Count == 0) {
-            // Leave a genuinely empty environment - no untitled buffer, and no
-            // entry in the pane - until the next New or Open.
-            text_ = nullptr;
-            path_ = nullptr;
-            RefreshTitle();
-            FillTree();
-            SayBuild();
-            console_->Text = "";
-            what_->Text = "no file open";
-            return;
-        }
-
+        // An error remembered for this file has nowhere to go once it is gone.
+        if (errorFile_ == nullptr ? sheet->box == text_ : SamePath(errorFile_, sheet->path)) ForgetError();
+        DropSheet(sheet);
+        AfterSheetsGone();
         console_->Text = "";
-        what_->Text = "closed";
+        if (sheets_->Count > 0) what_->Text = "closed";
     }
 
     Sheet^ SheetForPage(TabPage^ page) {
@@ -2816,31 +3071,44 @@ private:
         if (s != nullptr) CloseSheet(s);
     }
 
+    // A sheet written to where it says it is, as it was found; false with the reason on the status bar.
+    bool WriteSheet(Sheet^ sheet, String^ where) {
+        String^ note = nullptr;
+        String^ why = nullptr;
+        if (!TextFile::Write(where, sheet->box->Text, sheet->file, note, why)) {
+            what_->Text = "not written - " + why;
+            return false;
+        }
+        sheet->box->Modified = false;
+        MarkTab(sheet);
+        what_->Text = System::IO::Path::GetFileName(where) + " written" + (note == nullptr ? "" : " - " + note);
+        return true;
+    }
+
+    // What a build does first: the file in front written if it has changed, and left alone if not.
+    bool SaveIfChanged() {
+        Sheet^ sheet = Current();
+        if (sheet == nullptr || path_ == nullptr || !sheet->box->Modified) return true;
+        return WriteSheet(sheet, path_);
+    }
+
     void OnSave(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
         if (path_ == nullptr) {
             OnSaveAs(nullptr, nullptr);
             return;
         }
-        try {
-
-            System::IO::File::WriteAllText(path_, text_->Text->Replace("\r\n", "\n"));
-        } catch (Exception^ problem) {
-            what_->Text = problem->Message;
-            return;
-        }
-
-        text_->Modified = false;
-        MarkTab(Current());
-        what_->Text = System::IO::Path::GetFileName(path_) + " written";
+        Sheet^ sheet = Current();
+        if (sheet != nullptr) WriteSheet(sheet, path_);
     }
 
     void OnSaveAs(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
+        if (busy_) { what_->Text = StillWorking(); return; }
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
 
-        SaveFileDialog^ pick = gcnew SaveFileDialog();
+        msclr::auto_handle<SaveFileDialog> pick(gcnew SaveFileDialog());
         pick->Filter = "Sources|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx;*.shl;*.s;*.json;*.pro"
                        "|C and C++|*.c;*.h;*.cpp;*.hpp;*.cc;*.cxx|Shalimar|*.shl|All files|*.*";
         pick->InitialDirectory = ProgramsDir();
@@ -2850,28 +3118,35 @@ private:
             return;
         }
 
+        // One tab per file: a name another tab already holds is refused rather than opened twice.
+        Sheet^ other = SheetFor(pick->FileName);
+        if (other != nullptr && other != sheet) {
+            what_->Text = System::IO::Path::GetFileName(pick->FileName) +
+                          " is open in another tab - close it first, or save under another name";
+            return;
+        }
+
+        // Written first: the tab takes the new name only once there is a file by that name.
+        if (!WriteSheet(sheet, pick->FileName)) return;
         sheet->path = pick->FileName;
         path_ = pick->FileName;
+        MarkTab(sheet);
         RefreshTitle();
-        SayBuild();
-        OnSave(nullptr, nullptr);
+        ShowChoices();
 
         // Saved into the project's directory is saved into the project;
         // and a file saved under a name is one to recall from the menu.
-        array<Byte>^ saved = Utf8Of(pick->FileName);
-        pin_ptr<Byte> savedPin = &saved[0];
-        if (ride_adopt_saved(project_, reinterpret_cast<const char*>(savedPin)) != 0)
+        Utf8 saved(pick->FileName);
+        if (ride_adopt_saved(project_, saved.c()) != 0)
             what_->Text = FromUtf8(ride_outcome_message(project_));
-        ride_remember_file(reinterpret_cast<const char*>(savedPin));
+        ride_remember_file(saved.c());
         RefreshRecentFiles();
         FillTree();
     }
 
     void MarkTab(Sheet^ sheet) {
         if (sheet == nullptr || sheet->page == nullptr) return;
-        String^ name = sheet->path == nullptr
-                           ? "[no name]"
-                           : System::IO::Path::GetFileName(sheet->path);
+        String^ name = TabName(sheet);
         sheet->page->Text = sheet->box->Modified ? name + "*" : name;
         if (files_ != nullptr) files_->Invalidate();
     }
@@ -2926,9 +3201,11 @@ private:
 
         table->Append("Editing\r\n");
         table->Append("  Tab               lay this line out, in the leading space\r\n");
-        table->Append("  Enter             on the Console, go to the error it is about\r\n");
+        table->Append("  Tab, Shift+Tab    over lines chosen, one level in or out\r\n");
+        table->Append("  Ctrl+PageDown     the next open file, Ctrl+PageUp the one before\r\n");
+        table->Append("  Enter             on the Console, go to the place that line names\r\n");
 
-        Form^ box = gcnew Form();
+        msclr::auto_handle<Form> box(gcnew Form());
         box->Text = "Keys";
         box->FormBorderStyle = System::Windows::Forms::FormBorderStyle::SizableToolWindow;
         box->StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
@@ -2965,81 +3242,92 @@ private:
                          MessageBoxButtons::OK, MessageBoxIcon::Information);
     }
 
-    void OnCompile(Object^, EventArgs^) {
-        if (text_ == nullptr) { what_->Text = "no file is open"; return; }
-        if (busy_) { what_->Text = "still working - give it a moment"; return; }
+    Toolchain^ ToolsNow() { return gcnew Toolchain(cc1_, cl_, shc_, cxx1_, arch_); }
+
+    // Output of the core's, on the end of the Console: its line endings made the box's own
+    // whichever a tool wrote, and appended rather than the whole text written again.
+    void Say(String^ text) {
+        if (String::IsNullOrEmpty(text)) return;
+        console_->AppendText(Lines(text));
+        ShowConsoleEnd();
+    }
+
+    // What Compile and Run both ask first. False when there is nothing to do, or it has been done
+    // another way - a file that is one of the project's sources runs the project.
+    bool SingleFileReady(int% kind, int% language) {
+        if (text_ == nullptr) { what_->Text = "no file is open"; return false; }
+        if (busy_) { what_->Text = StillWorking(); return false; }
         ForgetError();
         if (path_ == nullptr) {
             what_->Text = "open a file first";
-            return;
+            return false;
         }
-        OnSave(nullptr, nullptr);
+        if (!SaveIfChanged()) return false;
 
         {
-            array<Byte>^ askBytes = Utf8Of(path_);
-            pin_ptr<Byte> ask = &askBytes[0];
-            int of = ride_project_runs_as_project(project_, reinterpret_cast<const char*>(ask));
+            Utf8 ask(path_);
+            int of = ride_project_runs_as_project(project_, ask.c());
             if (of > 0) {
                 what_->Text = System::IO::Path::GetFileName(path_) + " is one of " + of +
                               " sources of " + FromUtf8(ride_project_name(project_)) +
                               " - running the project";
                 BuildProject(true);
-                return;
+                return false;
             }
         }
 
-        int language = LanguageNow();
-        int kind = ride_resolve(toolKind_, language);
+        language = LanguageNow();
+        kind = ride_resolve(toolKind_, language);
         if (ride_can_compile(kind, language) == 0) {
             what_->Text = FromUtf8(ride_refusal(kind, language));
+            return false;
+        }
+        return true;
+    }
+
+    Job^ SingleFileJob(int what, int kind, int language) {
+        Job^ job = gcnew Job(what);
+        job->tools = ToolsNow();
+        job->source = gcnew Utf8(path_);
+        job->kind = kind;
+        job->language = language;
+        job->config = config_;
+        return job;
+    }
+
+    void OnCompile(Object^, EventArgs^) {
+        int kind = 0, language = 0;
+        if (!SingleFileReady(kind, language)) return;
+
+        String^ source = path_;
+        Job^ job = SingleFileJob(Job::Build, kind, language);
+        console_->Text = "$ " + FromUtf8(ride_shown_command(project_, job->tools->cc1(), job->tools->cl(),
+                                                            job->tools->shc(), job->tools->cxx1(), kind,
+                                                            job->source->c(), language,
+                                                            job->tools->arch(), config_)) + "\r\n";
+        panel_->SelectedIndex = 0;
+        what_->Text = "compiling " + System::IO::Path::GetFileName(source) + " ...";
+
+        bool finished = WhileBusy(job);
+        RIDEBuild* built = job->build;
+        delete job;
+        if (built == nullptr) { what_->Text = finished ? "nothing was built" : "stopped"; return; }
+
+        Say(FromUtf8(ride_build_output(built)));
+        if (!finished) {
+            ride_build_free(built);
+            Say("\n[stopped]\n");
+            what_->Text = "stopped";
             return;
         }
-
-        array<Byte>^ sourceBytes = Utf8Of(path_);
-        pin_ptr<Byte> source = &sourceBytes[0];
-        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-        pin_ptr<Byte> cc1 = &cc1Bytes[0];
-        array<Byte>^ clBytes = Utf8Of(cl_);
-        pin_ptr<Byte> cl = &clBytes[0];
-        array<Byte>^ shcBytes = Utf8Of(shc_);
-        pin_ptr<Byte> shc = &shcBytes[0];
-        array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-        pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
-        array<Byte>^ archBytes = Utf8Of(arch_);
-        pin_ptr<Byte> arch = &archBytes[0];
-
-        console_->Text =
-            "$ " +
-            FromUtf8(ride_shown_command(project_, reinterpret_cast<const char*>(cc1),
-                                       reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), kind,
-                                       reinterpret_cast<const char*>(source), language,
-                                       reinterpret_cast<const char*>(arch), config_)) +
-            "\r\n";
-        panel_->SelectedIndex = 0;
-        Application::DoEvents();
-
-        RIDEBuild* built = ride_build(project_, reinterpret_cast<const char*>(cc1),
-                                    reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), kind,
-                                    reinterpret_cast<const char*>(source), language,
-                                    reinterpret_cast<const char*>(arch), config_);
-
-        console_->Text += FromUtf8(ride_build_output(built))->Replace("\n", "\r\n");
-        ShowConsoleEnd();
 
         if (ride_build_has_error(built) != 0) {
             int line = ride_build_error_line(built);
             int column = ride_build_error_column(built);
             String^ message = FromUtf8(ride_build_error_message(built));
+            String^ where = FromUtf8(ride_build_error_file(built));
             ride_build_free(built);
-
-            RememberError(line, column, message, nullptr);
-            GoTo(line, column);
-            panel_->SelectedIndex = 0;
-            what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+            ShowError(line, column, message, where, source);
             return;
         }
 
@@ -3060,85 +3348,43 @@ private:
     }
 
     void OnRun(Object^, EventArgs^) {
-        if (text_ == nullptr) { what_->Text = "no file is open"; return; }
-        if (busy_) { what_->Text = "still working - give it a moment"; return; }
-        ForgetError();
-        if (path_ == nullptr) {
-            what_->Text = "open a file first";
-            return;
-        }
-        OnSave(nullptr, nullptr);
+        int kind = 0, language = 0;
+        if (!SingleFileReady(kind, language)) return;
 
-        {
-            array<Byte>^ askBytes = Utf8Of(path_);
-            pin_ptr<Byte> ask = &askBytes[0];
-            int of = ride_project_runs_as_project(project_, reinterpret_cast<const char*>(ask));
-            if (of > 0) {
-                what_->Text = System::IO::Path::GetFileName(path_) + " is one of " + of +
-                              " sources of " + FromUtf8(ride_project_name(project_)) +
-                              " - running the project";
-                BuildProject(true);
-                return;
-            }
-        }
-
-        int language = LanguageNow();
-        int kind = ride_resolve(toolKind_, language);
-        if (ride_can_compile(kind, language) == 0) {
-            what_->Text = FromUtf8(ride_refusal(kind, language));
+        String^ source = path_;
+        Job^ job = SingleFileJob(Job::Run, kind, language);
+        if (ride_runs_here(kind, job->tools->arch()) == 0) {
+            what_->Text = FromUtf8(ride_why_not_run(kind, job->tools->arch()));
+            delete job;
             return;
         }
 
-        array<Byte>^ sourceBytes = Utf8Of(path_);
-        pin_ptr<Byte> source = &sourceBytes[0];
-        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-        pin_ptr<Byte> cc1 = &cc1Bytes[0];
-        array<Byte>^ clBytes = Utf8Of(cl_);
-        pin_ptr<Byte> cl = &clBytes[0];
-        array<Byte>^ shcBytes = Utf8Of(shc_);
-        pin_ptr<Byte> shc = &shcBytes[0];
-        array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-        pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
-        array<Byte>^ archBytes = Utf8Of(arch_);
-        pin_ptr<Byte> arch = &archBytes[0];
-
-        if (ride_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
-            what_->Text = FromUtf8(ride_why_not_run(kind, reinterpret_cast<const char*>(arch)));
-            return;
-        }
-
-        console_->Text =
-            "$ " +
-            FromUtf8(ride_shown_run_command(project_, reinterpret_cast<const char*>(cc1),
-                                           reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), kind,
-                                           reinterpret_cast<const char*>(source), language,
-                                           reinterpret_cast<const char*>(arch), config_)) +
-            "\r\n";
+        console_->Text = "$ " + FromUtf8(ride_shown_run_command(project_, job->tools->cc1(), job->tools->cl(),
+                                                                job->tools->shc(), job->tools->cxx1(), kind,
+                                                                job->source->c(), language,
+                                                                job->tools->arch(), config_)) + "\r\n";
         panel_->SelectedIndex = 0;
-        Application::DoEvents();
+        what_->Text = "building and running " + System::IO::Path::GetFileName(source) + " ...";
 
-        RIDERan* ran = ride_run(project_, reinterpret_cast<const char*>(cc1),
-                              reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), kind,
-                              reinterpret_cast<const char*>(source), language,
-                              reinterpret_cast<const char*>(arch), config_);
+        bool finished = WhileBusy(job);
+        RIDERan* ran = job->ran;
+        delete job;
+        if (ran == nullptr) { what_->Text = finished ? "nothing ran" : "stopped"; return; }
 
-        console_->Text += FromUtf8(ride_ran_output(ran))->Replace("\n", "\r\n");
-        ShowConsoleEnd();
+        Say(FromUtf8(ride_ran_output(ran)));
+        if (!finished) {
+            ride_run_free(ran);
+            Say("\n[stopped]\n");
+            what_->Text = "stopped";
+            return;
+        }
 
         if (ride_ran_has_error(ran) != 0) {
             int line = ride_ran_error_line(ran);
             int column = ride_ran_error_column(ran);
             String^ message = FromUtf8(ride_ran_error_message(ran));
             ride_run_free(ran);
-
-            RememberError(line, column, message, nullptr);
-            GoTo(line, column);
-            panel_->SelectedIndex = 0;
-            what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+            ShowError(line, column, message, nullptr, source);
             return;
         }
 
@@ -3151,17 +3397,16 @@ private:
         int status = ride_ran_status(ran);
         ride_run_free(ran);
 
-        console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
-        ShowConsoleEnd();
+        Say(String::Format("\n[program returned {0}]\n", status));
         what_->Text = String::Format("{0} ran - it returned {1}",
-                                     System::IO::Path::GetFileName(path_), status);
+                                     System::IO::Path::GetFileName(source), status);
     }
 
     void OnBuildProject(Object^, EventArgs^) { BuildProject(false); }
     void OnRunProject(Object^, EventArgs^) { BuildProject(true); }
 
     void BuildProject(bool andRun) {
-        if (busy_) { what_->Text = "still working - give it a moment"; return; }
+        if (busy_) { what_->Text = StillWorking(); return; }
         ForgetError();
 
         if (ride_project_target_ready(project_) == 0) {
@@ -3173,20 +3418,11 @@ private:
             return;
         }
 
-        SaveEveryDirty();
+        if (!SaveEveryDirty()) return;
 
         // The compilers, pinned before the checks: naming each part's compiler
         // needs them, and the build below does too.
-        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-        pin_ptr<Byte> cc1 = &cc1Bytes[0];
-        array<Byte>^ clBytes = Utf8Of(cl_);
-        pin_ptr<Byte> cl = &clBytes[0];
-        array<Byte>^ shcBytes = Utf8Of(shc_);
-        pin_ptr<Byte> shc = &shcBytes[0];
-        array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-        pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
-        array<Byte>^ archBytes = Utf8Of(arch_);
-        pin_ptr<Byte> arch = &archBytes[0];
+        Toolchain^ tools = ToolsNow();
 
         // **Every part, not the target as a whole.** A group of C and C++ is split into a part each
         // and the build sends each to its own compiler through toolKind_, so the build call must
@@ -3196,17 +3432,16 @@ private:
             gcnew System::Collections::Generic::List<String^>();
         for (int i = 0; i < parts; ++i) {
             int partLang = ride_project_part_language(project_, i);
-            int partKind = ride_project_part_toolchain(
-                project_, i, reinterpret_cast<const char*>(cc1),
-                reinterpret_cast<const char*>(cl), reinterpret_cast<const char*>(shc),
-                reinterpret_cast<const char*>(cxx1), toolKind_);
+            int partKind = ride_project_part_toolchain(project_, i, tools->cc1(), tools->cl(),
+                                                       tools->shc(), tools->cxx1(), toolKind_);
             if (ride_can_compile(partKind, partLang) == 0) {
                 what_->Text = FromUtf8(ride_refusal(partKind, partLang));
+                delete tools;
                 return;
             }
-            if (andRun && ride_runs_here(partKind, reinterpret_cast<const char*>(arch)) == 0) {
-                what_->Text =
-                    FromUtf8(ride_why_not_run(partKind, reinterpret_cast<const char*>(arch)));
+            if (andRun && ride_runs_here(partKind, tools->arch()) == 0) {
+                what_->Text = FromUtf8(ride_why_not_run(partKind, tools->arch()));
+                delete tools;
                 return;
             }
             String^ word = FromUtf8(ride_toolchain_name(partKind));
@@ -3224,20 +3459,26 @@ private:
         console_->Text = said->ToString();
         panel_->SelectedIndex = 0;
         what_->Text = "building " + System::IO::Path::GetFileName(program) + " ...";
-        Application::DoEvents();
 
-        RIDEBuild* made = ride_build_target(project_, reinterpret_cast<const char*>(cc1),
-                                          reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), toolKind_,
-                                          reinterpret_cast<const char*>(arch), config_);
+        Job^ job = gcnew Job(Job::BuildTarget);
+        job->tools = tools;
+        job->toolKind = toolKind_;
+        job->config = config_;
+        bool finished = WhileBusy(job);
+        RIDEBuild* made = job->build;
+        delete job;
         if (made == nullptr) {
-            what_->Text = FromUtf8(ride_project_target_why(project_));
+            what_->Text = finished ? FromUtf8(ride_project_target_why(project_)) : "stopped";
             return;
         }
 
-        console_->Text += FromUtf8(ride_build_output(made))->Replace("\n", "\r\n");
-        ShowConsoleEnd();
+        Say(FromUtf8(ride_build_output(made)));
+        if (!finished) {
+            ride_build_free(made);
+            Say("\n[stopped]\n");
+            what_->Text = "stopped";
+            return;
+        }
 
         if (ride_build_has_error(made) != 0) {
             int line = ride_build_error_line(made);
@@ -3245,23 +3486,7 @@ private:
             String^ message = FromUtf8(ride_build_error_message(made));
             String^ where = FromUtf8(ride_build_error_file(made));
             ride_build_free(made);
-
-            if (where->Length > 0) {
-                if (!System::IO::Path::IsPathRooted(where)) {
-                    array<Byte>^ relative = Utf8Of(where);
-                    pin_ptr<Byte> relativePin = &relative[0];
-                    where = FromUtf8(ride_project_absolute(
-                        project_, reinterpret_cast<const char*>(relativePin)));
-                }
-                if (System::IO::File::Exists(where)) OpenPath(where);
-            }
-
-            RememberError(line, column, message, where);
-            GoTo(line, column);
-            panel_->SelectedIndex = 0;
-            what_->Text = String::Format("{0}:{1}:{2}: error: {3}",
-                                         System::IO::Path::GetFileName(where), line, column,
-                                         message);
+            ShowError(line, column, message, where, nullptr);
             return;
         }
 
@@ -3275,132 +3500,178 @@ private:
         }
 
         if (!andRun) {
-            console_->Text += "\r\n[built " + program + "]\r\n";
-            ShowConsoleEnd();
+            Say("\n[built " + program + "]\n");
             what_->Text = "built " + System::IO::Path::GetFileName(program) + " from " +
                           howMany + (howMany == 1 ? " source" : " sources");
             return;
         }
 
-        array<Byte>^ programBytes = Utf8Of(program);
-        pin_ptr<Byte> programPin = &programBytes[0];
-        RIDERan* ran = ride_run_built(reinterpret_cast<const char*>(programPin));
-        console_->Text += FromUtf8(ride_ran_output(ran))->Replace("\n", "\r\n");
+        Job^ run = gcnew Job(Job::RunBuilt);
+        run->program = gcnew Utf8(program);
+        what_->Text = "running " + System::IO::Path::GetFileName(program) + " ...";
+        finished = WhileBusy(run);
+        RIDERan* ran = run->ran;
+        delete run;
+        if (ran == nullptr) { what_->Text = finished ? "nothing ran" : "stopped"; return; }
+        Say(FromUtf8(ride_ran_output(ran)));
         int status = ride_ran_status(ran);
         ride_run_free(ran);
 
-        console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
-        ShowConsoleEnd();
+        if (!finished) {
+            Say("\n[stopped]\n");
+            what_->Text = "stopped";
+            return;
+        }
+        Say(String::Format("\n[program returned {0}]\n", status));
         what_->Text = String::Format("ran {0} - it returned {1}",
                                      System::IO::Path::GetFileName(program), status);
     }
 
-    void SaveEveryDirty() {
+    bool SaveEveryDirty() {
         for (int i = 0; i < sheets_->Count; ++i) {
             Sheet^ sheet = sheets_[i];
             if (sheet->path == nullptr || !sheet->box->Modified) continue;
-            try {
-                System::IO::File::WriteAllText(sheet->path,
-                                               sheet->box->Text->Replace("\r\n", "\n"));
-                sheet->box->Modified = false;
-                MarkTab(sheet);
-            } catch (Exception^ problem) {
-                what_->Text = problem->Message;
-            }
+            if (!WriteSheet(sheet, sheet->path)) return false;
         }
+        return true;
     }
 
-    literal int WorkBuild = 1;
-    literal int WorkStart = 2;
-    literal int WorkGo = 3;
-    literal int WorkStepOver = 4;
-    literal int WorkStepInto = 5;
-    literal int WorkStepOut = 6;
-    literal int WorkResume = 7;
-    literal int WorkBuildTarget = 8;
-
-    void DoPendingWork() {
-        array<Byte>^ archBytes = Utf8Of(arch_ == nullptr ? "" : arch_);
-        pin_ptr<Byte> arch = &archBytes[0];
-
-        switch (pending_) {
-            case WorkBuild: {
-                array<Byte>^ sourceBytes = Utf8Of(path_);
-                pin_ptr<Byte> source = &sourceBytes[0];
-                array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-                pin_ptr<Byte> cc1 = &cc1Bytes[0];
-                array<Byte>^ clBytes = Utf8Of(cl_);
-                pin_ptr<Byte> cl = &clBytes[0];
-                array<Byte>^ shcBytes = Utf8Of(shc_);
-                pin_ptr<Byte> shc = &shcBytes[0];
-                array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-                pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
-
-                built_ = ride_build_program(project_, reinterpret_cast<const char*>(cc1),
-                                           reinterpret_cast<const char*>(cl),
-                                           reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), workKind_,
-                                           reinterpret_cast<const char*>(source),
-                                           workLanguage_,
-                                           reinterpret_cast<const char*>(arch), config_);
-                workResult_ = ride_program_ok(built_);
-                break;
+    // An error a build reported, taken to: the file it names - relative to the file built, then to
+    // the project - brought to the front, and the file built when it names none.
+    void ShowError(int line, int column, String^ message, String^ where, String^ source) {
+        String^ file = source;
+        if (!String::IsNullOrEmpty(where)) {
+            file = where;
+            if (!System::IO::Path::IsPathRooted(where)) {
+                String^ beside = source == nullptr ? nullptr
+                    : System::IO::Path::Combine(System::IO::Path::GetDirectoryName(source), where);
+                if (beside != nullptr && System::IO::File::Exists(beside)) {
+                    file = beside;
+                } else {
+                    Utf8 relative(where);
+                    file = FromUtf8(ride_project_absolute(project_, relative.c()));
+                }
             }
-            case WorkBuildTarget: {
+        }
+        if (file != nullptr && !SamePath(path_, file) && System::IO::File::Exists(file)) OpenPath(file);
 
-                array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-                pin_ptr<Byte> cc1 = &cc1Bytes[0];
-                array<Byte>^ clBytes = Utf8Of(cl_);
-                pin_ptr<Byte> cl = &clBytes[0];
-                array<Byte>^ shcBytes = Utf8Of(shc_);
-                pin_ptr<Byte> shc = &shcBytes[0];
-                array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-                pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
+        RememberError(line, column, message, file);
+        if (SamePath(path_, file)) GoTo(line, column);
+        panel_->SelectedIndex = 0;
+        what_->Text = String::Format("{0}{1}:{2}: error: {3}",
+                                     file == nullptr ? "" : System::IO::Path::GetFileName(file) + ":",
+                                     line, column, message);
+    }
 
-                targetBuilt_ = ride_build_target(project_, reinterpret_cast<const char*>(cc1),
-                                                reinterpret_cast<const char*>(cl),
-                                                reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1),
-                                                toolKind_,
-                                                reinterpret_cast<const char*>(arch), config_);
-                workResult_ = (targetBuilt_ != nullptr && ride_build_ok(targetBuilt_) != 0)
-                                  ? 1 : 0;
+    // ---- the worker -------------------------------------------------------------
+
+    void DoWork(Object^ given) {
+        Job^ job = safe_cast<Job^>(given);
+        Toolchain^ t = job->tools;
+        switch (job->what) {
+            case Job::Build:
+                job->build = ride_build(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(), job->kind,
+                                        job->source->c(), job->language, t->arch(), job->config);
                 break;
-            }
-            case WorkStart: {
-
-                array<Byte>^ programBytes = Utf8Of(workProgram_);
-                pin_ptr<Byte> program = &programBytes[0];
-                workResult_ = ride_debugger_start(debugger_, workKind_,
-                                                 reinterpret_cast<const char*>(arch),
-                                                 reinterpret_cast<const char*>(program));
+            case Job::Run:
+                job->ran = ride_run(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(), job->kind,
+                                    job->source->c(), job->language, t->arch(), job->config);
                 break;
-            }
-            case WorkGo:       ride_debugger_run(debugger_); break;
-            case WorkResume:   ride_debugger_resume(debugger_); break;
-            case WorkStepOver: ride_debugger_step_over(debugger_); break;
-            case WorkStepInto: ride_debugger_step_into(debugger_); break;
-            case WorkStepOut:  ride_debugger_step_out(debugger_); break;
+            case Job::BuildTarget:
+                job->build = ride_build_target(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(),
+                                               job->toolKind, t->arch(), job->config);
+                job->result = job->build != nullptr && ride_build_ok(job->build) != 0 ? 1 : 0;
+                break;
+            case Job::RunBuilt:
+                job->ran = ride_run_built(job->program->c());
+                break;
+            case Job::Convert:
+                job->converted = ride_convert(job->program->c(), job->source->c(), job->into->c(),
+                                              job->toShalimar);
+                break;
+            case Job::BuildProgram:
+                job->made = ride_build_program(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(), job->kind,
+                                               job->source->c(), job->language, t->arch(), job->config);
+                job->result = ride_program_ok(job->made);
+                break;
+            case Job::DebugStart:
+                job->result = ride_debugger_start(debugger_, job->kind, t->arch(), job->program->c());
+                break;
+            case Job::DebugGo:     ride_debugger_run(debugger_); break;
+            case Job::DebugResume: ride_debugger_resume(debugger_); break;
+            case Job::StepOver:    ride_debugger_step_over(debugger_); break;
+            case Job::StepInto:    ride_debugger_step_into(debugger_); break;
+            case Job::StepOut:     ride_debugger_step_out(debugger_); break;
             default: break;
         }
     }
 
-    bool WhileBusy(int what) {
-        if (busy_) { what_->Text = "still working - give it a moment"; return false; }
+    // The job on a thread of its own while this one keeps the window drawn. False when Build >
+    // Stop ended it, or the window is closing - the caller then tidies up and goes no further.
+    bool WhileBusy(Job^ job) {
+        if (busy_) { what_->Text = StillWorking(); return false; }
 
-        busy_ = true;
-        pending_ = what;
-        workResult_ = 0;
-
+        job_ = job;
+        SetBusy(true);
         System::Threading::Thread^ worker = gcnew System::Threading::Thread(
-            gcnew System::Threading::ThreadStart(this, &MainForm::DoPendingWork));
+            gcnew System::Threading::ParameterizedThreadStart(this, &MainForm::DoWork));
         worker->IsBackground = true;
-        worker->Start();
+        worker->Start(job);
 
-        while (!worker->Join(50)) Application::DoEvents();
+        while (!worker->Join(50)) {
+            try {
+                Application::DoEvents();
+            } catch (Exception^ problem) {
+                what_->Text = problem->Message;
+            }
+        }
 
-        busy_ = false;
-        return true;
+        job_ = nullptr;
+        SetBusy(false);
+        if (closeWhenIdle_) BeginInvoke(gcnew Action(this, &MainForm::CloseNow));
+        return !job->stopped && !closeWhenIdle_;
+    }
+
+    void CloseNow() {
+        closeWhenIdle_ = false;
+        Close();
+    }
+
+    // Grey what would reach the core the worker holds, or give it back.
+    void SetBusy(bool on) {
+        busy_ = on;
+        for each (ToolStripMenuItem^ item in gated_) item->Enabled = !on;
+        stopItem_->Enabled = on;
+        if (!on && treeStale_) FillTree();
+    }
+
+    void GateBelow(ToolStripItemCollection^ items) {
+        for each (ToolStripItem^ each in items) {
+            ToolStripMenuItem^ item = dynamic_cast<ToolStripMenuItem^>(each);
+            if (item == nullptr) continue;
+            if (item->HasDropDownItems) GateBelow(item->DropDownItems);
+            else if (!live_->Contains(item)) gated_->Add(item);
+        }
+    }
+
+    bool GatedKey(Keys keys) {
+        if (keys == Keys::None) return false;
+        for each (ToolStripMenuItem^ item in gated_)
+            if (item->ShortcutKeys == keys) return true;
+        return false;
+    }
+
+    void OnStop(Object^, EventArgs^) {
+        if (!busy_ || job_ == nullptr) { what_->Text = "nothing is running"; return; }
+        StopWork();
+    }
+
+    // Ends whatever the worker is waiting on - the compiler, the program, the debugger - so that
+    // the core sees it finish and hands the worker back. Build > Stop, and the close box.
+    void StopWork() {
+        if (job_ != nullptr) job_->stopped = true;
+        int ended = StopChildren();
+        what_->Text = ended > 0 ? "stopping ..." : "stopping - nothing had started yet ...";
     }
 
     System::Collections::Generic::List<int>^ BreaksFor(String^ file) {
@@ -3415,18 +3686,15 @@ private:
         return lines;
     }
 
-    int CaretLine() {
-        return text_->GetLineFromCharIndex(text_->SelectionStart) + 1;
-    }
-
     void OnToggleBreak(Object^, EventArgs^) {
+        if (text_ == nullptr) { what_->Text = "no file is open"; return; }
         if (path_ == nullptr) {
             what_->Text = "save the file first - a breakpoint is on a line of a file";
             return;
         }
 
         System::Collections::Generic::List<int>^ lines = BreaksFor(path_);
-        int line = CaretLine();
+        int line = CaretRow() + 1;
 
         if (lines->Contains(line)) {
             lines->Remove(line);
@@ -3435,13 +3703,13 @@ private:
         } else {
             lines->Add(line);
             if (ride_debugger_running(debugger_) != 0) {
-                array<Byte>^ bytes = Utf8Of(path_);
-                pin_ptr<Byte> pinned = &bytes[0];
-                ride_debugger_break(debugger_, reinterpret_cast<const char*>(pinned), line);
+                Utf8 named(path_);
+                ride_debugger_break(debugger_, named.c(), line);
             }
             what_->Text = String::Format("breakpoint on line {0}", line);
         }
-        Current()->gutter->Invalidate();
+        Sheet^ sheet = Current();
+        if (sheet != nullptr) sheet->gutter->Invalidate();
     }
 
     void SetEveryBreakpoint() {
@@ -3450,36 +3718,33 @@ private:
                       System::Collections::Generic::List<int>^> pair in breaks_) {
             String^ named = nullptr;
             if (!breakNames_->TryGetValue(pair.Key, named)) named = pair.Key;
-            array<Byte>^ bytes = Utf8Of(named);
-            pin_ptr<Byte> pinned = &bytes[0];
-            for each (int line in pair.Value)
-                ride_debugger_break(debugger_, reinterpret_cast<const char*>(pinned), line);
+            Utf8 file(named);
+            for each (int line in pair.Value) ride_debugger_break(debugger_, file.c(), line);
         }
     }
 
     void OnDebug(Object^, EventArgs^) { Debug(false); }
     void OnDebugProject(Object^, EventArgs^) { Debug(true); }
 
-    void Debug(bool project) {
-        if (ride_debugger_running(debugger_) != 0) {
+    // One step of a session already running, on the worker; a stop on the way ends the session.
+    void DebugStep(int what) {
+        if (!WhileBusy(gcnew Job(what))) {
+            EndDebugging();
+            what_->Text = "debugging stopped";
+            return;
+        }
+        ShowStop();
+    }
 
-            if (!WhileBusy(WorkResume)) return;
-            ShowStop();
+    void Debug(bool project) {
+        if (busy_) { what_->Text = StillWorking(); return; }
+        if (ride_debugger_running(debugger_) != 0) {
+            DebugStep(Job::DebugResume);
             return;
         }
 
         ForgetError();
-
-        array<Byte>^ archBytes = Utf8Of(arch_);
-        pin_ptr<Byte> arch = &archBytes[0];
-        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-        pin_ptr<Byte> cc1 = &cc1Bytes[0];
-        array<Byte>^ clBytes = Utf8Of(cl_);
-        pin_ptr<Byte> cl = &clBytes[0];
-        array<Byte>^ shcBytes = Utf8Of(shc_);
-        pin_ptr<Byte> shc = &shcBytes[0];
-        array<Byte>^ cxx1Bytes = Utf8Of(cxx1_);
-        pin_ptr<Byte> cxx1 = &cxx1Bytes[0];
+        Toolchain^ tools = ToolsNow();
 
         int kind = 0;
         int language = 0;
@@ -3492,103 +3757,119 @@ private:
                 what_->Text = why;
                 console_->Text = detail->Length > 0 ? why + "\r\n\r\n" + detail : why;
                 panel_->SelectedIndex = 0;
+                delete tools;
                 return;
             }
-            SaveEveryDirty();
+            if (!SaveEveryDirty()) { delete tools; return; }
             language = ride_project_target_language(project_);
 
-            if (ride_project_debug_plan(project_, reinterpret_cast<const char*>(cc1),
-                                       reinterpret_cast<const char*>(cl),
-                                       reinterpret_cast<const char*>(shc),
-                                       reinterpret_cast<const char*>(cxx1), toolKind_,
-                                       reinterpret_cast<const char*>(arch)) == 0) {
+            if (ride_project_debug_plan(project_, tools->cc1(), tools->cl(), tools->shc(),
+                                        tools->cxx1(), toolKind_, tools->arch()) == 0) {
                 what_->Text = FromUtf8(ride_project_why_not_debug(project_));
+                delete tools;
                 return;
             }
             kind = ride_project_debug_kind(project_);
         } else {
-            if (path_ == nullptr) { what_->Text = "open a file first"; return; }
-            OnSave(nullptr, nullptr);
+            if (path_ == nullptr) { what_->Text = "open a file first"; delete tools; return; }
+            if (!SaveIfChanged()) { delete tools; return; }
 
             language = LanguageNow();
             kind = ride_resolve(toolKind_, language);
             if (ride_can_compile(kind, language) == 0) {
                 what_->Text = FromUtf8(ride_refusal(kind, language));
+                delete tools;
                 return;
             }
 
             if (ride_debugger_stops_itself(kind) == 0 &&
-                ride_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
-                what_->Text = FromUtf8(
-                    ride_no_debugger_because(kind, reinterpret_cast<const char*>(arch)));
+                ride_debugger_for(kind, tools->arch()) == 0) {
+                what_->Text = FromUtf8(ride_no_debugger_because(kind, tools->arch()));
+                delete tools;
                 return;
             }
         }
 
-        if (ride_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
-            what_->Text = FromUtf8(ride_why_not_run(kind, reinterpret_cast<const char*>(arch)));
+        if (ride_runs_here(kind, tools->arch()) == 0) {
+            what_->Text = FromUtf8(ride_why_not_run(kind, tools->arch()));
+            delete tools;
             return;
         }
         if (config_ != RIDE_CONFIG_DEBUG) {
 
             what_->Text =
                 FromUtf8(ride_release_cannot_stop(kind)) + " - choose Debug build, then F8";
+            delete tools;
             return;
         }
 
         console_->Text = project ? "$ building the project for the debugger\r\n"
                                  : "$ building for the debugger\r\n";
         if (project) {
+            System::Text::StringBuilder^ listed = gcnew System::Text::StringBuilder();
             int howMany = ride_project_target_sources(project_);
             for (int i = 0; i < howMany; ++i)
-                console_->Text += "    " +
-                    FromUtf8(ride_project_target_source(project_, i)) + "\r\n";
+                listed->Append("    " + FromUtf8(ride_project_target_source(project_, i)) + "\r\n");
 
             int blind = ride_project_blind_groups(project_);
             for (int i = 0; i < blind; ++i)
-                console_->Text += "  (" + FromUtf8(ride_project_blind_group(project_, i)) +
-                    " carries no debug information - the debugger cannot stop in it)\r\n";
+                listed->Append("  (" + FromUtf8(ride_project_blind_group(project_, i)) +
+                               " carries no debug information - the debugger cannot stop in it)\r\n");
+            console_->AppendText(listed->ToString());
         }
         panel_->SelectedIndex = 0;
         what_->Text = "building for the debugger ...";
-        Application::DoEvents();
 
         if (built_ != nullptr) { ride_program_free(built_); built_ = nullptr; }
         if (targetBuilt_ != nullptr) { ride_build_free(targetBuilt_); targetBuilt_ = nullptr; }
 
-        workKind_ = kind;
-        workLanguage_ = language;
-        if (!WhileBusy(project ? WorkBuildTarget : WorkBuild)) return;
+        debugSource_ = project ? nullptr : path_;
+        Job^ job = gcnew Job(project ? Job::BuildTarget : Job::BuildProgram);
+        job->tools = tools;
+        job->toolKind = toolKind_;
+        job->kind = kind;
+        job->language = language;
+        job->config = config_;
+        if (!project) job->source = gcnew Utf8(path_);
+        bool finished = WhileBusy(job);
+        targetBuilt_ = job->build;
+        built_ = job->made;
+        int result = job->result;
+        delete job;
 
         if (project && targetBuilt_ == nullptr) {
-            what_->Text = FromUtf8(ride_project_target_why(project_));
+            what_->Text = finished ? FromUtf8(ride_project_target_why(project_)) : "stopped";
             return;
         }
 
-        console_->Text += FromUtf8(project ? ride_build_output(targetBuilt_)
-                                           : ride_program_output(built_))->Replace("\n", "\r\n");
-        ShowConsoleEnd();
+        Say(FromUtf8(project ? ride_build_output(targetBuilt_) : ride_program_output(built_)));
+        if (!finished) { EndDebugging(); what_->Text = "stopped"; return; }
 
-        if (workResult_ == 0) { DebugBuildFailed(project, kind); return; }
+        if (result == 0) { DebugBuildFailed(project, kind); return; }
 
-        workProgram_ = project ? FromUtf8(ride_project_target_program(project_))
-                               : FromUtf8(ride_program_path(built_));
+        String^ program = project ? FromUtf8(ride_project_target_program(project_))
+                                  : FromUtf8(ride_program_path(built_));
 
         what_->Text = ride_debugger_stops_itself(kind) != 0
                           ? "starting the program ..."
                           : "starting the debugger ...";
-        if (!WhileBusy(WorkStart)) return;
-        if (workResult_ == 0) {
-
-            what_->Text =
-                FromUtf8(ride_why_it_did_not_start(kind, reinterpret_cast<const char*>(arch)));
+        Job^ start = gcnew Job(Job::DebugStart);
+        start->tools = ToolsNow();
+        start->kind = kind;
+        start->program = gcnew Utf8(program);
+        finished = WhileBusy(start);
+        result = start->result;
+        delete start;
+        if (!finished) { EndDebugging(); what_->Text = "debugging stopped"; return; }
+        if (result == 0) {
+            Utf8 arch(arch_);
+            what_->Text = FromUtf8(ride_why_it_did_not_start(kind, arch.c()));
             EndDebugging();
             return;
         }
 
         SetEveryBreakpoint();
-        if (!WhileBusy(WorkGo)) return;
-        ShowStop();
+        DebugStep(Job::DebugGo);
     }
 
     void DebugBuildFailed(bool project, int kind) {
@@ -3602,33 +3883,21 @@ private:
             String^ message = FromUtf8(project ? ride_build_error_message(targetBuilt_)
                                                : ride_program_error_message(built_));
             String^ where = project ? FromUtf8(ride_build_error_file(targetBuilt_)) : nullptr;
-
-            if (where != nullptr && where->Length > 0) {
-                if (!System::IO::Path::IsPathRooted(where)) {
-                    array<Byte>^ relative = Utf8Of(where);
-                    pin_ptr<Byte> relativePin = &relative[0];
-                    where = FromUtf8(ride_project_absolute(
-                        project_, reinterpret_cast<const char*>(relativePin)));
-                }
-                if (System::IO::File::Exists(where)) OpenPath(where);
-            }
-
-            RememberError(line, column, message, where);
-            GoTo(line, column);
-            panel_->SelectedIndex = 0;
-            what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+            ShowError(line, column, message, where, debugSource_);
         } else {
             what_->Text = FromUtf8(ride_toolchain_name(kind)) +
                           " built no program - see the console";
         }
+        String^ said = what_->Text;
         EndDebugging();
+        what_->Text = said;
     }
 
     void OnDebugMenuOpening(Object^, EventArgs^) {
-        bool itsOwn = ride_debugging_shalimar(debugger_) != 0;
-        upTheStack_->Enabled = !itsOwn;
-        downTheStack_->Enabled = !itsOwn;
-        watchItem_->Enabled = !itsOwn;
+        bool itsOwn = !busy_ && ride_debugging_shalimar(debugger_) != 0;
+        upTheStack_->Enabled = !busy_ && !itsOwn;
+        downTheStack_->Enabled = !busy_ && !itsOwn;
+        watchItem_->Enabled = !busy_ && !itsOwn;
     }
 
     void OnStepOver(Object^, EventArgs^) { Step(0); }
@@ -3639,16 +3908,18 @@ private:
     void OnFrameDown(Object^, EventArgs^) { LookAlongStack(-1); }
 
     void Step(int how) {
+        if (busy_) { what_->Text = StillWorking(); return; }
         if (ride_debugger_running(debugger_) == 0) {
             what_->Text = "nothing is running - F8 starts it";
             return;
         }
-        int what = (how == 1) ? WorkStepInto : (how == 2) ? WorkStepOut : WorkStepOver;
-        if (!WhileBusy(what)) return;
-        ShowStop();
+        DebugStep(how == 1 ? Job::StepInto : how == 2 ? Job::StepOut : Job::StepOver);
     }
 
     void OnDebugStop(Object^, EventArgs^) {
+        // The program running under the worker is ended where it stands; the step that was waiting
+        // for it then sees the session gone and ends it on this thread, not under the worker.
+        if (busy_) { StopWork(); return; }
         if (ride_debugger_running(debugger_) == 0) {
             what_->Text = "nothing is running";
             return;
@@ -3662,13 +3933,34 @@ private:
 
         if (built_ != nullptr) { ride_program_free(built_); built_ = nullptr; }
         if (targetBuilt_ != nullptr) { ride_build_free(targetBuilt_); targetBuilt_ = nullptr; }
-        workProgram_ = nullptr;
         stopFile_ = nullptr;
         stopLine_ = 0;
         lookingFile_ = nullptr;
         lookingLine_ = 0;
-        ShowStoppedLine(-1);
-        Current()->gutter->Invalidate();
+        ShowStoppedLine(nullptr, -1);
+        for each (Sheet^ sheet in sheets_) sheet->gutter->Invalidate();
+    }
+
+    // Where the debugger says it stopped, as a file this window can open: its name as given when
+    // that exists, else under the project, else beside the file debugged, else an open file of that name.
+    String^ StopFileFor(String^ said) {
+        if (String::IsNullOrEmpty(said)) return said;
+        if (System::IO::File::Exists(said) && System::IO::Path::IsPathRooted(said)) return said;
+        if (!System::IO::Path::IsPathRooted(said)) {
+            Utf8 relative(said);
+            String^ under = FromUtf8(ride_project_absolute(project_, relative.c()));
+            if (under->Length > 0 && System::IO::File::Exists(under)) return under;
+            if (debugSource_ != nullptr) {
+                String^ beside = System::IO::Path::Combine(System::IO::Path::GetDirectoryName(debugSource_), said);
+                if (System::IO::File::Exists(beside)) return beside;
+            }
+        }
+        String^ leaf = System::IO::Path::GetFileName(said);
+        for each (Sheet^ sheet in sheets_)
+            if (sheet->path != nullptr &&
+                String::Equals(System::IO::Path::GetFileName(sheet->path), leaf, StringComparison::OrdinalIgnoreCase))
+                return sheet->path;
+        return said;
     }
 
     void ShowStop() {
@@ -3699,8 +3991,8 @@ private:
                 stopLine_ = 0;
                 lookingFile_ = nullptr;
                 lookingLine_ = 0;
-                ShowStoppedLine(-1);
-                Current()->gutter->Invalidate();
+                ShowStoppedLine(nullptr, -1);
+                for each (Sheet^ sheet in sheets_) sheet->gutter->Invalidate();
                 debug_->Text =
                     "stopped where there is no source to show\r\n\r\n"
                     "Stepping past the end of main arrives in the code that\r\n"
@@ -3718,14 +4010,18 @@ private:
             return;
         }
 
-        stopFile_ = FromUtf8(ride_stop_file(debugger_));
+        stopFile_ = StopFileFor(FromUtf8(ride_stop_file(debugger_)));
         stopLine_ = ride_stop_line(debugger_);
         String^ function = FromUtf8(ride_stop_function(debugger_));
 
-        if (path_ != nullptr && stopLine_ > 0 &&
-            System::IO::Path::GetFileName(stopFile_) == System::IO::Path::GetFileName(path_)) {
+        // The file stopped in comes to the front, whichever was there - F8 puts it in front of you.
+        if (stopLine_ > 0 && !SamePath(path_, stopFile_) && System::IO::File::Exists(stopFile_))
+            OpenPath(stopFile_);
+        if (stopLine_ > 0 && SamePath(path_, stopFile_)) {
             GoTo(stopLine_, 1);
-            ShowStoppedLine(stopLine_ - 1);
+            ShowStoppedLine(Current(), stopLine_ - 1);
+        } else {
+            ShowStoppedLine(nullptr, -1);
         }
 
         stopFunction_ = function;
@@ -3733,7 +4029,7 @@ private:
         lookingLine_ = 0;
         WriteDebugTab();
 
-        Current()->gutter->Invalidate();
+        for each (Sheet^ sheet in sheets_) sheet->gutter->Invalidate();
         what_->Text = String::Format("{0}:{1}{2}", System::IO::Path::GetFileName(stopFile_),
                                      stopLine_,
                                      String::IsNullOrEmpty(function) ? "" : " in " + function);
@@ -3758,18 +4054,54 @@ private:
         if (errorFile_ != nullptr && !SamePath(path_, errorFile_) &&
             System::IO::File::Exists(errorFile_))
             OpenPath(errorFile_);
+        if (text_ == nullptr) { what_->Text = "the file that error is in is not open"; return; }
         GoTo(errorLine_, errorColumn_);
         what_->Text = String::Format("{0}:{1}: error: {2}", errorLine_, errorColumn_,
                                      errorMessage_);
     }
 
+    // file:line:col (c90, cpp11, gcc, clang) or file(line,col) (cl, link): the drive letter's colon
+    // is passed over because a line number has to follow the separator.
+    static System::Text::RegularExpressions::Regex^ whereIs_ = gcnew System::Text::RegularExpressions::Regex(
+        "^\\s*(?<file>[^:(]*(?::[\\\\/][^:(]*)?)(?::(?<line>\\d+)(?::(?<col>\\d+))?:|\\((?<line>\\d+)(?:,(?<col>\\d+))?\\)\\s*:)");
+
+    // Enter or a double-click on the Console: the place the line under the caret names, and the
+    // remembered error only when that line names none.
+    void GoToConsoleLine() {
+        int row = console_->GetLineFromCharIndex(console_->SelectionStart);
+        String^ line = row >= 0 && row < console_->Lines->Length ? console_->Lines[row] : "";
+        System::Text::RegularExpressions::Match^ found = whereIs_->Match(line);
+        if (!found->Success) { GoToError(); return; }
+
+        String^ file = found->Groups["file"]->Value->Trim();
+        if (file->Length == 0) { GoToError(); return; }
+        int at = Int32::Parse(found->Groups["line"]->Value);
+        int column = found->Groups["col"]->Success ? Int32::Parse(found->Groups["col"]->Value) : 1;
+        if (!System::IO::Path::IsPathRooted(file)) {
+            String^ nearby = errorFile_ != nullptr ? errorFile_ : path_;
+            String^ beside = nearby == nullptr ? nullptr
+                : System::IO::Path::Combine(System::IO::Path::GetDirectoryName(nearby), file);
+            if (beside != nullptr && System::IO::File::Exists(beside)) {
+                file = beside;
+            } else {
+                Utf8 relative(file);
+                file = FromUtf8(ride_project_absolute(project_, relative.c()));
+            }
+        }
+        if (!System::IO::File::Exists(file)) { what_->Text = "no file " + file + " to go to"; return; }
+        if (!SamePath(path_, file)) OpenPath(file);
+        if (text_ == nullptr || !SamePath(path_, file)) return;
+        GoTo(at, column);
+        what_->Text = line->Trim();
+    }
+
     void OnConsoleKey(Object^, KeyEventArgs^ e) {
         if (e->KeyCode != Keys::Enter) return;
         e->SuppressKeyPress = true;
-        GoToError();
+        GoToConsoleLine();
     }
 
-    void OnConsoleDoubleClick(Object^, EventArgs^) { GoToError(); }
+    void OnConsoleDoubleClick(Object^, EventArgs^) { GoToConsoleLine(); }
 
     void WriteDebugTab() {
         System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();
@@ -3834,6 +4166,7 @@ private:
     void OnDebugDoubleClick(Object^, EventArgs^) { GoToFrame(); }
 
     void GoToFrame() {
+        if (busy_) { what_->Text = StillWorking(); return; }
         if (debug_->Lines->Length == 0) return;
         int row = debug_->GetLineFromCharIndex(debug_->SelectionStart);
         if (row < 0 || row >= debug_->Lines->Length) return;
@@ -3959,7 +4292,7 @@ private:
         if (file->Length > 0 && !SamePath(path_, file) && System::IO::File::Exists(file))
             OpenPath(file);
         GoTo(at, 1);
-        Current()->gutter->Invalidate();
+        for each (Sheet^ sheet in sheets_) sheet->gutter->Invalidate();
         what_->Text = String::Format("{0}:{1} in {2} - {3}",
                                      System::IO::Path::GetFileName(file), at,
                                      FromUtf8(ride_stack_function(debugger_, which)),
@@ -3968,9 +4301,11 @@ private:
     }
 
     void GoTo(int line, int column) {
+        if (text_ == nullptr) return;
         int row = line - 1;
+        int rows = LineCount(text_);
+        if (row >= rows) row = rows - 1;
         if (row < 0) row = 0;
-        if (row >= text_->Lines->Length) row = text_->Lines->Length - 1;
 
         int at = text_->GetFirstCharIndexFromLine(row) + CharacterColumn(row, column - 1);
         if (at < 0) at = 0;
@@ -4001,7 +4336,7 @@ private:
         int kind = ride_resolve(toolKind_, language);
         String^ said = FromUtf8(ride_language_name(language)) + "  " +
                        FromUtf8(ride_config_name(config_)) + "  " +
-                       PrettyCompiler(FromUtf8(ride_toolchain_name(kind)));
+                       FromUtf8(ride_toolchain_name(kind));
 
         if (toolKind_ == RIDE_TOOL_AUTO) said += "*";
 
@@ -4012,12 +4347,10 @@ private:
         // stands out. It changes whenever the resolved compiler does. (The
         // status bar still marks an auto-chosen compiler with a star.)
         if (compilerHint_ != nullptr) {
-            compilerHint_->Text = PrettyCompiler(FromUtf8(ride_toolchain_name(kind)));
+            compilerHint_->Text = FromUtf8(ride_toolchain_name(kind));
         }
     }
 
-    // The compilers' names are what the user sees - c90, cpp11, shalimar, from product.h - so there is nothing left to translate.
-    String^ PrettyCompiler(String^ name) { return name; }
 
     void ShowChoices() {
         for each (ToolStripMenuItem^ one in targetItems_)
@@ -4028,12 +4361,14 @@ private:
         toolClItem_->Checked = toolKind_ == RIDE_TOOL_MSVC;
         toolShcItem_->Checked = toolKind_ == RIDE_TOOL_SHC;
         if (langAutoItem_ != nullptr) {
-            langAutoItem_->Checked = languageChoice_ < 0;
-            langCItem_->Checked = languageChoice_ == RIDE_LANG_C;
-            langCppItem_->Checked = languageChoice_ == RIDE_LANG_CPP;
-            langShalimarItem_->Checked = languageChoice_ == RIDE_LANG_SHALIMAR;
-            langJsonItem_->Checked = languageChoice_ == RIDE_LANG_JSON;
-            langTextItem_->Checked = languageChoice_ == RIDE_LANG_PLAIN;
+            Sheet^ sheet = Current();
+            int chosen = sheet == nullptr ? -1 : sheet->language;
+            langAutoItem_->Checked = chosen < 0;
+            langCItem_->Checked = chosen == RIDE_LANG_C;
+            langCppItem_->Checked = chosen == RIDE_LANG_CPP;
+            langShalimarItem_->Checked = chosen == RIDE_LANG_SHALIMAR;
+            langJsonItem_->Checked = chosen == RIDE_LANG_JSON;
+            langTextItem_->Checked = chosen == RIDE_LANG_PLAIN;
         }
         debugConfigItem_->Checked = config_ == RIDE_CONFIG_DEBUG;
         releaseConfigItem_->Checked = config_ == RIDE_CONFIG_RELEASE;
@@ -4114,7 +4449,10 @@ private:
     void OnToolShc(Object^, EventArgs^) { ChooseTool(RIDE_TOOL_SHC, "compiler: shalimar"); }
 
     void ChooseLanguage(int language, String^ said) {
-        languageChoice_ = language;
+        Sheet^ sheet = Current();
+        if (sheet == nullptr) { what_->Text = "no file is open - the language is chosen for a file"; return; }
+        sheet->language = language;
+        stateGood_ = false;
         ShowChoices();
         RefreshDebugTab();
         Recolour();
@@ -4125,7 +4463,7 @@ private:
     }
     void OnConvert(Object^, EventArgs^) {
         if (text_ == nullptr) { what_->Text = "no file is open"; return; }
-        if (busy_) { what_->Text = "still working - give it a moment"; return; }
+        if (busy_) { what_->Text = StillWorking(); return; }
         ForgetError();
         if (path_ == nullptr) { what_->Text = "open a file first"; return; }
 
@@ -4136,46 +4474,42 @@ private:
             return;
         }
 
-        OnSave(nullptr, nullptr);
-        if (path_ == nullptr) return;
+        if (!SaveIfChanged()) return;
 
-        char* whereRaw = ride_find_converter();
-        String^ converter = FromUtf8(whereRaw);
-        ride_free(whereRaw);
+        String^ converter = TakeUtf8(ride_find_converter());
         if (converter->Length == 0) {
             what_->Text = "no c2s beside this editor - build Converter-C2S here, or set C2S";
             return;
         }
 
-        array<Byte>^ sourceBytes = Utf8Of(path_);
-        pin_ptr<Byte> source = &sourceBytes[0];
-
-        char* namedRaw =
-            ride_converted_name(reinterpret_cast<const char*>(source), toShalimar);
-        String^ produced = FromUtf8(namedRaw);
-        ride_free(namedRaw);
-        if (produced->Length == 0 || String::Equals(produced, path_)) {
+        Utf8 source(path_);
+        String^ produced = TakeUtf8(ride_converted_name(source.c(), toShalimar));
+        if (produced->Length == 0 || SamePath(produced, path_)) {
             what_->Text = "that would write over the file it is reading";
             return;
         }
 
-        array<Byte>^ converterBytes = Utf8Of(converter);
-        pin_ptr<Byte> where = &converterBytes[0];
-        array<Byte>^ producedBytes = Utf8Of(produced);
-        pin_ptr<Byte> into = &producedBytes[0];
-
         console_->Text = "$ c2s " + (toShalimar ? "--to-shalimar " : "--to-c ") +
                          produced + "\r\n";
         panel_->SelectedIndex = 0;
-        Application::DoEvents();
+        what_->Text = "converting ...";
 
-        RIDEConversion* made =
-            ride_convert(reinterpret_cast<const char*>(where),
-                            reinterpret_cast<const char*>(source),
-                            reinterpret_cast<const char*>(into), toShalimar);
+        Job^ job = gcnew Job(Job::Convert);
+        job->program = gcnew Utf8(converter);
+        job->source = gcnew Utf8(path_);
+        job->into = gcnew Utf8(produced);
+        job->toShalimar = toShalimar;
+        bool finished = WhileBusy(job);
+        RIDEConversion* made = job->converted;
+        delete job;
+        if (made == nullptr) { what_->Text = finished ? "could not run " + converter : "stopped"; return; }
 
-        console_->Text += FromUtf8(ride_conversion_output(made))->Replace("\n", "\r\n");
-        ShowConsoleEnd();
+        Say(FromUtf8(ride_conversion_output(made)));
+        if (!finished) {
+            ride_conversion_free(made);
+            what_->Text = "stopped";
+            return;
+        }
 
         if (ride_conversion_ran(made) == 0) {
             what_->Text = "could not run " + converter;
@@ -4197,6 +4531,28 @@ private:
             ? System::IO::Path::GetFileName(written) + " - converted"
             : System::IO::Path::GetFileName(written) +
                   " - written with unconverted parts marked; search for BEYOND";
+    }
+
+    // The manual, in the browser: help\manual.html from the installation, or from the tree it was built in.
+    void OnHelpContents(Object^, EventArgs^) {
+        array<String^>^ places = gcnew array<String^>{
+            System::IO::Path::Combine(AppDir(), "help"),
+            System::IO::Path::Combine(Application::StartupPath, "help"),
+            System::IO::Path::Combine(System::IO::Path::Combine(AppDir(), ".."), "help")};
+        for each (String^ place in places) {
+            String^ page = System::IO::Path::Combine(place, "manual.html");
+            if (!System::IO::File::Exists(page)) continue;
+            try {
+                System::Diagnostics::ProcessStartInfo^ start = gcnew System::Diagnostics::ProcessStartInfo(page);
+                start->UseShellExecute = true;
+                delete System::Diagnostics::Process::Start(start);
+                what_->Text = "the manual - " + page;
+            } catch (Exception^ problem) {
+                what_->Text = "could not open " + page + " - " + problem->Message;
+            }
+            return;
+        }
+        what_->Text = "the manual is not beside this editor - help\\manual.html";
     }
 
     void OnLangC(Object^, EventArgs^) { ChooseLanguage(RIDE_LANG_C, "language: C"); }
