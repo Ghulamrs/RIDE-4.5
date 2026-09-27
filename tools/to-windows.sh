@@ -29,6 +29,7 @@
 #   ./tools/to-windows.sh              build the solution and run both suites
 #   ./tools/to-windows.sh build        the console editor only, no suites
 #   ./tools/to-windows.sh gui          also msbuild the window on its own
+#   ./tools/to-windows.sh solution     every program the editor drives, no suites
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -48,6 +49,7 @@ ASM_DIR="$ROOT\\ASM6x"
 MASM_DIR="$ROOT\\MASM"
 LINK_DIR="$ROOT\\LINK"
 LNK6X_DIR="$ROOT\\LNK6x"
+C2S_DIR="$ROOT\\Converter-C2S"
 WHAT="${1:-check}"
 # A directory of its own: to-windows.sh and to-linux.sh name their archives
 # alike, and run at once they overwrote each other's (a truncated tar).
@@ -94,6 +96,9 @@ tar --no-mac-metadata \
 # tests/ref holds the .out images TI's lnk6x made, which its bed is held to.
 ( cd ../LNK6x && tar --no-mac-metadata --exclude '* 2.*' --exclude 'build' --exclude 'x64' \
     -czf "$TMP/lnk6x-src.tgz" src tests Makefile lnk6x.vcxproj README.md ) || exit 2
+# c2s: the converter, beside this checkout as ../Converter-C2S; RIDE.sln builds it, so a fresh root needs it.
+( cd ../Converter-C2S && tar --no-mac-metadata --exclude '* 2.*' --exclude '*.exe' --exclude 'obj' \
+    -czf "$TMP/c2s-src.tgz" src tests c2s.vcxproj Makefile README.md ) || exit 2
 # shalimar: what shc.vcxproj compiles - src and the runtime it builds beside the
 # binary - and nothing built here; lib/ holds this machine's archives.
 ( cd ../VM6747/Compiler-Si && tar --no-mac-metadata --exclude '* 2.*' --exclude '*.exe' --exclude 'lib' --exclude 'out-*' \
@@ -102,7 +107,7 @@ tar --no-mac-metadata \
 say "copying to $BOX:$DIR and $VM_ROOT"
 # One directory per call: in cmd, `if not exist X mkdir X & if ...` makes the
 # second `if` part of the first one's body, so it runs only when X was missing.
-for d in "$DIR" "$CC1I_DIR" "$CXX1_DIR" "$SHCI_DIR" "$EMU_DIR" "$ASM_DIR" "$MASM_DIR" "$LINK_DIR" "$LNK6X_DIR"; do
+for d in "$DIR" "$CC1I_DIR" "$CXX1_DIR" "$SHCI_DIR" "$EMU_DIR" "$ASM_DIR" "$MASM_DIR" "$LINK_DIR" "$LNK6X_DIR" "$C2S_DIR"; do
   ssh -n "$BOX" "if not exist \"$d\" mkdir \"$d\"" || exit 2
 done
 scp -q "$TMP/ride-src.tgz" "$BOX:$DIR\\ride-src.tgz" || exit 2
@@ -113,6 +118,7 @@ scp -q "$TMP/asm6x-src.tgz" "$BOX:$ASM_DIR\\asm6x-src.tgz" || exit 2
 scp -q "$TMP/masm-src.tgz" "$BOX:$MASM_DIR\\masm-src.tgz" || exit 2
 scp -q "$TMP/link-src.tgz" "$BOX:$LINK_DIR\\link-src.tgz" || exit 2
 scp -q "$TMP/lnk6x-src.tgz" "$BOX:$LNK6X_DIR\\lnk6x-src.tgz" || exit 2
+scp -q "$TMP/c2s-src.tgz" "$BOX:$C2S_DIR\\c2s-src.tgz" || exit 2
 scp -q "$TMP/shalimar-src.tgz" "$BOX:$SHCI_DIR\\shalimar-src.tgz" || exit 2
 
 # ---- the script that does the work there -----------------------------------
@@ -132,7 +138,7 @@ BIN="$DIR\\bin"
   # hand-run experiments that are not ours.
   for pair in "$DIR ride" "$CC1I_DIR c90" "$CXX1_DIR cxx1" \
               "$EMU_DIR vm6747" "$ASM_DIR asm6x" "$MASM_DIR masm" "$LINK_DIR link" \
-              "$LNK6X_DIR lnk6x" "$SHCI_DIR shalimar"; do
+              "$LNK6X_DIR lnk6x" "$SHCI_DIR shalimar" "$C2S_DIR c2s"; do
     set -- $pair
     printf 'cd /d "%s" || exit /b 2\r\n' "$1"
     printf 'if exist tests rmdir /s /q tests\r\n'
@@ -140,6 +146,8 @@ BIN="$DIR\\bin"
     printf 'del /q %s-src.tgz\r\n' "$2"
   done
   printf 'cd /d "%s"\r\n' "$DIR"
+  # A TEMP of this root's own: build.bat keeps a fixed file there, and two roots built at once collided on it.
+  printf 'if not exist "%s\\tmp" mkdir "%s\\tmp"\r\nset TEMP=%s\\tmp\r\nset TMP=%s\\tmp\r\n' "$DIR" "$DIR" "$DIR" "$DIR"
   printf 'set CC1=%s\\c90.exe\r\n' "$BIN"
   printf 'set CXX1=%s\\cpp11.exe\r\n' "$BIN"
   printf 'set VM6747=%s\\vm6747.exe\r\n' "$BIN"
@@ -150,6 +158,8 @@ BIN="$DIR\\bin"
       printf 'call build.bat\r\n' ;;
     gui)
       printf 'call build.bat gui\r\n' ;;
+    solution)
+      printf 'call build.bat solution\r\n' ;;
     *)
       # The solution first - every program the editor drives, into
       # x64\Release - and then the two suites against exactly those.
