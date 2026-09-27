@@ -4,7 +4,10 @@
 
 #include <cstdio>
 
+#include <chrono>
 #include <fstream>
+#include <mutex>
+#include <thread>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -35,6 +38,10 @@
 #include "toolchain.h"
 #include "workspace.h"
 #include "utf8.h"
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 // What these tests used of <filesystem>, which is C++17 and so not here, over src/path.cpp - the same code the editor uses.
 namespace file {
@@ -4933,6 +4940,193 @@ void theWindowsProjectDebug() {
     file::remove_all(shmDir);
 }
 
+// ---- a program that runs while the window watches ----------------------------------------------
+
+// What the running-program callback heard, gathered on its thread and read on this one.
+struct Heard {
+    std::mutex lock;
+    std::string out, err, build;
+    int pieces = 0;
+    bool last = false;
+};
+
+void hear(void* user, const char* bytes, int size, int stream) {
+    Heard* heard = static_cast<Heard*>(user);
+    std::lock_guard<std::mutex> held(heard->lock);
+    if (bytes == 0) { heard->last = true; return; }
+    std::string piece(bytes, static_cast<size_t>(size));
+    if (stream == RIDE_STREAM_ERR) heard->err += piece;
+    else if (stream == RIDE_STREAM_BUILD) heard->build += piece;
+    else heard->out += piece;
+    ++heard->pieces;
+}
+
+// Whether the program's output came to hold `what` within the time - it is read as it comes.
+bool heardIt(Heard& heard, const std::string& what, int timeoutMs = 10000, bool fromErr = false) {
+    for (int waited = 0; waited <= timeoutMs; waited += 10) {
+        {
+            std::lock_guard<std::mutex> held(heard.lock);
+            if ((fromErr ? heard.err : heard.out).find(what) != std::string::npos) return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+}
+
+std::string heardOut(Heard& heard) {
+    std::lock_guard<std::mutex> held(heard.lock);
+    return heard.out;
+}
+
+// The addendum to both reviews: scanf saw end of file at once, because every run had the null
+// device for its input. A script stands in for a program here, and a real one is built when $CC1
+// names a compiler; each reads what is sent, sees end of file when told, and is stopped when told.
+void aProgramThatReads() {
+    std::printf("a program that reads what it is sent\n");
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ride-input-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+
+#ifdef _WIN32
+    std::string talker = editor::path::join(dir, "talker.cmd");
+    writeSource(talker,
+                "@echo off\r\n"
+                "echo first\r\n"
+                "set /p line=\r\n"
+                "echo got %line%\r\n"
+                "set second=\r\n"
+                "set /p second=\r\n"
+                "if \"%second%\"==\"\" echo end of input\r\n"
+                "echo err line 1>&2\r\n"
+                "exit /b 3\r\n");
+    std::string spinner = editor::path::join(dir, "spinner.cmd");
+    writeSource(spinner, "@echo off\r\n:again\r\ngoto again\r\n");
+#else
+    std::string talker = editor::path::join(dir, "talker.sh");
+    writeSource(talker,
+                "#!/bin/sh\n"
+                "echo first\n"
+                "read line\n"
+                "echo \"got $line\"\n"
+                "read second || echo \"end of input\"\n"
+                "echo \"err line\" >&2\n"
+                "exit 3\n");
+    std::string spinner = editor::path::join(dir, "spinner.sh");
+    writeSource(spinner, "#!/bin/sh\nsleep 300 &\nwhile :; do :; done\n");
+    chmod(talker.c_str(), 0755);
+    chmod(spinner.c_str(), 0755);
+#endif
+
+    Heard heard;
+    RIDERunning* running = ride_run_built_start(talker.c_str(), hear, &heard);
+    check(running != 0, "a program starts with an input of its own");
+    check(heardIt(heard, "first"), "its output arrives while it is still running");
+    check(ride_running_done(running) == 0, "and it is still running, waiting to be told something");
+    check(ride_running_send(running, "hello\n", 6) != 0, "a line is sent to it");
+    check(heardIt(heard, "got hello"), "and what it read is the line that was sent");
+    ride_running_close_input(running);
+    check(heardIt(heard, "end of input"), "closing the input is end of file to its next read");
+    check(heardIt(heard, "err line", 10000, true), "what it says on stderr comes apart");
+    check(ride_running_wait(running, 10000) != 0, "and then it ends");
+    check(ride_running_status(running) == 3, "with the status it exited with");
+    check(ride_running_ran(running) != 0 && ride_running_stopped(running) == 0,
+          "having run, and not been stopped");
+    check(ride_running_send(running, "late\n", 5) == 0, "nothing more can be sent to it");
+    {
+        std::lock_guard<std::mutex> held(heard.lock);
+        check(heard.last, "and the last call has said the run is over");
+    }
+    ride_running_free(running);
+
+    Heard spun;
+    running = ride_run_built_start(spinner.c_str(), hear, &spun);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    check(ride_running_done(running) == 0, "a program that never ends is still going");
+    ride_running_stop(running);
+    check(ride_running_wait(running, 5000) != 0, "Stop ends it promptly");
+    check(ride_running_stopped(running) != 0, "and says it was stopped");
+    ride_running_free(running);
+
+    // Stop before anything was built: the build is not run, and the run says it was stopped.
+    Heard early;
+    running = ride_run_built_start(talker.c_str(), hear, &early);
+    ride_running_stop(running);
+    check(ride_running_wait(running, 10000) != 0, "Stop at once ends the run too");
+    ride_running_free(running);
+
+    // A build is stopped from another thread: the command running is killed and the build fails.
+    {
+        std::string output;
+        std::thread stopper([] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            ride_cancel_builds();
+        });
+        editor::BuildScope scope;
+#ifdef _WIN32
+        int status = editor::runCaptured("ping -n 30 127.0.0.1", output);
+#else
+        int status = editor::runCaptured("sleep 30", output);
+#endif
+        stopper.join();
+        check(status == editor::kStoppedStatus, "a build's command is stopped when asked");
+        check(output.find("[stopped]") != std::string::npos, "and its output says so");
+        check(editor::buildCancelled(), "and the build knows it was stopped");
+        output.clear();
+        editor::runCaptured("echo never", output);
+        check(output.find("never") == std::string::npos,
+              "nothing more of that build runs after it");
+    }
+    {
+        std::string output;
+        editor::BuildScope fresh;
+        editor::runCaptured("echo after", output);
+        check(output.find("after") != std::string::npos, "and a build begun afterwards runs");
+    }
+
+    const char* cc1 = std::getenv("CC1");
+    if (!cc1 || !*cc1 || !editor::path::exists(cc1)) {
+        std::printf("  (no $CC1, so no C program reads with scanf here)\n");
+        editor::path::removeTree(dir);
+        return;
+    }
+    std::string source = editor::path::join(dir, "asks.c");
+    writeSource(source,
+                "#include <stdio.h>\n"
+                "\n"
+                "int main(void)\n"
+                "{\n"
+                "    int n = 0;\n"
+                "    char line[100];\n"
+                "    printf(\"a number? \");\n"
+                "    if (scanf(\"%d\", &n) != 1) { printf(\"no number\\n\"); return 1; }\n"
+                "    getchar();\n"
+                "    printf(\"twice is %d\\n\", 2 * n);\n"
+                "    if (fgets(line, sizeof line, stdin)) printf(\"read: %s\", line);\n"
+                "    if (fgets(line, sizeof line, stdin) == 0) printf(\"and then the end\\n\");\n"
+                "    return 0;\n"
+                "}\n");
+    Heard asked;
+    running = ride_run_start(0, cc1, "cl", "shc", "cxx1", RIDE_TOOL_CC1, source.c_str(),
+                             RIDE_LANG_C, editor::hostArch(), RIDE_CONFIG_DEBUG, hear, &asked);
+#ifndef _WIN32
+    check(heardIt(asked, "a number? ", 60000),
+          "a C program's prompt shows before it reads, with no fflush");
+#endif
+    check(ride_running_send(running, "21\n", 3) != 0, "scanf is sent a number");
+    check(heardIt(asked, "twice is 42", 60000), "and scanf reads it");
+    ride_running_send(running, "a line\n", 7);
+    check(heardIt(asked, "read: a line"), "fgets reads the next line");
+    ride_running_close_input(running);
+    check(heardIt(asked, "and then the end"), "and sees end of file when the input is closed");
+    check(ride_running_wait(running, 10000) != 0 && ride_running_status(running) == 0,
+          "and the program ends as it meant to");
+    check(ride_running_built(running) != 0 && ride_running_has_error(running) == 0,
+          "built, with nothing to say about the source");
+    ride_running_free(running);
+    editor::path::removeTree(dir);
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -4946,6 +5140,7 @@ int main(int argc, char** argv) {
     whereAFileBelongs();
     jsonIsALanguage();
     talkingToAChild();
+    aProgramThatReads();
     whatADebuggerSays();
     aStepThatWentNowhere();
     whatACallStackLooksLike();

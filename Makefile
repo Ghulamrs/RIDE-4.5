@@ -200,7 +200,7 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             winforms/bridge.cpp winforms/bridge.h src/compile.h src/convert.h \
             src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
-	$(CXX) $(CXXFLAGS) -Isrc -Iwinforms -o $@ tests/test.cpp winforms/bridge.cpp \
+	$(CXX) $(CXXFLAGS) -pthread -Isrc -Iwinforms -o $@ tests/test.cpp winforms/bridge.cpp \
 	    src/compile.cpp src/convert.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \

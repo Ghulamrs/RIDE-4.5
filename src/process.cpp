@@ -1,5 +1,6 @@
 #include "process.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -8,9 +9,13 @@
 #include <windows.h>
 #else
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 #endif
 
@@ -40,8 +45,16 @@ struct Process::Held {
     HANDLE fromChild;
     HANDLE child;
     void* console;
+    // startCaptured and startInteractive only: the error stream, the job, what ended.
+    HANDLE errFromChild;
+    HANDLE job;
+    bool grouped;
+    bool outOpen, errOpen;
+    std::atomic<bool> reaped;
+    int status;
 
-    Held() : toChild(NULL), fromChild(NULL), child(NULL), console(NULL) {}
+    Held() : toChild(NULL), fromChild(NULL), child(NULL), console(NULL), errFromChild(NULL),
+             job(NULL), grouped(false), outOpen(false), errOpen(false), reaped(false), status(0) {}
 };
 
 #else
@@ -50,16 +63,33 @@ struct Process::Held {
     int toChild;
     int fromChild;
     pid_t child;
+    // startCaptured and startInteractive only: the error stream, what ended, and - the input
+    // being a terminal - the character that ends a line of it and whether one is half written.
+    int errFromChild;
+    bool grouped;
+    bool outOpen, errOpen;
+    std::atomic<bool> reaped;
+    int status;
+    bool terminal;
+    char endOfInput;
+    bool midLine;
 
-    Held() : toChild(-1), fromChild(-1), child(-1) {}
+    Held() : toChild(-1), fromChild(-1), child(-1), errFromChild(-1), grouped(false),
+             outOpen(false), errOpen(false), reaped(false), status(0), terminal(false),
+             endOfInput(4), midLine(false) {}
 };
 
 #endif
 
-Process::Process() : held_(new Held()), running_(false) {}
+Process::Process() : held_(new Held()), running_(false), killed_(false) {}
 
 Process::~Process() {
-    stop();
+    if (held_->grouped) {
+        if (!held_->reaped) kill();
+        finish();
+    } else {
+        stop();
+    }
     delete held_;
 }
 
@@ -238,6 +268,249 @@ void Process::stop() {
 
 namespace {
 
+// A child in a job of its own, killed with everything it started when the job is ended, and handed
+// only the handles named - so a pipe made on another thread for another child is not inherited
+// and cannot hold this one's output open. Suspended until it is in the job, so nothing escapes it.
+bool launchInJob(const std::string& line, HANDLE input, HANDLE output, HANDLE errors,
+                 HANDLE& child, HANDLE& job) {
+    job = CreateJobObjectA(NULL, NULL);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
+        std::memset(&limits, 0, sizeof limits);
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits);
+    }
+
+    STARTUPINFOEXA startup;
+    std::memset(&startup, 0, sizeof startup);
+    startup.StartupInfo.cb = sizeof startup;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = input;
+    startup.StartupInfo.hStdOutput = output;
+    startup.StartupInfo.hStdError = errors;
+
+    HANDLE handed[3];
+    DWORD count = 0;
+    handed[count++] = input;
+    handed[count++] = output;
+    if (errors != output) handed[count++] = errors;
+
+    SIZE_T room = 0;
+    InitializeProcThreadAttributeList(NULL, 1, 0, &room);
+    std::vector<char> attributes(room ? room : 1);
+    LPPROC_THREAD_ATTRIBUTE_LIST list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(&attributes[0]);
+    bool listed = room != 0 && InitializeProcThreadAttributeList(list, 1, 0, &room) &&
+                  UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handed,
+                                            count * sizeof(HANDLE), NULL, NULL);
+    DWORD flags = CREATE_NO_WINDOW | CREATE_SUSPENDED;
+    if (listed) {
+        startup.lpAttributeList = list;
+        flags |= EXTENDED_STARTUPINFO_PRESENT;
+    }
+
+    std::vector<char> writable(line.begin(), line.end());
+    writable.push_back('\0');
+    PROCESS_INFORMATION made;
+    std::memset(&made, 0, sizeof made);
+    BOOL ok = CreateProcessA(NULL, &writable[0], NULL, NULL, TRUE, flags, NULL, NULL,
+                             &startup.StartupInfo, &made);
+    if (listed) DeleteProcThreadAttributeList(list);
+    if (!ok) {
+        if (job) CloseHandle(job);
+        job = NULL;
+        return false;
+    }
+    if (job && !AssignProcessToJobObject(job, made.hProcess)) {
+        CloseHandle(job);
+        job = NULL;
+    }
+    ResumeThread(made.hThread);
+    CloseHandle(made.hThread);
+    child = made.hProcess;
+    return true;
+}
+
+bool inheritablePipe(HANDLE& reads, HANDLE& writes, bool childReads) {
+    SECURITY_ATTRIBUTES inherit;
+    inherit.nLength = sizeof inherit;
+    inherit.lpSecurityDescriptor = NULL;
+    inherit.bInheritHandle = TRUE;
+    if (!CreatePipe(&reads, &writes, &inherit, 0)) return false;
+    SetHandleInformation(childReads ? writes : reads, HANDLE_FLAG_INHERIT, 0);
+    return true;
+}
+
+}
+
+// Through cmd, as popen ran it: a build's command is a shell line. The input is NUL - nothing
+// run from here may read the editor's own - and both streams go to one pipe, as 2>&1 put them.
+bool Process::startCaptured(const std::string& command) {
+    if (running_) return false;
+
+    SECURITY_ATTRIBUTES inherit;
+    inherit.nLength = sizeof inherit;
+    inherit.lpSecurityDescriptor = NULL;
+    inherit.bInheritHandle = TRUE;
+    HANDLE nothing = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 &inherit, OPEN_EXISTING, 0, NULL);
+    if (nothing == INVALID_HANDLE_VALUE) return false;
+    HANDLE weRead = NULL, childWrites = NULL;
+    if (!inheritablePipe(weRead, childWrites, false)) { CloseHandle(nothing); return false; }
+
+    HANDLE child = NULL, job = NULL;
+    bool ok = launchInJob("cmd /c \"" + command + "\"", nothing, childWrites, childWrites,
+                          child, job);
+    CloseHandle(nothing);
+    CloseHandle(childWrites);
+    if (!ok) { CloseHandle(weRead); return false; }
+
+    held_->fromChild = weRead;
+    held_->child = child;
+    held_->job = job;
+    held_->grouped = true;
+    held_->outOpen = true;
+    held_->errOpen = false;
+    held_->reaped = false;
+    killed_ = false;
+    running_ = true;
+    return true;
+}
+
+// Not through cmd: the line is the program and its quoted arguments, and cmd would read a '%' or
+// a '&' in a path. Pipes and not a console, so the program's C library holds its output until it
+// fills a buffer, flushes or ends - a prompt with no fflush shows late. README.md, "Input".
+bool Process::startInteractive(const std::string& command) {
+    if (running_) return false;
+
+    HANDLE childReads = NULL, weWrite = NULL, weRead = NULL, childWrites = NULL;
+    HANDLE errRead = NULL, errWrites = NULL;
+    if (!inheritablePipe(childReads, weWrite, true)) return false;
+    if (!inheritablePipe(weRead, childWrites, false)) {
+        CloseHandle(childReads); CloseHandle(weWrite);
+        return false;
+    }
+    if (!inheritablePipe(errRead, errWrites, false)) {
+        CloseHandle(childReads); CloseHandle(weWrite);
+        CloseHandle(weRead); CloseHandle(childWrites);
+        return false;
+    }
+
+    HANDLE child = NULL, job = NULL;
+    bool ok = launchInJob(command, childReads, childWrites, errWrites, child, job);
+    CloseHandle(childReads);
+    CloseHandle(childWrites);
+    CloseHandle(errWrites);
+    if (!ok) {
+        CloseHandle(weWrite); CloseHandle(weRead); CloseHandle(errRead);
+        return false;
+    }
+
+    held_->toChild = weWrite;
+    held_->fromChild = weRead;
+    held_->errFromChild = errRead;
+    held_->child = child;
+    held_->job = job;
+    held_->grouped = true;
+    held_->outOpen = true;
+    held_->errOpen = true;
+    held_->reaped = false;
+    killed_ = false;
+    running_ = true;
+    return true;
+}
+
+bool Process::send(const char* bytes, size_t size) {
+    if (!running_ || !held_->toChild) return false;
+    size_t written = 0;
+    while (written < size) {
+        DWORD went = 0;
+        if (!WriteFile(held_->toChild, bytes + written, static_cast<DWORD>(size - written), &went,
+                       NULL) || went == 0)
+            return false;
+        written += went;
+    }
+    return true;
+}
+
+void Process::closeInput() {
+    if (!running_ || !held_->toChild) return;
+    CloseHandle(held_->toChild);
+    held_->toChild = NULL;
+}
+
+int Process::readAny(std::string& into, bool* isStderr, int timeoutMs) {
+    if (isStderr) *isStderr = false;
+    for (int waited = 0;; waited += 5) {
+        HANDLE pipes[2] = {held_->outOpen ? held_->fromChild : NULL,
+                           held_->errOpen ? held_->errFromChild : NULL};
+        if (!pipes[0] && !pipes[1]) return -1;
+        for (int i = 0; i < 2; ++i) {
+            if (!pipes[i]) continue;
+            DWORD ready = 0;
+            if (!PeekNamedPipe(pipes[i], NULL, 0, NULL, &ready, NULL)) {
+                if (i == 0) held_->outOpen = false;
+                else held_->errOpen = false;
+                continue;
+            }
+            if (ready == 0) continue;
+            char chunk[4096];
+            DWORD got = 0;
+            DWORD want = ready < sizeof chunk ? ready : static_cast<DWORD>(sizeof chunk);
+            if (!ReadFile(pipes[i], chunk, want, &got, NULL) || got == 0) {
+                if (i == 0) held_->outOpen = false;
+                else held_->errOpen = false;
+                continue;
+            }
+            into.append(chunk, got);
+            if (isStderr) *isStderr = i == 1;
+            return 1;
+        }
+        if (!held_->outOpen && !held_->errOpen) return -1;
+        if (waited >= timeoutMs) return 0;
+        Sleep(5);
+    }
+}
+
+bool Process::ended(int* status) {
+    if (!held_->child) return true;
+    if (!held_->reaped && WaitForSingleObject(held_->child, 0) == WAIT_OBJECT_0) {
+        DWORD code = 0;
+        GetExitCodeProcess(held_->child, &code);
+        held_->status = static_cast<int>(code);
+        held_->reaped = true;
+    }
+    if (held_->reaped && status) *status = held_->status;
+    return held_->reaped;
+}
+
+int Process::finish() {
+    if (held_->child) {
+        WaitForSingleObject(held_->child, INFINITE);
+        DWORD code = 0;
+        GetExitCodeProcess(held_->child, &code);
+        held_->status = static_cast<int>(code);
+        held_->reaped = true;
+        CloseHandle(held_->child);
+        held_->child = NULL;
+    }
+    if (held_->job) { CloseHandle(held_->job); held_->job = NULL; }
+    if (held_->toChild) { CloseHandle(held_->toChild); held_->toChild = NULL; }
+    if (held_->fromChild) { CloseHandle(held_->fromChild); held_->fromChild = NULL; }
+    if (held_->errFromChild) { CloseHandle(held_->errFromChild); held_->errFromChild = NULL; }
+    held_->outOpen = held_->errOpen = false;
+    running_ = false;
+    return held_->status;
+}
+
+void Process::kill() {
+    if (!held_->child || held_->reaped) return;
+    killed_ = true;
+    if (held_->job) TerminateJobObject(held_->job, 1);
+    else TerminateProcess(held_->child, 1);
+}
+
+namespace {
+
 bool waitingToBeRead(HANDLE from) {
     DWORD ready = 0;
     if (!PeekNamedPipe(from, NULL, 0, NULL, &ready, NULL)) return true;
@@ -332,7 +605,7 @@ void Process::stop() {
         if (done == held_->child || done < 0) break;
         usleep(10 * 1000);
         if (waited == 199) {
-            kill(held_->child, SIGKILL);
+            ::kill(held_->child, SIGKILL);
             waitpid(held_->child, &status, 0);
         }
     }
@@ -365,6 +638,230 @@ int readSome(int from, char* into, size_t room, size_t& got, int timeoutMs) {
     }
 }
 
+}
+
+
+namespace {
+
+void closeOnExec(int fd) {
+    int flags = fcntl(fd, F_GETFD);
+    if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
+int statusOf(int raw) {
+    if (WIFEXITED(raw)) return WEXITSTATUS(raw);
+    if (WIFSIGNALED(raw)) return 128 + WTERMSIG(raw);
+    return raw;
+}
+
+}
+
+bool Process::startCaptured(const std::string& command) {
+    if (running_) return false;
+
+    int nothing = open("/dev/null", O_RDONLY);
+    if (nothing < 0) return false;
+    int fromChild[2];
+    if (pipe(fromChild) != 0) { close(nothing); return false; }
+    closeOnExec(fromChild[0]);
+
+    pid_t child = fork();
+    if (child < 0) {
+        close(nothing); close(fromChild[0]); close(fromChild[1]);
+        return false;
+    }
+    if (child == 0) {
+        setpgid(0, 0);
+        dup2(nothing, STDIN_FILENO);
+        dup2(fromChild[1], STDOUT_FILENO);
+        dup2(fromChild[1], STDERR_FILENO);
+        close(nothing); close(fromChild[0]); close(fromChild[1]);
+        execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(0));
+        _exit(127);
+    }
+    setpgid(child, child);
+    close(nothing);
+    close(fromChild[1]);
+
+    held_->fromChild = fromChild[0];
+    held_->child = child;
+    held_->grouped = true;
+    held_->outOpen = true;
+    held_->errOpen = false;
+    held_->reaped = false;
+    killed_ = false;
+    running_ = true;
+    return true;
+}
+
+// The program's input and output are a terminal - a pseudo-terminal this end holds - so its C
+// library buffers output a line at a time and flushes a prompt before it reads, as it would at a
+// shell. Echo is off, since the window shows what it sends; its errors come apart, on a pipe.
+bool Process::startInteractive(const std::string& command) {
+    if (running_) return false;
+
+    int master = posix_openpt(O_RDWR | O_NOCTTY);
+    if (master < 0) return false;
+    if (grantpt(master) != 0 || unlockpt(master) != 0) { close(master); return false; }
+    const char* name = ptsname(master);
+    if (name == 0) { close(master); return false; }
+    int slave = open(name, O_RDWR | O_NOCTTY);
+    if (slave < 0) { close(master); return false; }
+
+    struct termios settings;
+    char endOfInput = 4;
+    if (tcgetattr(slave, &settings) == 0) {
+        settings.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL);
+        settings.c_oflag &= ~static_cast<tcflag_t>(OPOST);
+        tcsetattr(slave, TCSANOW, &settings);
+        if (settings.c_cc[VEOF] != 0) endOfInput = static_cast<char>(settings.c_cc[VEOF]);
+    }
+
+    int errors[2];
+    if (pipe(errors) != 0) { close(master); close(slave); return false; }
+    closeOnExec(master);
+    closeOnExec(errors[0]);
+
+    pid_t child = fork();
+    if (child < 0) {
+        close(master); close(slave); close(errors[0]); close(errors[1]);
+        return false;
+    }
+    if (child == 0) {
+        setsid();
+#ifdef TIOCSCTTY
+        ioctl(slave, TIOCSCTTY, 0);
+#endif
+        dup2(slave, STDIN_FILENO);
+        dup2(slave, STDOUT_FILENO);
+        dup2(errors[1], STDERR_FILENO);
+        close(slave); close(errors[0]); close(errors[1]);
+        execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(0));
+        _exit(127);
+    }
+    close(slave);
+    close(errors[1]);
+
+    held_->toChild = master;
+    held_->fromChild = master;
+    held_->errFromChild = errors[0];
+    held_->child = child;
+    held_->grouped = true;
+    held_->outOpen = true;
+    held_->errOpen = true;
+    held_->reaped = false;
+    held_->terminal = true;
+    held_->endOfInput = endOfInput;
+    held_->midLine = false;
+    killed_ = false;
+    running_ = true;
+    return true;
+}
+
+bool Process::send(const char* bytes, size_t size) {
+    if (!running_ || held_->toChild < 0) return false;
+    size_t written = 0;
+    while (written < size) {
+        ssize_t went = write(held_->toChild, bytes + written, size - written);
+        if (went <= 0) {
+            if (went < 0 && errno == EINTR) continue;
+            return false;
+        }
+        written += static_cast<size_t>(went);
+    }
+    if (size > 0) held_->midLine = bytes[size - 1] != '\n';
+    return true;
+}
+
+// A terminal's input has no end to close: the end-of-file character says it, once at the start of
+// a line and twice after half of one - the first hands the half line over, the second ends it.
+void Process::closeInput() {
+    if (!running_ || held_->toChild < 0) return;
+    if (held_->terminal) {
+        char end[2] = {held_->endOfInput, held_->endOfInput};
+        ssize_t went = write(held_->toChild, end, held_->midLine ? 2 : 1);
+        (void)went;
+        held_->midLine = false;
+        held_->toChild = -1;
+        return;
+    }
+    close(held_->toChild);
+    held_->toChild = -1;
+}
+
+int Process::readAny(std::string& into, bool* isStderr, int timeoutMs) {
+    if (isStderr) *isStderr = false;
+    for (;;) {
+        struct pollfd waiting[2];
+        int streams[2];
+        int count = 0;
+        if (held_->outOpen) { waiting[count].fd = held_->fromChild; streams[count++] = 0; }
+        if (held_->errOpen) { waiting[count].fd = held_->errFromChild; streams[count++] = 1; }
+        if (count == 0) return -1;
+        for (int i = 0; i < count; ++i) { waiting[i].events = POLLIN; waiting[i].revents = 0; }
+
+        int ready = poll(waiting, static_cast<nfds_t>(count), timeoutMs);
+        if (ready == 0) return 0;
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        for (int i = 0; i < count; ++i) {
+            if (waiting[i].revents == 0) continue;
+            char chunk[4096];
+            ssize_t got = ::read(waiting[i].fd, chunk, sizeof chunk);
+            if (got > 0) {
+                into.append(chunk, static_cast<size_t>(got));
+                if (isStderr) *isStderr = streams[i] == 1;
+                return 1;
+            }
+            if (got < 0 && errno == EINTR) return 0;
+            // Nothing, or EIO: a terminal's reading end says that once every writer has gone.
+            if (streams[i] == 0) held_->outOpen = false;
+            else held_->errOpen = false;
+        }
+    }
+}
+
+bool Process::ended(int* status) {
+    if (held_->child <= 0) return true;
+    if (!held_->reaped) {
+        int raw = 0;
+        pid_t done = waitpid(held_->child, &raw, WNOHANG);
+        if (done == held_->child) {
+            held_->reaped = true;
+            held_->status = statusOf(raw);
+        } else if (done < 0 && errno != EINTR) {
+            held_->reaped = true;
+        }
+    }
+    if (held_->reaped && status) *status = held_->status;
+    return held_->reaped;
+}
+
+int Process::finish() {
+    if (held_->child > 0 && !held_->reaped) {
+        int raw = 0;
+        pid_t done;
+        do done = waitpid(held_->child, &raw, 0); while (done < 0 && errno == EINTR);
+        held_->reaped = true;
+        held_->status = done == held_->child ? statusOf(raw) : -1;
+    }
+    if (held_->fromChild >= 0) close(held_->fromChild);
+    if (held_->errFromChild >= 0) close(held_->errFromChild);
+    if (held_->toChild >= 0 && held_->toChild != held_->fromChild) close(held_->toChild);
+    held_->fromChild = held_->errFromChild = held_->toChild = -1;
+    held_->outOpen = held_->errOpen = false;
+    running_ = false;
+    return held_->status;
+}
+
+void Process::kill() {
+    pid_t child = held_->child;
+    if (child <= 0 || held_->reaped) return;
+    killed_ = true;
+    ::kill(-child, SIGKILL);
+    ::kill(child, SIGKILL);
 }
 
 #endif

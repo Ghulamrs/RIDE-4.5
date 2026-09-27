@@ -611,6 +611,44 @@ Where one compiler makes the whole of it, it does the linking too - `c90 a.c
 b.c -o prog`, since several inputs link together, and cl the same when it is
 not given `/c`.
 
+### Input, and Stop
+
+**A program run from a window reads what you type under its Output, and Stop
+ends it.** Until 4.5 every run had the null device for its input, so `scanf`
+saw end of file at once and a program that asked for a number carried on with
+whatever was in the variable - and a program that never ended wedged the
+window, since there was nothing to press. The fix is in the core and the
+bridge, so both windows have it the same way.
+
+`ride_run_start` and `ride_run_built_start` (`winforms/bridge.h`) run the
+program on a worker thread and hand its output to the window as it comes, a
+call per piece, marked as standard output, standard error, or what the build
+said before it; `ride_running_send` passes bytes to its input,
+`ride_running_close_input` is end of file (Ctrl-D on a Mac, Ctrl-Z on
+Windows), and `ride_running_stop` kills the program and everything it started
+- its process group on macOS and Linux, a job object on Windows. The window
+echoes what it sends: the program's input does not.
+
+**What the program sees is not the same on every system, and this is the one
+difference.** On macOS and Linux its input and output are a pseudo-terminal,
+so its C library writes a line at a time and flushes a prompt before it reads,
+exactly as at a shell; its standard error is a pipe of its own. On Windows they
+are pipes, so the C library holds output until a buffer fills, the program
+flushes, or it ends: a prompt printed with no newline and no `fflush` shows
+after it has been answered. A terminal's line is at most a thousand bytes or
+so on macOS, which is its own limit and not the editor's.
+
+**Stop reaches builds too.** `ride_cancel_builds` kills every compiler, linker
+and converter the core is running, on any thread; the build it belonged to
+fails with `[stopped]` at the end of its output and runs nothing more. A
+compiler that hangs no longer holds the window. Every command a build runs goes
+through `runCaptured`, which since 4.5 starts it on `Process` rather than
+through `popen` - the only way to have a process to kill - with the null
+device for its input, as before, and its two streams as one.
+
+The terminal editor keeps its own run, which waits for the program and gives
+it no input: it has one screen, and the program's output goes into it.
+
 ### A compiler per group
 
 **A target can hold C and C++ together.** Each group compiles to objects with
