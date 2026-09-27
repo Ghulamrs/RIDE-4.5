@@ -103,49 +103,9 @@ char faultLog[MAX_PATH] = "";   // set before main, by EarlyWatch below
 
 void write(FILE* f, const char* text) { std::fputs(text, f); }
 
-LONG CALLBACK onFault(EXCEPTION_POINTERS* info) {
-    static bool inside = false;
-    if (inside) return EXCEPTION_CONTINUE_SEARCH;
-    inside = true;
-
-    DWORD code = info->ExceptionRecord->ExceptionCode;
-
-    // 0xE0434352 is a managed exception, seen here first-chance - handled
-    // ones too - so the log holds every one and the last is the one that
-    // killed the window.
-    const DWORD kManaged = 0xE0434352;
-    if (code != EXCEPTION_ACCESS_VIOLATION && code != STATUS_HEAP_CORRUPTION &&
-        code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_ILLEGAL_INSTRUCTION &&
-        code != kManaged) {
-        inside = false;
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    FILE* f = std::fopen(faultLog[0] ? faultLog : "fault.log", "a");
-    if (!f) {
-        inside = false;
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    std::fprintf(f, "\nexception 0x%08lX at %p%s\n", static_cast<unsigned long>(code),
-                 info->ExceptionRecord->ExceptionAddress,
-                 code == kManaged ? " (managed, first chance)" : "");
-
-    // A managed one is noted and no more: they are routine and handled, and
-    // symbolising one would load the .pdb and hold it - which kept a build
-    // from writing it while a window was open.
-    if (code == kManaged) {
-        std::fclose(f);
-        inside = false;
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    if (code == EXCEPTION_ACCESS_VIOLATION &&
-        info->ExceptionRecord->NumberParameters >= 2) {
-        std::fprintf(f, "  %s address %p\n",
-                     info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
-                     reinterpret_cast<void*>(info->ExceptionRecord->ExceptionInformation[1]));
-    }
-
+// The stack, symbolised, in a frame of its own: dbghelp loads, locks and allocates, which is no
+// place to be on a stack that has just overflowed, so onFault never calls this for one.
+__declspec(noinline) void writeStack(FILE* f) {
     HANDLE process = GetCurrentProcess();
     SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
     SymInitialize(process, NULL, TRUE);
@@ -178,6 +138,43 @@ LONG CALLBACK onFault(EXCEPTION_POINTERS* info) {
     }
 
     SymCleanup(process);
+}
+
+// Native faults only. A managed exception is not logged here: they are routine, handled ones
+// arrive first-chance, and the window's own ThreadException handler logs the one that escapes.
+LONG CALLBACK onFault(EXCEPTION_POINTERS* info) {
+    static bool inside = false;
+    if (inside) return EXCEPTION_CONTINUE_SEARCH;
+
+    DWORD code = info->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION && code != STATUS_HEAP_CORRUPTION &&
+        code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_ILLEGAL_INSTRUCTION)
+        return EXCEPTION_CONTINUE_SEARCH;
+    inside = true;
+
+    // Kept to a megabyte: past that it is begun again rather than grown for ever.
+    const char* where = faultLog[0] ? faultLog : "fault.log";
+    WIN32_FILE_ATTRIBUTE_DATA facts;
+    bool full = GetFileAttributesExA(where, GetFileExInfoStandard, &facts) &&
+                (facts.nFileSizeHigh != 0 || facts.nFileSizeLow > 1024 * 1024);
+    FILE* f = std::fopen(where, full ? "w" : "a");
+    if (!f) {
+        inside = false;
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    std::fprintf(f, "\nexception 0x%08lX at %p\n", static_cast<unsigned long>(code),
+                 info->ExceptionRecord->ExceptionAddress);
+    if (code == EXCEPTION_ACCESS_VIOLATION &&
+        info->ExceptionRecord->NumberParameters >= 2) {
+        std::fprintf(f, "  %s address %p\n",
+                     info->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+                     reinterpret_cast<void*>(info->ExceptionRecord->ExceptionInformation[1]));
+    }
+
+    if (code == EXCEPTION_STACK_OVERFLOW) std::fputs("  stack overflow - no stack is walked on a full one\n", f);
+    else writeStack(f);
+
     std::fclose(f);
     inside = false;
     return EXCEPTION_CONTINUE_SEARCH;
