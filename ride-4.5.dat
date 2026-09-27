@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - RIDE 4.5, the editor
-Release seal, version 4.5, sealed 26-09-2026
+Release seal, version 4.5, sealed 27-09-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 175 files, seal 213F1E52
+CRC32  size  file - 175 files, seal D0B3FBE1
 ------------------------------------------------------------------
 8FB940DD     18337  Makefile
 62EB2DAD      2814  RIDE.pro
@@ -107,8 +107,8 @@ DD13BE88       148  projects/shl-matrix/shl-matrix.pro
 560927A4       550  projects/shl-primes/numbers.shl
 4AF5A39A       395  projects/shl-primes/primes.shl
 7B578406       226  projects/shl-primes/shl-primes.pro
-C8133EDC       842  projects/thirdparty-mathx/main.cpp
-6A68F670       612  projects/thirdparty-mathx/mathx-macos.pro
+2ADA92EA       946  projects/thirdparty-mathx/main.cpp
+D1ACCDC3       393  projects/thirdparty-mathx/mathx-macos.pro
 D6766E34       615  projects/thirdparty-mathx/mathx-windows.pro
 1B417D45       656  projects/thirdparty-mathx/third_party/mathx/include/mathx.h
 3CF93894      1736  projects/thirdparty-mathx/third_party/mathx/libs/arm64-darwin/libmathx.a
@@ -179,4 +179,4 @@ BE6A6F09     72502  winforms/ride.ico
 51E334AF     11065  winforms/show.ps1
 646AA652     10211  workspace.mk
 ------------------------------------------------------------------
-Sealed on 26-09-2026
+Sealed on 27-09-2026
