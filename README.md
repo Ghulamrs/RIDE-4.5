@@ -805,6 +805,12 @@ panel's three tabs are Errors (every diagnostic the build printed, read with
 the core's own parser), Progress (each step, timed) and Output. Builds run off
 the main thread. The debugger is not in it yet. `macos/README.md` has the rest.
 
+The Windows window is not that window with another toolkit, and the two are
+not to be compared as equals: its panel is Console, Debug and Assembly, with
+no per-diagnostic list - Enter on a Console line goes to the place it names
+instead - and its builds run on a worker while the rest of the window waits for
+it, as "One thing at a time" below says.
+
 ## The manual
 
 [`help/`](help/README.md) — ten pages about the editor, one about each language
@@ -1083,11 +1089,15 @@ suspended around each colouring pass now (`ed1_undo_suspend` / `ed1_undo_resume`
 which ask Rich Edit's own `ITextDocument` and do nothing anywhere else). Undo
 undoes your typing, and says `nothing to undo` when there is none.
 
-**Enter on the Console goes to the error it is about**, as it does in the
-terminal — and double-click does the same, since a console is a thing people
-click at. The window already jumps there when a build fails; this is for
-afterwards, once you have moved away. It is forgotten when the next build
-starts, so it never takes you to something an earlier build said. `Ctrl+1`,
+**Enter on the Console goes to the place the line under the caret names** -
+`file:line:col` as c90, cpp11 and gcc write it, `file(line,col)` as cl and link
+do - and double-click does the same, since a console is a thing people click
+at. A line that names no place goes to the build's own error, the one the
+window already jumped to when the build failed; that one is forgotten when the
+next build starts, or when its file is closed, so it never takes you to
+something an earlier build said. An error in a header is an error in the
+header: it opens, rather than landing on the same line number of the file you
+built. `Ctrl+1`,
 `Ctrl+2` and `Ctrl+3` now give the panel the keyboard as well as showing it —
 without that, Enter on the console would be a key nobody could press.
 
@@ -1101,6 +1111,65 @@ showing a choice that changes nothing would be the status bar telling a lie.
 
 The menu ticks answer the same question where the choice is made. This answers
 it without opening anything.
+
+**The Language menu is the file's, not the window's.** Choosing Shalimar for
+`notes.txt` colours, lays out and builds that tab as Shalimar; `main.c` in the
+tab beside it stays C. And a project that names no compiler is built **By
+language**, as its `.pro` says - the Tools menu writes AUTO there when you
+choose that, and the window no longer reads it back as the installation's
+default the next time a tab opens.
+
+### One thing at a time
+
+**Compile, Run, Build project, Run project, Convert and every debugger step run
+on a worker thread**, and the window keeps drawing while they do. What the
+worker holds - the project, the debugger, the settings the build reads - is
+not touched from the window until it is done, and that is enforced rather than
+hoped for: every menu item that reaches the core is greyed while it works, its
+key says `still working`, and the pane and the title are refreshed from the
+project only afterwards. Editing, finding, the View and Help menus and the
+Language menu stay live, since none of them reaches what the worker has.
+
+**Build ▸ Stop** (`Ctrl+Break`, Visual Studio's key) ends what the worker is
+waiting on: the compiler, the linker, the program, the debugger. It ends the
+processes the window started and theirs, by process tree - the hidden
+console's `conhost` excepted - so the core sees them finish and hands the
+worker back, and the Console says `[stopped]`. **Debug ▸ Stop debugging** does
+the same to a program running under the debugger, which is how a program in an
+endless loop is stopped without Task Manager. Closing the window while
+something runs asks first, stops it, and closes once the worker is back;
+nothing the worker holds is freed under it.
+
+The Console is appended to rather than rewritten, and a tool's `\r\n` is kept
+as one line ending rather than doubled into a blank line between every line.
+
+### Saving writes the file as it was found
+
+**A build saves the file in front only when it has changed**, and every save
+writes the file the way it was read: its encoding (UTF-8, UTF-8 with its
+byte-order mark, UTF-16 either way round, or this machine's ANSI code page for
+a file that is not UTF-8), and its line ending (`\r\n` or `\n`, from the
+first line break in it). A Windows-1252 file with CRLF line endings is still
+one after F5, and `git status` says nothing happened. A character the file's
+own code page has no place for - a Chinese comment typed into a Latin-1 file -
+makes it UTF-8, and the status bar says so. A file with a NUL byte in it is not
+opened: the box would cut it there and a save would write it back cut.
+
+A save goes to `name.ride-save` beside the file and then takes its place
+(`File.Replace`), so a disk that fills or a share that drops half way leaves
+the original as it was.
+
+**Replace and Re-indent are one step `Ctrl+Z` takes back.** They used to
+assign the box's whole text, which in Rich Edit empties the undo history -
+measured on the box: `CanUndo` is false straight after it - while the status
+bar said `Ctrl-Z puts them back`. They replace the text through the selection
+now, and Re-indent over a selection replaces only the lines chosen.
+
+**Paste is text only.** `Ctrl+V`, the right-click menu and `Shift+Insert` all
+take the clipboard's Unicode text; Word's fonts and a web page's pictures stay
+behind. **Tab** over several lines moves them in a level and **Shift+Tab** out
+one, as one undo step; on a single line Tab still lays the line out when the
+caret is in its leading space, and otherwise inserts spaces to the next stop.
 
 ### Where the keys differ, and why
 
@@ -1145,6 +1214,9 @@ code out.
 **Everything else the window adds is a gap being closed, not a divergence** —
 `Ctrl+Q`, `Ctrl+D`, `Ctrl+K` and `Ctrl+T` are the terminal's keys, doing the
 terminal's things.
+
+**Help ▸ Contents** opens `help\manual.html` in the browser, from the
+installation or the tree the window was built in.
 
 **Help ▸ Keys** — `F1`, the same key as the terminal's — lists what is bound,
 **read off the menu bar when you ask for it** rather than kept as a second list
