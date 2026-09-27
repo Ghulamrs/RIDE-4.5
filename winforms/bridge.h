@@ -303,6 +303,8 @@ const char* ride_ran_error_file(RIDERan* ran);
 /* ---- a program that runs while the window watches (README.md, "Input, and Stop") -------------
    RIDEOutput runs on a worker thread: marshal to the window's own and never wait there for a thread
    that may call ride_running_free. Bytes are not kept after the call; bytes NULL means it is over. */
+/* The program's terminal echoes what is sent, so the window does not. On Windows it is a pseudo-
+   console, whose one output carries stderr as RIDE_STREAM_OUT; before 1809, pipes, and no echo. */
 enum { RIDE_STREAM_OUT = 0, RIDE_STREAM_ERR = 1, RIDE_STREAM_BUILD = 2 };
 typedef void (*RIDEOutput)(void* user, const char* bytes, int size, int stream);
 

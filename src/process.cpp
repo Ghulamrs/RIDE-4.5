@@ -2,7 +2,9 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #ifdef _WIN32
@@ -52,9 +54,16 @@ struct Process::Held {
     bool outOpen, errOpen;
     std::atomic<bool> reaped;
     int status;
+    // An interactive child on a pseudo-console: its input half a line, and where the reading of
+    // the console's escape sequences has got to (vtState, the parameters so far, the row).
+    bool midLine;
+    int vtState;
+    std::string vtParams;
+    int row;
 
     Held() : toChild(NULL), fromChild(NULL), child(NULL), console(NULL), errFromChild(NULL),
-             job(NULL), grouped(false), outOpen(false), errOpen(false), reaped(false), status(0) {}
+             job(NULL), grouped(false), outOpen(false), errOpen(false), reaped(false), status(0),
+             midLine(false), vtState(0), row(1) {}
 };
 
 #else
@@ -377,10 +386,11 @@ bool Process::startCaptured(const std::string& command) {
 }
 
 // Not through cmd: the line is the program and its quoted arguments, and cmd would read a '%' or
-// a '&' in a path. Pipes and not a console, so the program's C library holds its output until it
-// fills a buffer, flushes or ends - a prompt with no fflush shows late. README.md, "Input".
+// a '&' in a path. On a pseudo-console where there is one (Windows 10 1809 on), so the C library
+// flushes a prompt before it reads; on pipes before that, where a prompt shows late. README.md.
 bool Process::startInteractive(const std::string& command) {
     if (running_) return false;
+    if (startOnPseudoConsole(command)) return true;
 
     HANDLE childReads = NULL, weWrite = NULL, weRead = NULL, childWrites = NULL;
     HANDLE errRead = NULL, errWrites = NULL;
@@ -414,26 +424,202 @@ bool Process::startInteractive(const std::string& command) {
     held_->outOpen = true;
     held_->errOpen = true;
     held_->reaped = false;
+    held_->midLine = false;
     killed_ = false;
     running_ = true;
     return true;
 }
 
-bool Process::send(const char* bytes, size_t size) {
-    if (!running_ || !held_->toChild) return false;
+// The pseudo-console's half: input and output - both streams, a console has one - through a
+// console the system keeps for the program, which is in a job as the pipes' child is. Wide, so a
+// long line is not wrapped; the console's escape sequences are taken out as it is read.
+bool Process::startOnPseudoConsole(const std::string& command) {
+    MakeConsole make = makeConsole();
+    if (!make) return false;
+
+    HANDLE consoleReads = NULL, weWrite = NULL, weRead = NULL, consoleWrites = NULL;
+    if (!CreatePipe(&consoleReads, &weWrite, NULL, 0)) return false;
+    if (!CreatePipe(&weRead, &consoleWrites, NULL, 0)) {
+        CloseHandle(consoleReads);
+        CloseHandle(weWrite);
+        return false;
+    }
+    COORD size;
+    size.X = 2000;
+    size.Y = 30;
+    void* console = NULL;
+    HRESULT made = make(size, consoleReads, consoleWrites, 0, &console);
+    CloseHandle(consoleReads);
+    CloseHandle(consoleWrites);
+    if (FAILED(made)) {
+        CloseHandle(weWrite);
+        CloseHandle(weRead);
+        return false;
+    }
+
+    HANDLE job = CreateJobObjectA(NULL, NULL);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
+        std::memset(&limits, 0, sizeof limits);
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits);
+    }
+
+    STARTUPINFOEXA startup;
+    std::memset(&startup, 0, sizeof startup);
+    startup.StartupInfo.cb = sizeof startup;
+    SIZE_T room = 0;
+    InitializeProcThreadAttributeList(NULL, 1, 0, &room);
+    std::vector<char> attributes(room ? room : 1);
+    startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(&attributes[0]);
+    bool listed = room != 0 &&
+                  InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &room) &&
+                  UpdateProcThreadAttribute(startup.lpAttributeList, 0,
+                                            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, console,
+                                            sizeof console, NULL, NULL);
+    PROCESS_INFORMATION child;
+    std::memset(&child, 0, sizeof child);
+    BOOL ok = FALSE;
+    if (listed) {
+        std::vector<char> writable(command.begin(), command.end());
+        writable.push_back('\0');
+        // As startOnConsole does: the window's own standard handles are not the child's.
+        HANDLE keepIn = GetStdHandle(STD_INPUT_HANDLE);
+        HANDLE keepOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        HANDLE keepErr = GetStdHandle(STD_ERROR_HANDLE);
+        SetStdHandle(STD_INPUT_HANDLE, NULL);
+        SetStdHandle(STD_OUTPUT_HANDLE, NULL);
+        SetStdHandle(STD_ERROR_HANDLE, NULL);
+        ok = CreateProcessA(NULL, &writable[0], NULL, NULL, FALSE,
+                            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED, NULL, NULL,
+                            &startup.StartupInfo, &child);
+        SetStdHandle(STD_INPUT_HANDLE, keepIn);
+        SetStdHandle(STD_OUTPUT_HANDLE, keepOut);
+        SetStdHandle(STD_ERROR_HANDLE, keepErr);
+    }
+    if (listed) DeleteProcThreadAttributeList(startup.lpAttributeList);
+    if (!ok) {
+        DropConsole drop = dropConsole();
+        if (drop) drop(console);
+        if (job) CloseHandle(job);
+        CloseHandle(weWrite);
+        CloseHandle(weRead);
+        return false;
+    }
+    if (job && !AssignProcessToJobObject(job, child.hProcess)) {
+        CloseHandle(job);
+        job = NULL;
+    }
+    ResumeThread(child.hThread);
+    CloseHandle(child.hThread);
+
+    held_->toChild = weWrite;
+    held_->fromChild = weRead;
+    held_->errFromChild = NULL;
+    held_->child = child.hProcess;
+    held_->job = job;
+    held_->console = console;
+    held_->grouped = true;
+    held_->outOpen = true;
+    held_->errOpen = false;
+    held_->reaped = false;
+    held_->midLine = false;
+    held_->vtState = 0;
+    held_->vtParams.clear();
+    held_->row = 1;
+    killed_ = false;
+    running_ = true;
+    return true;
+}
+
+namespace {
+
+// What a pseudo-console writes, as text: its escape sequences out - CSI, OSC such as the title,
+// the short ones - "\r" dropped, and the cursor sent to a lower row as that many newlines, which
+// is how the console sometimes ends a line. One state across reads; a sequence may be split.
+std::string plainText(const char* bytes, size_t size, int& state, std::string& params, int& row) {
+    std::string out;
+    for (size_t i = 0; i < size; ++i) {
+        unsigned char c = static_cast<unsigned char>(bytes[i]);
+        switch (state) {
+        case 0:
+            if (c == 0x1b) { state = 1; continue; }
+            if (c == '\r' || c == 0x07) continue;
+            if (c == '\n') ++row;
+            out += static_cast<char>(c);
+            continue;
+        case 1:  // after ESC
+            if (c == '[') { state = 2; params.clear(); }
+            else if (c == ']') state = 3;
+            else if (c == '(' || c == ')' || c == '#' || c == '%') state = 5;
+            else state = 0;
+            continue;
+        case 2:  // CSI: parameters, then a final byte
+            if (c >= 0x40 && c <= 0x7e) {
+                if (c == 'H' || c == 'f') {
+                    int wanted = std::atoi(params.c_str());
+                    if (wanted < 1) wanted = 1;
+                    for (; row < wanted; ++row) out += '\n';
+                }
+                state = 0;
+            } else {
+                params += static_cast<char>(c);
+            }
+            continue;
+        case 3:  // OSC: to BEL, or to ESC backslash
+            if (c == 0x07) state = 0;
+            else if (c == 0x1b) state = 4;
+            continue;
+        case 4:
+            state = c == '\\' ? 0 : 3;
+            continue;
+        default:  // the one character a charset designation takes
+            state = 0;
+            continue;
+        }
+    }
+    return out;
+}
+
+}
+
+namespace {
+
+bool writeAll(HANDLE to, const char* bytes, size_t size) {
     size_t written = 0;
     while (written < size) {
         DWORD went = 0;
-        if (!WriteFile(held_->toChild, bytes + written, static_cast<DWORD>(size - written), &went,
-                       NULL) || went == 0)
+        if (!WriteFile(to, bytes + written, static_cast<DWORD>(size - written), &went, NULL) ||
+            went == 0)
             return false;
         written += went;
     }
     return true;
 }
 
+}
+
+// A console is typed at: Enter is "\r", and the console hands the program "\r\n" for it.
+bool Process::send(const char* bytes, size_t size) {
+    if (!running_ || !held_->toChild) return false;
+    if (size > 0) held_->midLine = bytes[size - 1] != '\n';
+    if (!held_->console) return writeAll(held_->toChild, bytes, size);
+    std::string typed;
+    for (size_t i = 0; i < size; ++i)
+        if (bytes[i] != '\r') typed += bytes[i] == '\n' ? '\r' : bytes[i];
+    return writeAll(held_->toChild, typed.data(), typed.size());
+}
+
+// A console's input has no end to close: Ctrl-Z at the start of a line is end of file to the C
+// library, so a half line is finished first; the pipe is kept, for the console's sake.
 void Process::closeInput() {
     if (!running_ || !held_->toChild) return;
+    if (held_->console) {
+        const char* end = held_->midLine ? "\r\x1a\r" : "\x1a\r";
+        writeAll(held_->toChild, end, std::strlen(end));
+        held_->midLine = false;
+        return;
+    }
     CloseHandle(held_->toChild);
     held_->toChild = NULL;
 }
@@ -461,7 +647,10 @@ int Process::readAny(std::string& into, bool* isStderr, int timeoutMs) {
                 else held_->errOpen = false;
                 continue;
             }
-            into.append(chunk, got);
+            if (held_->console && i == 0)
+                into += plainText(chunk, got, held_->vtState, held_->vtParams, held_->row);
+            else
+                into.append(chunk, got);
             if (isStderr) *isStderr = i == 1;
             return 1;
         }
@@ -494,8 +683,15 @@ int Process::finish() {
         held_->child = NULL;
     }
     if (held_->job) { CloseHandle(held_->job); held_->job = NULL; }
-    if (held_->toChild) { CloseHandle(held_->toChild); held_->toChild = NULL; }
+    // The reading end before the console: closing a console waits for what it has written to be
+    // read, and nothing here reads any more.
     if (held_->fromChild) { CloseHandle(held_->fromChild); held_->fromChild = NULL; }
+    if (held_->console) {
+        DropConsole drop = dropConsole();
+        if (drop) drop(held_->console);
+        held_->console = NULL;
+    }
+    if (held_->toChild) { CloseHandle(held_->toChild); held_->toChild = NULL; }
     if (held_->errFromChild) { CloseHandle(held_->errFromChild); held_->errFromChild = NULL; }
     held_->outOpen = held_->errOpen = false;
     running_ = false;
@@ -695,8 +891,8 @@ bool Process::startCaptured(const std::string& command) {
 }
 
 // The program's input and output are a terminal - a pseudo-terminal this end holds - so its C
-// library buffers output a line at a time and flushes a prompt before it reads, as it would at a
-// shell. Echo is off, since the window shows what it sends; its errors come apart, on a pipe.
+// library flushes a prompt before it reads, as at a shell. The terminal echoes what it is sent,
+// as a Windows console does, so the window does not; its errors come apart, on a pipe.
 bool Process::startInteractive(const std::string& command) {
     if (running_) return false;
 
@@ -711,7 +907,8 @@ bool Process::startInteractive(const std::string& command) {
     struct termios settings;
     char endOfInput = 4;
     if (tcgetattr(slave, &settings) == 0) {
-        settings.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL);
+        settings.c_lflag |= ECHO;
+        settings.c_lflag &= ~static_cast<tcflag_t>(ECHOCTL);
         settings.c_oflag &= ~static_cast<tcflag_t>(OPOST);
         tcsetattr(slave, TCSANOW, &settings);
         if (settings.c_cc[VEOF] != 0) endOfInput = static_cast<char>(settings.c_cc[VEOF]);
