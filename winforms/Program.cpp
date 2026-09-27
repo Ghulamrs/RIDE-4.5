@@ -20,11 +20,17 @@ static String^ LogPath(String^ leaf) {
     return System::IO::Path::Combine(temp, leaf);
 }
 
+// Kept to a megabyte: past that the old one is set aside as .old, once, and a new one begun.
 static void Note(String^ what) {
     try {
-        System::IO::File::AppendAllText(LogPath(gcnew String(ride_product_name()) + ".log"),
-                                        DateTime::Now.ToString("HH:mm:ss") + "  " + what +
-                                            Environment::NewLine);
+        String^ log = LogPath(gcnew String(ride_product_name()) + ".log");
+        System::IO::FileInfo^ now = gcnew System::IO::FileInfo(log);
+        if (now->Exists && now->Length > 1024 * 1024) {
+            System::IO::File::Delete(log + ".old");
+            System::IO::File::Move(log, log + ".old");
+        }
+        System::IO::File::AppendAllText(log, DateTime::Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + what +
+                                                 Environment::NewLine);
     } catch (Exception^) {
 
     }
@@ -32,6 +38,25 @@ static void Note(String^ what) {
 
 static void OnUnhandled(Object^, UnhandledExceptionEventArgs^ e) {
     Note("unhandled: " + e->ExceptionObject->ToString());
+}
+
+// A handler that throws is logged and said in a few words, not WinForms' Continue/Quit dialog;
+// the window carries on, as Continue would have.
+ref struct Handlers {
+    static void OnThreadException(Object^, System::Threading::ThreadExceptionEventArgs^ e) {
+        Note("in a handler: " + e->Exception->ToString());
+        MessageBox::Show(e->Exception->Message + "\r\n\r\nThe window carries on; " +
+                             LogPath(gcnew String(ride_product_name()) + ".log") + " has the details.",
+                         gcnew String(ride_product_name()), MessageBoxButtons::OK, MessageBoxIcon::Warning);
+    }
+};
+
+// A file named on the command line - by a file association or a drop on the icon - is a file to
+// open, and a directory or a project file is a project; which one argv[0] was used to be guessed.
+static bool IsProject(String^ named) {
+    if (System::IO::Directory::Exists(named)) return true;
+    return String::Equals(System::IO::Path::GetExtension(named), gcnew String(ride_project_suffix()),
+                          StringComparison::OrdinalIgnoreCase);
 }
 
 static void QuietConsoleForChildren() {
@@ -64,10 +89,16 @@ int main(array<String^>^ arguments) {
         ride_watch_for_faults(reinterpret_cast<const char*>(pinned));
     }
     Note("faults watched");
+    // Room kept at the bottom of the stack so the fault handler can still write when it overflows.
+    ULONG reserve = 32 * 1024;
+    SetThreadStackGuarantee(&reserve);
     QuietConsoleForChildren();
     Note("console quiet");
     AppDomain::CurrentDomain->UnhandledException +=
         gcnew UnhandledExceptionEventHandler(OnUnhandled);
+    Application::SetUnhandledExceptionMode(UnhandledExceptionMode::CatchException);
+    Application::ThreadException +=
+        gcnew System::Threading::ThreadExceptionEventHandler(&Handlers::OnThreadException);
 
     try {
         Note("starting, " + arguments->Length + " arguments, in " +
@@ -76,10 +107,13 @@ int main(array<String^>^ arguments) {
         Application::EnableVisualStyles();
         Application::SetCompatibleTextRenderingDefault(false);
 
-        String^ directory = arguments->Length > 0 ? arguments[0] : nullptr;
-        array<String^>^ files =
-            gcnew array<String^>(arguments->Length > 1 ? arguments->Length - 1 : 0);
-        for (int i = 1; i < arguments->Length; ++i) files[i - 1] = arguments[i];
+        String^ directory = nullptr;
+        System::Collections::Generic::List<String^>^ named = gcnew System::Collections::Generic::List<String^>();
+        for (int i = 0; i < arguments->Length; ++i) {
+            if (directory == nullptr && named->Count == 0 && IsProject(arguments[i])) directory = arguments[i];
+            else named->Add(arguments[i]);
+        }
+        array<String^>^ files = named->ToArray();
 
         Note("building the window");
         ridegui::MainForm^ window = gcnew ridegui::MainForm(directory, files);
