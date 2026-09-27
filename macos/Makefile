@@ -95,8 +95,11 @@ $(APP): $(EXE) Info.plist RIDE.icns
 	    cp -p "$$tool" $(APP)/Contents/MacOS/; \
 	done
 	@if [ -d ../bin/lib ]; then rm -rf $(APP)/Contents/MacOS/lib $(APP)/Contents/Resources/lib; mkdir -p $(APP)/Contents/Resources; cp -Rp ../bin/lib $(APP)/Contents/Resources/lib; ln -s ../Resources/lib $(APP)/Contents/MacOS/lib; fi
-	@rm -rf $(APP)/Contents/Resources/help && cp -R ../help $(APP)/Contents/Resources/help
-	@for d in projects programs; do rm -rf $(APP)/Contents/Resources/$$d; cp -R ../$$d $(APP)/Contents/Resources/$$d; done
+	@# What git tracks and nothing else, so a demo's own build output never ships; a plain copy outside a checkout.
+	@for d in help projects programs; do rm -rf $(APP)/Contents/Resources/$$d; \
+	    if git -C .. rev-parse --git-dir >/dev/null 2>&1; then \
+	        git -C .. ls-files -z -- $$d | (cd .. && tar --null -T - -cf -) | tar -xf - -C $(APP)/Contents/Resources; \
+	    else cp -R ../$$d $(APP)/Contents/Resources/$$d; fi; done
 	cp RIDE.icns $(APP)/Contents/Resources/RIDE.icns
 	@# Each Mach-O helper signed on its own, then the app - not --deep, which Apple has deprecated and
 	@# which would treat a non-Mach-O file as code (L12). SIGN names a Developer ID for distribution.
