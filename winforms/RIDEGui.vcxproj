@@ -53,7 +53,11 @@
     <ClCompile>
       <ExceptionHandling>Async</ExceptionHandling>
       <LanguageStandard>stdcpp14</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\src</AdditionalIncludeDirectories>
+      <!-- The CRT's own headers before ..\src: src\process.h has the CRT's <process.h>'s name, and
+           <thread> includes that one with angle brackets - which /I ..\src answered first, so
+           _beginthreadex was never declared once bridge.cpp started a std::thread. A quoted
+           "process.h" still finds src's, from beside the file that asks. -->
+      <AdditionalIncludeDirectories>$(UniversalCRT_IncludePath);$(ProjectDir)..\src</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- Function-local statics normally get a thread-safe initialisation
            helper. In a mixed native/managed image that helper runs where the
@@ -93,6 +97,9 @@
   <ItemGroup>
     <ClCompile Include="Program.cpp" />
     <ClInclude Include="MainForm.h" />
+    <ClInclude Include="Marshal.h" />
+    <ClInclude Include="TextFile.h" />
+    <ClInclude Include="children.h" />
     <ClInclude Include="bridge.h" />
   </ItemGroup>
   <ItemGroup>

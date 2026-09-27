@@ -237,8 +237,10 @@ goto :done
 
 :unit
 
+rem The CRT's include directory before src: src\process.h has <process.h>'s name, and <thread>
+rem asks for the CRT's with angle brackets - winforms\RIDEGui.vcxproj says the same.
 cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
-   /I src /I winforms /Fe:test.exe /Fo:obj\ ^
+   /I "%UniversalCRTSdkDir%Include\%UCRTVersion%\ucrt" /I src /I winforms /Fe:test.exe /Fo:obj\ ^
    tests\test.cpp src\compile.cpp src\convert.cpp src\indent.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp src\buffer.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp ^
    src\demangle_win.cpp src\path.cpp src\process.cpp src\debugger.cpp ^
