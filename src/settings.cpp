@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 
 #include "json.h"
 #include "path.h"
@@ -291,10 +292,73 @@ std::string linker() {
 
 void overrideTi(const std::string& d) { overrideWith(tiForThisRun, d); }
 
-std::string ti() {
+namespace {
+
+// Numbers read out of "ti-cgt-c6000_8.2.2", so 8.10 counts as newer than 8.2.
+std::vector<long> versionOf(const std::string& name) {
+    std::vector<long> parts;
+    size_t at = name.find_last_of('_');
+    for (size_t i = at == std::string::npos ? 0 : at + 1; i < name.size();) {
+        if (!std::isdigit(static_cast<unsigned char>(name[i]))) { ++i; continue; }
+        long n = 0;
+        while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i]))) n = n * 10 + (name[i++] - '0');
+        parts.push_back(n);
+    }
+    return parts;
+}
+
+void compilersIn(const std::string& dir, std::vector<std::string>& into) {
+    std::vector<path::Entry> list = path::entries(dir);
+    for (size_t i = 0; i < list.size(); ++i)
+        if (list[i].directory && list[i].name.compare(0, 12, "ti-cgt-c6000") == 0) into.push_back(path::join(dir, list[i].name));
+}
+
+}
+
+// **CCS's C6000 compiler where settings.json names none**: the newest ti-cgt-c6000 with a bin/lnk6x
+// under where TI's installer puts one - C:\ti on Windows, ~/ti, /opt/ti and /Applications/ti elsewhere.
+std::string detectedTi() {
+    static std::string* cached = 0;  // a pointer, never freed: no static of class type in a mixed-mode image
+    if (cached) return *cached;
+    std::string found;
+    std::vector<std::string> roots;
+#ifdef _WIN32
+    const char* drive = std::getenv("SystemDrive");
+    roots.push_back(std::string(drive && *drive ? drive : "C:") + "\\ti");
+#else
+    roots.push_back(path::join(path::homeDir(), "ti"));
+    roots.push_back("/opt/ti");
+    roots.push_back("/Applications/ti");
+#endif
+    std::vector<std::string> candidates;
+    for (size_t r = 0; r < roots.size(); ++r) {
+        compilersIn(roots[r], candidates);
+        std::vector<path::Entry> list = path::entries(roots[r]);
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].directory && list[i].name.compare(0, 3, "ccs") == 0) {
+                const std::string ccs = path::join(roots[r], list[i].name);
+                compilersIn(path::join(path::join(ccs, "tools"), "compiler"), candidates);
+                compilersIn(path::join(path::join(path::join(ccs, "ccs"), "tools"), "compiler"), candidates);
+            }
+    }
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        const std::string bin = path::join(candidates[i], "bin");
+        if (!path::exists(path::join(bin, "lnk6x.exe")) && !path::exists(path::join(bin, "lnk6x"))) continue;
+        if (found.empty() || versionOf(path::filename(candidates[i])) > versionOf(path::filename(found))) found = candidates[i];
+    }
+    cached = new std::string(found);
+    return found;
+}
+
+std::string namedTi() {
     if (tiForThisRun && !tiForThisRun->empty()) return *tiForThisRun;
     std::string said = readInstall().get("ti").text(std::string());
     return (!said.empty() && path::isDirectory(said)) ? said : std::string();
+}
+
+std::string ti() {
+    const std::string named = namedTi();
+    return named.empty() ? detectedTi() : named;
 }
 
 void overrideTilib(const std::string& d) { overrideWith(tilibForThisRun, d); }

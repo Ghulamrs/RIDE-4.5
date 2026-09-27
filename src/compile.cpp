@@ -618,8 +618,18 @@ void makeTiProgram(Built& result, const std::string& program, LineSink sink, voi
         objects.push_back(sources[i].substr(0, sources[i].size() - 2) + ".obj");
 
     std::string ti = settings::ti();
+    const std::string made = "[" + std::to_string(objects.size()) + " TI objects made; a .out needs TI's linker";
     if (ti.empty()) {
-        if (sink) sink(context, "[" + std::to_string(objects.size()) + " TI objects made; a .out needs TI's linker, named under Tools]");
+        if (sink) sink(context, made + ", named under Tools]");
+        return;
+    }
+    // A CCS found rather than named ships rts6740_elf.lib alone, and these objects want the
+    // unwind personality only rts6740_elf_eh.lib has - so without one in reach, stop at objects.
+    std::string lib = path::join(ti, "lib"), extra = settings::tilib();
+    const bool eh = path::exists(path::join(lib, "rts6740_elf_eh.lib")) ||
+                    (!extra.empty() && path::exists(path::join(extra, "rts6740_elf_eh.lib")));
+    if (!eh && settings::namedTi().empty()) {
+        if (sink) sink(context, made + " and rts6740_elf_eh.lib, named under Tools - " + ti + " has only rts6740_elf.lib]");
         return;
     }
     // The project's own C6000 linker where one is named, TI's otherwise; the runtime and the
@@ -644,10 +654,7 @@ void makeTiProgram(Built& result, const std::string& program, LineSink sink, voi
     if (std::FILE* f = std::fopen(cmdfile.c_str(), "wb")) { std::fputs(tiLinkCmd().c_str(), f); std::fclose(f); }
     // the exception-handling build of TI's runtime where there is one (CCS
     // ships the other; the C++ programs need this one), else the shipped one
-    std::string lib = path::join(ti, "lib"), extra = settings::tilib();
-    std::string rts = "rts6740_elf.lib";
-    if (path::exists(path::join(lib, "rts6740_elf_eh.lib")) || (!extra.empty() && path::exists(path::join(extra, "rts6740_elf_eh.lib"))))
-        rts = "rts6740_elf_eh.lib";
+    std::string rts = eh ? "rts6740_elf_eh.lib" : "rts6740_elf.lib";
     std::string out = program;
     if (out.size() > 4 && out.compare(out.size() - 4, 4, ".exe") == 0) out.resize(out.size() - 4);
     out += ".out";

@@ -804,6 +804,8 @@ private:
                                  gcnew EventHandler(this, &MainForm::OnHelpContents));
         help->DropDownItems->Add(Item("Keys", Keys::F1,
                                       gcnew EventHandler(this, &MainForm::OnKeys)));
+        help->DropDownItems->Add("Environment", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnEnvironment));
         help->DropDownItems->Add("About", nullptr,
                                  gcnew EventHandler(this, &MainForm::OnAbout));
         bar->Items->Add(help);
@@ -3290,6 +3292,12 @@ private:
         shown->Select(0, 0);
     }
 
+    // Help > Environment on the Console, in its fixed-width font, so the columns line up.
+    void OnEnvironment(Object^, EventArgs^) {
+        console_->Text = Lines(TakeUtf8(ride_environment()));
+        ShowPanel(0);
+    }
+
     void OnAbout(Object^, EventArgs^) {
         MessageBox::Show(this, TakeUtf8(ride_about())->Replace("\n", "\r\n"),
                          "About",
@@ -3534,8 +3542,7 @@ private:
 
         if (!SaveEveryDirty()) return;
 
-        // The compilers, pinned before the checks: naming each part's compiler
-        // needs them, and the build below does too.
+        // The compilers, pinned before the checks: naming each part's compiler needs them, and so does the build.
         Toolchain^ tools = ToolsNow();
 
         // **Every part, not the target as a whole.** A group of C and C++ is split into a part each

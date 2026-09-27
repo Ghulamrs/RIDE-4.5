@@ -230,6 +230,7 @@ private:
     void showHelpContents();
     void showKeys();
     void showAbout();
+    void showEnvironment();
 
     void stash();
     void restore();

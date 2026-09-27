@@ -1348,9 +1348,14 @@ void projects() {
             std::string q;
             editor::settings::rememberTilinker(ours);
             editor::settings::rememberTi(std::string(), std::string());
-            check(!editor::nativeFallbackWanted(false, false, "tms6747", q) &&
-                      q.find("not on this machine") != std::string::npos,
-                  "with no TI directory named, nothing asks - the line says TI's lnk6x is not here");
+            if (editor::settings::detectedTi().empty())
+                check(!editor::nativeFallbackWanted(false, false, "tms6747", q) &&
+                          q.find("not on this machine") != std::string::npos,
+                      "with no TI directory named or installed, nothing asks - the line says TI's lnk6x is not here");
+            else
+                check(editor::nativeFallbackWanted(false, false, "tms6747", q) &&
+                          q.find("TI's lnk6x") != std::string::npos,
+                      "with none named, the CCS installed here is found, and a failed build asks about it");
             editor::settings::rememberTi(tiDir, std::string());
             check(editor::nativeToolsAvailable("tms6747"), "TI's directory named, its lnk6x is the native tool");
             check(editor::nativeFallbackWanted(false, false, "tms6747", q) &&
@@ -3748,6 +3753,36 @@ void theManualsContents() {
           "the contents names the version, so a printed page and the editor agree");
 }
 
+// Help > Environment: one row per thing a build reaches for, each saying where its answer came
+// from, and CCS's compiler named when it is detected rather than told.
+void environmentReport() {
+    std::printf("Help > Environment, and where each answer came from\n");
+    std::vector<std::string> said = editor::about::environment();
+    std::string all;
+    for (size_t i = 0; i < said.size(); ++i) all += said[i] + "\n";
+    const char* rows[] = {"settings.json", "c90", "cpp11", "shalimar", "c2s", "vm6747", "asm6x",
+                          "assembler", "linker", "Visual Studio", "TI compiler", "C6000 linker", "runtime",
+                          "cpp11 headers", "c90 headers"};
+    int missing = 0;
+    for (size_t i = 0; i < sizeof rows / sizeof rows[0]; ++i)
+        if (all.find("  " + std::string(rows[i])) == std::string::npos) {
+            std::printf("  no row for %s\n", rows[i]);
+            ++missing;
+        }
+    check(missing == 0, "a row for every tool, header directory and runtime");
+    int unexplained = 0;
+    for (size_t i = 0; i < said.size(); ++i)
+        if (said[i].compare(0, 2, "  ") == 0 && said[i].find("   (") == std::string::npos) ++unexplained;
+    check(unexplained == 0, "and every row says where its answer came from");
+    const std::string detected = editor::settings::detectedTi();
+    const std::string bin = editor::path::join(detected, "bin");
+    check(detected.empty() || editor::path::exists(editor::path::join(bin, "lnk6x")) ||
+              editor::path::exists(editor::path::join(bin, "lnk6x.exe")),
+          "a detected TI compiler has its lnk6x");
+    if (editor::settings::namedTi().empty())
+        check(editor::settings::ti() == detected, "with none named, the TI compiler used is the one detected");
+}
+
 // A compiler per group: what the .pro says, what survives being written back, and the two commands
 // that used to be one.
 void aCompilerPerGroup() {
@@ -5233,6 +5268,7 @@ int main(int argc, char** argv) {
     theOtherShapeOfDiagnostic();
     whereTheProgramCannotGo();
     whatALinkFailureSays();
+    environmentReport();
     aCompilerPerGroup();
     theFourthCompiler();
     theWindowsRuleAboutStatics();

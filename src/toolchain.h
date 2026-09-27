@@ -83,6 +83,8 @@ const char* programOf(const Toolchain& tool, ToolchainKind kind);
 // emit. Nothing is assembled or linked: the program is the .s file, or a directory of them.
 bool isEmulated(const std::string& arch);
 std::string emulatorProgram();
+// Visual Studio's vcvars64.bat: the one settings.json names, else the newest vswhere finds; "" when none.
+std::string visualStudioVcvars();
 // The C6000 assembler beside the editor (ASM6x's asm6x.exe), or empty when it is not there; $ASM6X names one elsewhere.
 std::string c6xAssembler();
 // The command that runs a built program: the program itself, or the emulator

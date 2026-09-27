@@ -155,6 +155,14 @@ bool importMsvcEnvironment() {
 
 }
 
+std::string visualStudioVcvars() {
+#ifdef _WIN32
+    return findVcvars();
+#else
+    return std::string();
+#endif
+}
+
 const char* hostCxxName() {
 #if defined(_WIN32)
     return "cl";

@@ -3209,6 +3209,18 @@ void Editor::showAbout() {
     say(std::string(about::name()) + " " + about::version());
 }
 
+// Help > Environment in the Console panel, where About is: each tool and the file it resolved to.
+void Editor::showEnvironment() {
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+    std::vector<std::string> said = about::environment();
+    for (size_t i = 0; i < said.size(); ++i) console_.push_back(said[i]);
+    fitPanelTo(said);
+    panelOff_ = 0;
+    say("the environment in force");
+}
+
 void Editor::showHelpContents() {
     panelOpen_ = true;
     tab_ = TabConsole;
@@ -3411,6 +3423,7 @@ void Editor::perform(Action action) {
         case ActionHelpContents: showHelpContents(); break;
         case ActionKeys:         showKeys(); break;
         case ActionAbout:        showAbout(); break;
+        case ActionEnvironment:  showEnvironment(); break;
         case ActionNone:         break;
     }
 }

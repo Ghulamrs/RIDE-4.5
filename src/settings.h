@@ -58,6 +58,8 @@ void overrideLinker(const std::string& path);      // --linker, for this run onl
 // what asm6x made into a real .out against the runtime in its lib\ ("tilib" is a second directory,
 // for the exception-handling build CCS does not ship). Empty, and a tms6747 build stops at the objects - at the assembly, without asm6x.
 std::string ti();
+std::string namedTi();     // ti() is this, named in settings.json or by --ti,
+std::string detectedTi();  // else this: CCS's newest ti-cgt-c6000 with a bin/lnk6x
 std::string tilib();
 void overrideTi(const std::string& dir);           // --ti, for this run only
 void overrideTilib(const std::string& dir);        // --tilib, for this run only

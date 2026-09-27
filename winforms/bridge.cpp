@@ -427,6 +427,8 @@ void ride_free(char* what) { std::free(what); }
 
 char* ride_about(void) { return give(join(editor::about::lines())); }
 
+char* ride_environment(void) { return give(join(editor::about::environment())); }
+
 char* ride_describe_build(const char* assembly) {
     return give(join(editor::describe(editor::symbolsIn(split(assembly)))));
 }

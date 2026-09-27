@@ -83,6 +83,7 @@ enum Action {
     ActionHelpContents,
     ActionKeys,
     ActionAbout,
+    ActionEnvironment,
 
     ActionConvert,
 

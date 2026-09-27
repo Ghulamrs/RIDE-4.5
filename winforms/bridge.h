@@ -357,6 +357,8 @@ const char* ride_shown_run_command(RIDEProject* project, const char* cc1, const 
                                   int config);
 
 char* ride_about(void);
+/* Help > Environment: every tool, header directory and library in force, and where each came from. */
+char* ride_environment(void);
 
 typedef struct RIDEProgram RIDEProgram;
 

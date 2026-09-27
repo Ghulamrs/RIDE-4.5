@@ -150,6 +150,7 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     help.title = "Help";
     help.items.push_back({"Contents", "", ActionHelpContents});
     help.items.push_back({"Keys", "F1", ActionKeys});
+    help.items.push_back({"Environment", "", ActionEnvironment});
     help.items.push_back({"About", "", ActionAbout});
     columns_.push_back(help);
 }

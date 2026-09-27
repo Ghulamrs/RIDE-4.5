@@ -1796,14 +1796,20 @@ void aDirectoryWithNoProject(const std::string& ride) {
     check(wasShown(again, "ready"), "and says it is ready, having nothing to do first");
 
     // Help is the last column, and About is under it. Checked here as well as in the window, since
-    // both show the core's lines. Eight rights rather than seven since Language joined the bar, two
-    // downs rather than one since Contents joined this menu above About - the columns and items counted in the one place that walks them.
+    // both show the core's lines. Eight rights rather than seven since Language joined the bar, three
+    // downs since Contents and then Environment joined this menu above About - counted in the one place that walks them.
     Screen about = drive(ride, "--project \"" + dir.string() + "\"",
-                         kF10 + times(kRight, 9) + times(kDown, 2) + kEnter + ctrl('q'), dir);
+                         kF10 + times(kRight, 9) + times(kDown, 3) + kEnter + ctrl('q'), dir);
     check(onScreen(about, "RIDE 4.5"), "About names the product and version");
     check(onScreen(about, "cpp11"), "and the fourth compiler is on its list");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
+
+    // Environment, one above About: every tool, and the file each one resolved to.
+    Screen environment = drive(ride, "--project \"" + dir.string() + "\"",
+                               kF10 + times(kRight, 9) + times(kDown, 2) + kEnter + ctrl('q'), dir);
+    check(onScreen(environment, "the environment in force"), "Help > Environment says what is in force");
+    check(onScreen(environment, "Compilers and tools"), "and opens on the compilers, where each one was found");
 
     // A project file that will not parse is somebody's work and is left alone.
     writeFile(dir / "project.pro", "{ this is not json\n");
