@@ -7,9 +7,6 @@
 #import "LineNumbers.h"
 #import "Text.h"
 
-#include "compile.h"
-#include "product.h"
-
 // ---- the model ------------------------------------------------------------------
 
 // One open file. The window has one text view and swaps each file's text
@@ -22,15 +19,32 @@
 @property(nonatomic) NSRange selection;
 @property(nonatomic) NSPoint scrolled;
 @property(nonatomic) int language;  // RIDE_LANG_*, or -1: by the name
+// As the file was on the disk, and is written back so (M5): its encoding, its line ending, a BOM.
+@property(nonatomic) NSStringEncoding encoding;
+@property(nonatomic, copy) NSString* lineEnding;
+@property(nonatomic) BOOL byteOrderMark;
+// When it was last read or written here, to see a change made elsewhere (M10).
+@property(nonatomic, strong) NSDate* stamp;
+// Untitled 1, 2...: what tells two unsaved files apart (M7).
+@property(nonatomic) NSInteger untitled;
+// The lexer's state at the start of each row, and the first row whose colour is out of date.
+- (std::vector<int>&)states;
+@property(nonatomic) NSInteger staleFrom;
 @end
 
-@implementation Sheet
+@implementation Sheet {
+    std::vector<int> states_;
+}
+- (std::vector<int>&)states { return states_; }
 - (instancetype)init {
     self = [super init];
     if (self) {
         _undo = [[NSUndoManager alloc] init];
         _language = -1;
         _selection = NSMakeRange(0, 0);
+        _encoding = NSUTF8StringEncoding;
+        _lineEnding = @"\n";
+        _staleFrom = 0;
     }
     return self;
 }
@@ -52,6 +66,7 @@
 @interface NavItem : NSObject
 @property(nonatomic, copy) NSString* title;
 @property(nonatomic, copy) NSString* path;  // files only
+@property(nonatomic, weak) Sheet* sheet;    // a row of OPEN FILES: the file itself (M7)
 @property(nonatomic, strong) NSMutableArray<NavItem*>* children;
 @property(nonatomic) BOOL section;
 @property(nonatomic, copy) NSString* group;  // the project group a file or group is
@@ -78,11 +93,44 @@ struct Outcome {
     int errorLine = 0;
     int errorColumn = 0;
     std::string errorMessage;
-    bool programRan = false;
     int status = 0;
-    std::string programOutput;
+    bool stopped = false;   // Build > Stop ended it
     std::string produced;   // a conversion's file
 };
+
+// What a build said, copied off the core's object on the thread that ran it (L15: once, not thrice).
+static Outcome OutcomeOf(RIDEBuild* built) {
+    Outcome outcome;
+    if (built == NULL) return outcome;
+    outcome.ran = true;
+    outcome.ok = ride_build_ok(built) != 0;
+    outcome.output = ride_build_output(built);
+    outcome.hasError = ride_build_has_error(built) != 0;
+    outcome.errorFile = ride_build_error_file(built);
+    outcome.errorLine = ride_build_error_line(built);
+    outcome.errorColumn = ride_build_error_column(built);
+    outcome.errorMessage = ride_build_error_message(built);
+    outcome.assembly = ride_build_assembly(built);
+    outcome.assemblyLines = ride_build_assembly_lines(built);
+    outcome.stopped = ride_build_stopped(built) != 0;
+    return outcome;
+}
+
+// The same for a run the window watched, once it is over.
+static Outcome OutcomeOf(RIDERunning* running) {
+    Outcome outcome;
+    outcome.ran = true;
+    outcome.ok = ride_running_built(running) != 0;
+    outcome.output = ride_running_build_output(running);
+    outcome.hasError = ride_running_has_error(running) != 0;
+    outcome.errorFile = ride_running_error_file(running);
+    outcome.errorLine = ride_running_error_line(running);
+    outcome.errorColumn = ride_running_error_column(running);
+    outcome.errorMessage = ride_running_error_message(running);
+    outcome.status = ride_running_status(running);
+    outcome.stopped = ride_running_stopped(running) != 0;
+    return outcome;
+}
 
 // ---- the question a build may ask -----------------------------------------------
 
@@ -94,8 +142,8 @@ static int AskNativeInWindow(const char* question) {
     __block int answer = 0;
     void (^ask)(void) = ^{
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.messageText = Str(ride_product_name());
-        alert.informativeText = text;
+        alert.messageText = text;
+        alert.informativeText = @"A yes builds it again with them; a no leaves the build failed.";
         [alert addButtonWithTitle:@"Yes"];
         [alert addButtonWithTitle:@"No"];
         answer = [alert runModal] == NSAlertFirstButtonReturn ? 1 : 0;
@@ -118,12 +166,17 @@ enum {
 
 enum { kPanelErrors = 0, kPanelProgress = 1, kPanelOutput = 2 };
 
+static void RunOutput(void* user, const char* bytes, int size, int stream);
+
+// What RunOutput hands to the main thread.
+@interface WindowController ()
+- (void)runSaid:(const std::string&)piece stream:(int)stream;
+- (void)runEnded;
+@end
+
 static const CGFloat kStatusHeight = 24;
 static const CGFloat kJumpBarHeight = 26;
 static const CGFloat kMenuRowHeight = 26;
-
-@interface WindowController ()
-@end
 
 @implementation WindowController {
     RIDEProject* project_;
@@ -184,10 +237,24 @@ static const CGFloat kMenuRowHeight = 26;
     NSTimer* recolourTimer_;
     NSMenu* recentFilesMenu_;
     NSMenu* recentProjectsMenu_;
+
+    // A program running while the window watches it (bridge.h, README.md "Input, and Stop"):
+    // its output arrives in pieces, a cut character kept in pending_ until the rest comes.
+    RIDERunning* running_;
+    std::string pending_[3];
+    NSTextField* inputLine_;
+    NSInteger untitledCount_;
+    NSInteger staleRows_;  // how many rows from current_.staleFrom an edit reached
+    NSString* runSource_;   // the file Run File built, for what its errors are about
+    NSString* runCompiler_;
+    NSString* runProgram_;  // Run Project's program; nil for Run File
 }
 
 // ---- starting -------------------------------------------------------------------
 
+// A compiler: its environment variable, else beside the editor inside the bundle, else - only
+// when the app sits in a checkout, beside macos/Makefile - the checkout's bin/, else its bare name,
+// which the core looks for on PATH. Never a directory the app merely happens to be in (L6).
 static NSString* FoundCompiler(NSString* variable, NSString* name) {
     NSString* said = NSProcessInfo.processInfo.environment[variable];
     if (said.length > 0) return said;
@@ -195,16 +262,15 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
     NSFileManager* files = NSFileManager.defaultManager;
     NSString* program = [name stringByAppendingString:@".exe"];
     NSMutableArray<NSString*>* places = [NSMutableArray array];
-    // Beside the editor inside the bundle, which is where `make` docks them.
     NSString* exe = NSBundle.mainBundle.executablePath.stringByDeletingLastPathComponent;
     if (exe.length > 0) [places addObject:exe];
-    // Beside the bundle, and in a bin/ beside it - RIDE/bin in a checkout.
-    NSString* app = NSBundle.mainBundle.bundlePath.stringByDeletingLastPathComponent;
-    if (app.length > 0) {
-        [places addObject:app];
-        [places addObject:[app stringByAppendingPathComponent:@"bin"]];
-        [places addObject:[[app stringByDeletingLastPathComponent]
-                              stringByAppendingPathComponent:@"bin"]];
+    NSString* up = NSBundle.mainBundle.bundlePath.stringByDeletingLastPathComponent;
+    for (int step = 0; step < 4 && up.length > 1; ++step) {
+        if ([files fileExistsAtPath:[up stringByAppendingPathComponent:@"macos/Makefile"]]) {
+            [places addObject:[up stringByAppendingPathComponent:@"bin"]];
+            break;
+        }
+        up = up.stringByDeletingLastPathComponent;
     }
     for (NSString* place in places) {
         NSString* candidate = [place stringByAppendingPathComponent:program];
@@ -232,9 +298,9 @@ static NSString* FoundCompiler(NSString* variable, NSString* name) {
         project_ = ride_project_new();
         ride_ask_native(AskNativeInWindow);
 
-        cc1_ = FoundCompiler(@"C90", Str(editor::product::kCompilerC));
-        cxx1_ = FoundCompiler(@"CPP11", Str(editor::product::kCompilerCpp));
-        shc_ = FoundCompiler(@"SHALIMAR", Str(editor::product::kCompilerShalimar));
+        cc1_ = FoundCompiler(@"C90", Str(ride_compiler_name(RIDE_COMPILER_C)));
+        cxx1_ = FoundCompiler(@"CPP11", Str(ride_compiler_name(RIDE_COMPILER_CPP)));
+        shc_ = FoundCompiler(@"SHALIMAR", Str(ride_compiler_name(RIDE_COMPILER_SHALIMAR)));
         // No cl on a Mac; the slot is kept empty and the core's default stands.
         cl_ = @"";
 
@@ -411,6 +477,7 @@ static NSScrollView* Scroller(NSRect frame) {
     across_.dividerStyle = NSSplitViewDividerStyleThin;
     across_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     across_.delegate = self;
+    across_.autosaveName = @"RIDENavigatorSplit";
 
     [self layNavigator:NSMakeRect(0, 0, 240, NSHeight(rest))];
     [across_ addSubview:navigatorPane_];
@@ -419,6 +486,7 @@ static NSScrollView* Scroller(NSRect frame) {
     down_.vertical = NO;
     down_.dividerStyle = NSSplitViewDividerStyleThin;
     down_.delegate = self;
+    down_.autosaveName = @"RIDEPanelSplit";
     down_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 
     CGFloat panelHeight = floor(NSHeight(rest) / 4);
@@ -621,10 +689,22 @@ static NSScrollView* Scroller(NSRect frame) {
     [progress addSubview:log];
     [panel_ addTabViewItem:[self tabNamed:@"Progress" holding:progress]];
 
-    // Output: the command, what the compiler said, and what the program printed.
-    NSScrollView* out = Scroller(NSMakeRect(0, 0, NSWidth(inside), NSHeight(inside)));
+    // Output: the command, what the compiler said, and what the program printed - and under it,
+    // a line for what the running program reads: Enter sends it, Ctrl-D ends its input.
+    NSView* outPane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(inside), NSHeight(inside))];
+    NSScrollView* out = Scroller(NSMakeRect(0, 26, NSWidth(inside), NSHeight(inside) - 26));
     output_ = LogView(out, mono);
-    [panel_ addTabViewItem:[self tabNamed:@"Output" holding:out]];
+    [outPane addSubview:out];
+    inputLine_ = [[NSTextField alloc] initWithFrame:NSMakeRect(4, 2, NSWidth(inside) - 8, 22)];
+    inputLine_.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    inputLine_.font = mono;
+    inputLine_.placeholderString = @"input for the running program - Return sends a line, Control-D ends the input";
+    inputLine_.target = self;
+    inputLine_.action = @selector(inputEntered:);
+    inputLine_.delegate = self;
+    inputLine_.enabled = NO;
+    [outPane addSubview:inputLine_];
+    [panel_ addTabViewItem:[self tabNamed:@"Output" holding:outPane]];
 
     [panelPane_ addSubview:panel_];
 }
@@ -678,7 +758,8 @@ static NSScrollView* Scroller(NSRect frame) {
         jumpBar_.stringValue = ride_project_loaded(project_)
                                    ? Str(ride_project_root(project_)) : @"No file open";
     } else if (current_.path == nil) {
-        jumpBar_.stringValue = current_.modified ? @"●  Untitled" : @"Untitled";
+        NSString* name = [self shownName:current_];
+        jumpBar_.stringValue = current_.modified ? [@"●  " stringByAppendingString:name] : name;
     } else {
         NSString* shown = current_.path;
         if (ride_project_loaded(project_) && ride_project_holds(project_, Utf8(shown)))
@@ -691,7 +772,8 @@ static NSScrollView* Scroller(NSRect frame) {
 }
 
 - (NSString*)shownName:(Sheet*)sheet {
-    return sheet.path != nil ? sheet.path.lastPathComponent : @"Untitled";
+    if (sheet.path != nil) return sheet.path.lastPathComponent;
+    return sheet.untitled > 1 ? [NSString stringWithFormat:@"Untitled %ld", (long)sheet.untitled] : @"Untitled";
 }
 
 - (BOOL)anyModified {
@@ -760,69 +842,117 @@ static NSColor* ColourOf(unsigned char kind) {
     }
 }
 
-// The whole file, through the core's highlighter a line at a time with the state carried between
-// lines. Colour goes on as the layout manager's temporary attributes, which are not the text:
-// colouring never touches undo and never marks the file changed - the trap Rich Edit set on Windows.
+// One row through the core's highlighter, as the layout manager's temporary attributes - not the
+// text, so colouring never touches undo nor marks the file changed. macos/README.md, "Colour".
+- (void)recolourRow:(NSInteger)row language:(int)language state:(int&)state
+               into:(std::vector<unsigned char>&)kinds {
+    NSLayoutManager* layout = code_.layoutManager;
+    NSRange line = [code_ contentsOfRow:row];
+    if (line.location == NSNotFound) return;
+    [layout removeTemporaryAttribute:NSForegroundColorAttributeName forCharacterRange:line];
+    NSString* all = code_.string;
+    NSUInteger stop = NSMaxRange(line);
+    while (stop > line.location && [all characterAtIndex:stop - 1] == '\r') --stop;
+    NSString* text = [all substringWithRange:NSMakeRange(line.location, stop - line.location)];
+    const char* bytes = Utf8(text);
+    size_t length = std::strlen(bytes);
+    kinds.assign(length + 1, 0);
+    int howMany = ride_highlight(bytes, language, &state, kinds.data(), (int)kinds.size());
+
+    // Kinds come a byte of UTF-8 at a time; the view counts UTF-16 units.
+    NSUInteger unit = line.location;
+    int byte = 0;
+    unsigned char runKind = 0;
+    NSUInteger runStart = unit;
+    while (byte < howMany) {
+        unsigned char lead = (unsigned char)bytes[byte];
+        int bytesHere = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+        NSUInteger unitsHere = bytesHere == 4 ? 2 : 1;
+        unsigned char kind = kinds[(size_t)byte];
+        if (kind != runKind) {
+            NSColor* colour = ColourOf(runKind);
+            if (colour != nil && unit > runStart)
+                [layout addTemporaryAttribute:NSForegroundColorAttributeName value:colour
+                            forCharacterRange:NSMakeRange(runStart, unit - runStart)];
+            runKind = kind;
+            runStart = unit;
+        }
+        byte += bytesHere;
+        unit += unitsHere;
+    }
+    NSColor* colour = ColourOf(runKind);
+    if (colour != nil && unit > runStart && unit <= all.length)
+        [layout addTemporaryAttribute:NSForegroundColorAttributeName value:colour
+                    forCharacterRange:NSMakeRange(runStart, unit - runStart)];
+}
+
+// Only what an edit can have changed (H3): from the first row out of date past the last it reached,
+// until a row starts in the state it started in last time.
 - (void)recolour {
     [recolourTimer_ invalidate];
     recolourTimer_ = nil;
     if (current_ == nil) return;
-
     NSLayoutManager* layout = code_.layoutManager;
-    NSString* all = current_.storage.string;
-    NSRange everything = NSMakeRange(0, all.length);
-    [layout removeTemporaryAttribute:NSForegroundColorAttributeName forCharacterRange:everything];
-
     int language = [self languageNow];
-    if (language == RIDE_LANG_PLAIN) return;
-
-    int state = 0;
-    std::vector<unsigned char> kinds;
-    NSUInteger at = 0;
-    while (at < all.length) {
-        NSRange line = [all lineRangeForRange:NSMakeRange(at, 0)];
-        NSUInteger end = NSMaxRange(line);
-        NSUInteger stop = end;
-        while (stop > line.location) {
-            unichar c = [all characterAtIndex:stop - 1];
-            if (c != '\n' && c != '\r') break;
-            --stop;
-        }
-        NSString* text = [all substringWithRange:NSMakeRange(line.location, stop - line.location)];
-        const char* bytes = Utf8(text);
-        size_t length = std::strlen(bytes);
-        kinds.assign(length + 1, 0);
-        int howMany = ride_highlight(bytes, language, &state, kinds.data(), (int)kinds.size());
-
-        // Kinds come a byte of UTF-8 at a time; the view counts UTF-16 units.
-        NSUInteger unit = line.location;
-        int byte = 0;
-        unsigned char runKind = 0;
-        NSUInteger runStart = unit;
-        while (byte < howMany) {
-            unsigned char lead = (unsigned char)bytes[byte];
-            int bytesHere = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
-            NSUInteger unitsHere = bytesHere == 4 ? 2 : 1;
-            unsigned char kind = kinds[(size_t)byte];
-            if (kind != runKind) {
-                NSColor* colour = ColourOf(runKind);
-                if (colour != nil && unit > runStart)
-                    [layout addTemporaryAttribute:NSForegroundColorAttributeName value:colour
-                                forCharacterRange:NSMakeRange(runStart, unit - runStart)];
-                runKind = kind;
-                runStart = unit;
-            }
-            byte += bytesHere;
-            unit += unitsHere;
-        }
-        NSColor* colour = ColourOf(runKind);
-        if (colour != nil && unit > runStart && unit <= all.length)
-            [layout addTemporaryAttribute:NSForegroundColorAttributeName value:colour
-                        forCharacterRange:NSMakeRange(runStart, unit - runStart)];
-
-        if (end == at) break;
-        at = end;
+    NSInteger rows = [code_ lineCount];
+    std::vector<int>& states = [current_ states];
+    if (language == RIDE_LANG_PLAIN) {
+        [layout removeTemporaryAttribute:NSForegroundColorAttributeName
+                       forCharacterRange:NSMakeRange(0, current_.storage.length)];
+        states.clear();
+        current_.staleFrom = rows;
+        return;
     }
+    NSInteger from = MAX((NSInteger)0, MIN(current_.staleFrom, rows));
+    if ((NSInteger)states.size() != rows + 1) {
+        states.resize((size_t)rows + 1, -1);
+        from = MIN(from, (NSInteger)0);
+    }
+    NSInteger reach = MIN(rows, current_.staleFrom + staleRows_);
+    std::vector<unsigned char> kinds;
+    int state = states[(size_t)from] < 0 ? 0 : states[(size_t)from];
+    for (NSInteger row = from; row < rows; ++row) {
+        states[(size_t)row] = state;
+        [self recolourRow:row language:language state:state into:kinds];
+        if (row + 1 >= reach && states[(size_t)row + 1] == state) break;
+        states[(size_t)row + 1] = state;
+    }
+    current_.staleFrom = rows;
+    staleRows_ = 0;
+}
+
+// The colour is to be made again for all of the file: another file, another language.
+- (void)recolourAll {
+    if (current_ != nil) {
+        [current_ states].clear();
+        current_.staleFrom = 0;
+        staleRows_ = [code_ lineCount];
+    }
+    [self recolour];
+}
+
+// CodeViewHost: rows from `first` were replaced, `before` of them by `after`. The lexer's states
+// after them move with them, and the colour is out of date from `first` for `after` rows at least.
+- (void)codeView:(NSTextView*)view rowsFrom:(NSInteger)first before:(NSInteger)before
+           after:(NSInteger)after {
+    (void)view;
+    if (current_ == nil) return;
+    std::vector<int>& states = [current_ states];
+    if (!states.empty() && first + 1 <= (NSInteger)states.size()) {
+        auto at = states.begin() + (long)MIN((NSInteger)states.size(), first + 1);
+        if (after > before) states.insert(at, (size_t)(after - before), -1);
+        else if (before > after)
+            states.erase(at, at + (long)MIN((NSInteger)(states.end() - at), before - after));
+    }
+    if (staleRows_ == 0) {
+        current_.staleFrom = first;
+        staleRows_ = after;
+        return;
+    }
+    NSInteger from = MIN(current_.staleFrom, first);
+    NSInteger to = MAX(current_.staleFrom + staleRows_, first + after);
+    current_.staleFrom = from;
+    staleRows_ = to - from;
 }
 
 - (void)recolourSoon {
@@ -852,7 +982,7 @@ static NSColor* ColourOf(unsigned char kind) {
     if (!current_.modified) {
         current_.modified = YES;
         [self refreshTitle];
-        [navigator_ reloadData];
+        [self refreshOpenFiles];
     }
     [gutter_ textDidChange];
     [self recolourSoon];
@@ -877,6 +1007,7 @@ static NSColor* ColourOf(unsigned char kind) {
 - (Sheet*)makeSheet:(NSString*)path text:(NSString*)text {
     Sheet* sheet = [[Sheet alloc] init];
     sheet.path = path;
+    if (path == nil) sheet.untitled = ++untitledCount_;
     sheet.storage = [[NSTextStorage alloc] initWithString:text ?: @""
                                                attributes:[self codeAttributes]];
     [sheets_ addObject:sheet];
@@ -890,10 +1021,17 @@ static NSColor* ColourOf(unsigned char kind) {
         current_.selection = code_.selectedRange;
         current_.scrolled = codeScroll_.contentView.bounds.origin;
     }
+    // The typing the view was coalescing belongs to the file leaving, and so does the find
+    // bar's incremental highlighting: both let go before another file's text arrives (M13, M12).
+    [code_ breakUndoCoalescing];
+    BOOL incremental = code_.incrementalSearchingEnabled;
+    code_.incrementalSearchingEnabled = NO;
     current_ = sheet;
     Sheet* shown = sheet != nil ? sheet : blank_;
     NSLayoutManager* layout = code_.layoutManager;
     if (layout.textStorage != shown.storage) [layout replaceTextStorage:shown.storage];
+    [code_ textStorageChanged];
+    code_.incrementalSearchingEnabled = incremental;
     code_.editable = sheet != nil;
     code_.font = codeFont_;
     code_.typingAttributes = [self codeAttributes];
@@ -907,69 +1045,173 @@ static NSColor* ColourOf(unsigned char kind) {
 
     [self applyErrorMarks];
     [gutter_ textDidChange];
-    [self recolour];
+    [self recolourAll];
     [self refreshTitle];
     [self sayBuild];
     [self sayWhere];
-    [self fillNavigator];
+    [self refreshOpenFiles];
     if (sheet != nil) [self.window makeFirstResponder:code_];
+}
+
+// ---- reading and writing a file as it was --------------------------------------
+
+// A file's text as the editor holds it - '\n' between rows, which is what the core counts - with
+// what it was on the disk remembered on the sheet so Save writes it back so (M5): UTF-8, else
+// Latin-1 (which reads every byte), a BOM, and CRLF or CR line endings. nil when it cannot be read.
+- (NSString*)read:(NSString*)path into:(Sheet*)sheet problem:(NSString**)problem {
+    NSError* error = nil;
+    NSData* data = [NSData dataWithContentsOfFile:path options:0 error:&error];
+    if (data == nil) {
+        if (problem) *problem = error.localizedDescription ?: [@"cannot read " stringByAppendingString:path];
+        return nil;
+    }
+    const unsigned char* bytes = (const unsigned char*)data.bytes;
+    BOOL bom = data.length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+    NSData* body = bom ? [data subdataWithRange:NSMakeRange(3, data.length - 3)] : data;
+    NSStringEncoding encoding = NSUTF8StringEncoding;
+    NSString* text = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding];
+    if (text == nil) {
+        encoding = NSISOLatin1StringEncoding;
+        text = [[NSString alloc] initWithData:body encoding:NSISOLatin1StringEncoding];
+    }
+    if (text == nil) {
+        if (problem) *problem = [@"cannot read " stringByAppendingString:path];
+        return nil;
+    }
+    NSString* ending = @"\n";
+    if ([text rangeOfString:@"\r\n"].location != NSNotFound) ending = @"\r\n";
+    else if ([text rangeOfString:@"\r"].location != NSNotFound) ending = @"\r";
+    text = [[text stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"]
+        stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
+    if (sheet != nil) {
+        sheet.encoding = encoding;
+        sheet.lineEnding = ending;
+        sheet.byteOrderMark = bom;
+        sheet.stamp = [self stampOf:path];
+    }
+    return text;
+}
+
+- (NSDate*)stampOf:(NSString*)path {
+    return [NSFileManager.defaultManager attributesOfItemAtPath:path error:NULL].fileModificationDate;
+}
+
+// Changed on the disk since it was read or written here.
+- (BOOL)changedOnDisk:(Sheet*)sheet {
+    if (sheet.path == nil || sheet.stamp == nil) return NO;
+    NSDate* now = [self stampOf:sheet.path];
+    return now != nil && ![now isEqualToDate:sheet.stamp];
 }
 
 - (void)openPath:(NSString*)path {
     if (path.length == 0) return;
     path = path.stringByStandardizingPath;
+    BOOL directory = NO;
+    if ([NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] && directory) {
+        [self say:[path.lastPathComponent stringByAppendingString:@" is a directory, not a file"]];
+        return;
+    }
     Sheet* already = [self sheetFor:path];
     if (already != nil) {
         [self showSheet:already];
         return;
     }
-    NSError* problem = nil;
-    NSString* contents = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding
-                                                      error:&problem];
+    Sheet* sheet = [[Sheet alloc] init];
+    NSString* problem = nil;
+    NSString* contents = [self read:path into:sheet problem:&problem];
     if (contents == nil) {
-        // Not UTF-8: read as Latin-1 rather than refuse; saving writes UTF-8.
-        contents = [NSString stringWithContentsOfFile:path encoding:NSISOLatin1StringEncoding
-                                                error:&problem];
-    }
-    if (contents == nil) {
-        [self say:problem.localizedDescription ?: [@"cannot read " stringByAppendingString:path]];
+        [self say:problem];
         return;
     }
-    contents = [[contents stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"]
-        stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
-
-    Sheet* sheet = [self makeSheet:path text:contents];
+    sheet.path = path;
+    sheet.storage = [[NSTextStorage alloc] initWithString:contents attributes:[self codeAttributes]];
+    [sheets_ addObject:sheet];
     [self showSheet:sheet];
     code_.selectedRange = NSMakeRange(0, 0);
     [code_ scrollRangeToVisible:NSMakeRange(0, 0)];
     ride_remember_file(Utf8(path));
-    NSUInteger lines = [contents componentsSeparatedByString:@"\n"].count;
-    [self say:[NSString stringWithFormat:@"%@  %lu lines", path.lastPathComponent,
-                                         (unsigned long)lines]];
+    NSString* said = [NSString stringWithFormat:@"%@  %ld lines", path.lastPathComponent,
+                                                (long)[code_ lineCount]];
+    if (sheet.encoding != NSUTF8StringEncoding)
+        said = [said stringByAppendingString:@" - not UTF-8, read as Latin-1 and kept so"];
+    [self say:said];
 }
 
+// Writes the sheet as the file was: its encoding, its line ending, its BOM. A character Latin-1
+// has no byte for is written as UTF-8 instead, and said so, rather than lost.
 - (BOOL)writeSheet:(Sheet*)sheet {
     if (sheet == nil || sheet.path == nil) return NO;
+    return [self writeSheet:sheet to:sheet.path];
+}
+
+- (BOOL)writeSheet:(Sheet*)sheet to:(NSString*)path {
+    NSString* text = sheet.storage.string;
+    if (![sheet.lineEnding isEqualToString:@"\n"])
+        text = [text stringByReplacingOccurrencesOfString:@"\n" withString:sheet.lineEnding];
+    NSData* data = [text dataUsingEncoding:sheet.encoding allowLossyConversion:NO];
+    if (data == nil) {
+        sheet.encoding = NSUTF8StringEncoding;
+        data = [text dataUsingEncoding:NSUTF8StringEncoding];
+        [self say:[path.lastPathComponent stringByAppendingString:@" now holds what Latin-1 cannot - written as UTF-8"]];
+    }
+    NSMutableData* all = [NSMutableData data];
+    if (sheet.byteOrderMark && sheet.encoding == NSUTF8StringEncoding) {
+        static const unsigned char bom[3] = {0xEF, 0xBB, 0xBF};
+        [all appendBytes:bom length:3];
+    }
+    [all appendData:data];
     NSError* problem = nil;
-    if (![sheet.storage.string writeToFile:sheet.path atomically:YES
-                                  encoding:NSUTF8StringEncoding error:&problem]) {
+    if (![all writeToFile:path options:NSDataWritingAtomic error:&problem]) {
         [self say:problem.localizedDescription ?: @"not written"];
         return NO;
     }
     sheet.modified = NO;
+    sheet.stamp = [self stampOf:path];
+    return YES;
+}
+
+// Before a file is written over: if it changed on the disk since it was read, ask (M10).
+- (BOOL)mayOverwrite:(Sheet*)sheet {
+    if (![self changedOnDisk:sheet]) return YES;
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = [NSString stringWithFormat:@"%@ has changed on the disk.", sheet.path.lastPathComponent];
+    alert.informativeText = @"Something else wrote it after it was opened here. Saving writes over that.";
+    [alert addButtonWithTitle:@"Save Anyway"];
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:@"Reload"];
+    NSModalResponse answer = [alert runModal];
+    if (answer == NSAlertFirstButtonReturn) return YES;
+    if (answer == NSAlertThirdButtonReturn) [self reload:sheet];
+    return NO;
+}
+
+// The file read again from the disk, through the same reader as Open (M5); undoable.
+- (BOOL)reload:(Sheet*)sheet {
+    if (sheet.path == nil) return NO;
+    NSString* problem = nil;
+    NSString* contents = [self read:sheet.path into:sheet problem:&problem];
+    if (contents == nil) { [self say:problem]; return NO; }
+    if (sheet != current_) [self showSheet:sheet];
+    [code_ replaceRange:NSMakeRange(0, current_.storage.length) with:contents];
+    [code_ breakUndoCoalescing];
+    current_.modified = NO;
+    [self refreshTitle];
+    [self refreshOpenFiles];
     return YES;
 }
 
 - (BOOL)saveSheet:(Sheet*)sheet {
     if (sheet == nil) return NO;
     if (sheet.path == nil) return [self saveSheetAs:sheet];
+    if (![self mayOverwrite:sheet]) return NO;
     if (![self writeSheet:sheet]) return NO;
     [self say:[sheet.path.lastPathComponent stringByAppendingString:@" written"]];
     [self refreshTitle];
-    [navigator_ reloadData];
+    [self refreshOpenFiles];
     return YES;
 }
 
+// The sheet takes the new name only once it is written there (L8).
 - (BOOL)saveSheetAs:(Sheet*)sheet {
     NSSavePanel* pick = [NSSavePanel savePanel];
     pick.canCreateDirectories = YES;
@@ -980,8 +1222,15 @@ static NSColor* ColourOf(unsigned char kind) {
         [self say:@"not saved"];
         return NO;
     }
-    sheet.path = pick.URL.path;
-    if (![self writeSheet:sheet]) return NO;
+    NSString* target = pick.URL.path;
+    Sheet* other = [self sheetFor:target];
+    if (other != nil && other != sheet) {
+        [self say:[target.lastPathComponent stringByAppendingString:@" is open already - close it first"]];
+        return NO;
+    }
+    if (![self writeSheet:sheet to:target]) return NO;
+    sheet.path = target;
+    sheet.untitled = 0;
 
     // Saved into the project's directory is saved into the project.
     NSString* said = [sheet.path.lastPathComponent stringByAppendingString:@" written"];
@@ -992,15 +1241,29 @@ static NSColor* ColourOf(unsigned char kind) {
     [self refreshTitle];
     [self sayBuild];
     [self fillNavigator];
-    [self recolour];
+    [self recolourAll];
     return YES;
 }
 
-- (void)saveEveryModified {
-    for (Sheet* sheet in sheets_)
-        if (sheet.modified && sheet.path != nil) [self writeSheet:sheet];
+// Every changed file that has a name, written; NO, and the first that was not, if any failed (M4).
+- (BOOL)saveEveryModified {
+    for (Sheet* sheet in [sheets_ copy]) {
+        if (!sheet.modified || sheet.path == nil) continue;
+        if (![self mayOverwrite:sheet] || ![self writeSheet:sheet]) {
+            [self refreshTitle];
+            [self refreshOpenFiles];
+            NSAlert* alert = [[NSAlert alloc] init];
+            alert.messageText = [NSString stringWithFormat:@"%@ was not written, so nothing was built.",
+                                                           sheet.path.lastPathComponent];
+            alert.informativeText = statusMessage_.stringValue ?: @"";
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+            return NO;
+        }
+    }
     [self refreshTitle];
-    [navigator_ reloadData];
+    [self refreshOpenFiles];
+    return YES;
 }
 
 // Asks before a changed file goes; NO when the answer was Cancel.
@@ -1048,6 +1311,27 @@ static NSColor* ColourOf(unsigned char kind) {
     return [self mayClose];
 }
 
+// Back to the window: a file open here and changed on the disk meanwhile is read again if it has
+// no changes of its own, and asked about if it has (M10).
+- (void)windowDidBecomeKey:(NSNotification*)note {
+    (void)note;
+    for (Sheet* sheet in [sheets_ copy]) {
+        if (![self changedOnDisk:sheet]) continue;
+        if (![NSFileManager.defaultManager fileExistsAtPath:sheet.path]) continue;
+        if (!sheet.modified) {
+            if ([self reload:sheet]) [self say:[sheet.path.lastPathComponent stringByAppendingString:@" changed on the disk - read again"]];
+            continue;
+        }
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = [NSString stringWithFormat:@"%@ has changed on the disk.", sheet.path.lastPathComponent];
+        alert.informativeText = @"It also has changes here that are not saved. Read the disk's, and lose them?";
+        [alert addButtonWithTitle:@"Keep Mine"];
+        [alert addButtonWithTitle:@"Read the Disk's"];
+        if ([alert runModal] == NSAlertSecondButtonReturn) [self reload:sheet];
+        else sheet.stamp = [self stampOf:sheet.path];
+    }
+}
+
 - (void)windowWillClose:(NSNotification*)note {
     (void)note;
     // The last window going ends the application (the delegate says so),
@@ -1070,6 +1354,8 @@ static NSColor* ColourOf(unsigned char kind) {
 
 // ---- the navigator --------------------------------------------------------------
 
+// The whole navigator, made again: when the project arrives, goes or changes what it holds. A file
+// shown or closed only touches OPEN FILES, so groups folded by hand stay folded (L10).
 - (void)fillNavigator {
     [navRoots_ removeAllObjects];
 
@@ -1099,13 +1385,8 @@ static NSColor* ColourOf(unsigned char kind) {
     NavItem* open = [[NavItem alloc] init];
     open.section = YES;
     open.title = @"OPEN FILES";
-    for (Sheet* sheet in sheets_) {
-        NavItem* leaf = [[NavItem alloc] init];
-        leaf.title = [self shownName:sheet];
-        leaf.path = sheet.path;
-        [open.children addObject:leaf];
-    }
     [navRoots_ addObject:open];
+    [self fillOpenFiles:open];
 
     [navigator_ reloadData];
     for (NavItem* root in navRoots_) {
@@ -1115,6 +1396,31 @@ static NSColor* ColourOf(unsigned char kind) {
     [self selectCurrentInNavigator];
 }
 
+- (void)fillOpenFiles:(NavItem*)open {
+    [open.children removeAllObjects];
+    for (Sheet* sheet in sheets_) {
+        NavItem* leaf = [[NavItem alloc] init];
+        leaf.title = [self shownName:sheet];
+        leaf.path = sheet.path;
+        leaf.sheet = sheet;
+        [open.children addObject:leaf];
+    }
+}
+
+- (void)refreshOpenFiles {
+    NavItem* open = navRoots_.lastObject;
+    if (open == nil) { [self fillNavigator]; return; }
+    [self fillOpenFiles:open];
+    [navigator_ reloadItem:open reloadChildren:YES];
+    [navigator_ expandItem:open];
+    // A project row's dot says whether its open file is changed.
+    for (NSInteger row = 0; row < navigator_.numberOfRows; ++row)
+        [navigator_ reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row]
+                              columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+    [self selectCurrentInNavigator];
+}
+
+// The row of the file in front: its OPEN FILES row, which is that sheet and no other (M7).
 - (void)selectCurrentInNavigator {
     if (current_ == nil) {
         [navigator_ deselectAll:nil];
@@ -1122,11 +1428,7 @@ static NSColor* ColourOf(unsigned char kind) {
     }
     for (NSInteger row = 0; row < navigator_.numberOfRows; ++row) {
         NavItem* item = [navigator_ itemAtRow:row];
-        BOOL same = item.path != nil && current_.path != nil &&
-                    [item.path.stringByStandardizingPath
-                        isEqualToString:current_.path.stringByStandardizingPath];
-        if (same || (current_.path == nil && item.path == nil && !item.section &&
-                     item.children.count == 0 && [item.title isEqualToString:@"Untitled"])) {
+        if (item.sheet == current_) {
             [navigator_ selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row]
                     byExtendingSelection:NO];
             return;
@@ -1200,17 +1502,8 @@ static NSColor* ColourOf(unsigned char kind) {
     }
 
     NSString* title = node.title;
-    if (node.path != nil) {
-        Sheet* open = [self sheetFor:node.path];
-        if (open.modified) title = [title stringByAppendingString:@"  ●"];
-    } else if (!node.section && node.group == nil) {
-        // An untitled sheet in the open-files list.
-        for (Sheet* sheet in sheets_)
-            if (sheet.path == nil && sheet.modified) {
-                title = [title stringByAppendingString:@"  ●"];
-                break;
-            }
-    }
+    Sheet* open = node.sheet != nil ? node.sheet : [self sheetFor:node.path];
+    if (open.modified) title = [title stringByAppendingString:@"  ●"];
     cell.textField.stringValue = title ?: @"";
 
     if (!node.section) {
@@ -1238,18 +1531,13 @@ static NSColor* ColourOf(unsigned char kind) {
     if (row < 0) return;
     NavItem* item = [navigator_ itemAtRow:row];
     if (item.section) return;
+    if (item.sheet != nil) {
+        [self showSheet:item.sheet];
+        return;
+    }
     if (item.path != nil) {
         if ([NSFileManager.defaultManager fileExistsAtPath:item.path]) [self openPath:item.path];
         else [self say:[item.title stringByAppendingString:@" is not on the disk"]];
-        return;
-    }
-    if (item.group == nil) {
-        // An untitled sheet.
-        for (Sheet* sheet in sheets_)
-            if (sheet.path == nil) {
-                [self showSheet:sheet];
-                return;
-            }
     }
 }
 
@@ -1304,15 +1592,19 @@ static NSColor* ColourOf(unsigned char kind) {
 // missing or empty, filled from the install's own projects or programs, which is how the samples reach a new user.
 - (NSString*)madeUnder:(NSString*)leaf {
     NSFileManager* fm = NSFileManager.defaultManager;
-    NSString* base = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/RIDE"];
+    NSString* documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    if (documents.length == 0) documents = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    NSString* base = [documents stringByAppendingPathComponent:@"RIDE"];
     NSString* made = [base stringByAppendingPathComponent:leaf];
     [fm createDirectoryAtPath:made withIntermediateDirectories:YES attributes:nil error:NULL];
     NSArray<NSString*>* there = [fm contentsOfDirectoryAtPath:made error:NULL];
     NSString* seed = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:leaf];
-    if (there.count == 0)
-        for (NSString* item in [fm contentsOfDirectoryAtPath:seed error:NULL])
-            [fm copyItemAtPath:[seed stringByAppendingPathComponent:item]
-                        toPath:[made stringByAppendingPathComponent:item] error:NULL];
+    NSArray<NSString*>* samples = there.count == 0 ? [fm contentsOfDirectoryAtPath:seed error:NULL] : nil;
+    for (NSString* item in samples)
+        [fm copyItemAtPath:[seed stringByAppendingPathComponent:item]
+                    toPath:[made stringByAppendingPathComponent:item] error:NULL];
+    if (samples.count > 0)
+        [self say:[NSString stringWithFormat:@"the sample %@ were copied into %@ to start from", leaf, made]];
     return made;
 }
 
@@ -1373,25 +1665,22 @@ static NSColor* ColourOf(unsigned char kind) {
     NSUInteger written = 0;
     for (Sheet* sheet in [sheets_ copy]) {
         if (!sheet.modified) continue;
-        if (sheet.path == nil) { [self showSheet:sheet]; [self saveSheetAs:sheet]; }
-        else if ([self writeSheet:sheet]) ++written;
+        if (sheet.path == nil) {
+            [self showSheet:sheet];
+            if ([self saveSheetAs:sheet]) ++written;
+        } else if ([self mayOverwrite:sheet] && [self writeSheet:sheet]) {
+            ++written;
+        }
     }
     [self refreshTitle];
-    [navigator_ reloadData];
+    [self refreshOpenFiles];
     [self say:[NSString stringWithFormat:@"%lu file(s) written", (unsigned long)written]];
 }
 
 - (void)revertDocumentToSaved:(id)sender {
     (void)sender;
     if (current_.path == nil) return;
-    NSString* contents = [NSString stringWithContentsOfFile:current_.path
-                                                   encoding:NSUTF8StringEncoding error:NULL];
-    if (contents == nil) { [self say:@"cannot read it back"]; return; }
-    [code_ replaceRange:NSMakeRange(0, current_.storage.length) with:contents];
-    current_.modified = NO;
-    [self refreshTitle];
-    [navigator_ reloadData];
-    [self say:@"back to what is on the disk"];
+    if ([self reload:current_]) [self say:@"back to what is on the disk"];
 }
 
 - (void)closeFile:(id)sender {
@@ -1412,6 +1701,11 @@ static NSColor* ColourOf(unsigned char kind) {
 // ---- Project --------------------------------------------------------------------
 
 - (void)loadProject:(NSString*)where {
+    // A build reads the project on its own thread; one is not replaced under it (H1).
+    if (busy_) {
+        [self say:@"a build or a program is running - stop it (Command-.) before opening a project"];
+        return;
+    }
     BOOL isDirectory = NO;
     [NSFileManager.defaultManager fileExistsAtPath:where isDirectory:&isDirectory];
     NSString* directory = isDirectory ? where : where.stringByDeletingLastPathComponent;
@@ -1426,7 +1720,7 @@ static NSColor* ColourOf(unsigned char kind) {
             [self say:Str(ride_outcome_message(project_))];
             return;
         }
-        ride_project_set_root(project_, Utf8(where));
+        ride_project_set_root(project_, Utf8(directory));
         [self say:reason.length > 0 ? reason : @"no .pro project in that directory"];
         return;
     }
@@ -1646,9 +1940,14 @@ static NSColor* ColourOf(unsigned char kind) {
     alert.alertStyle = NSAlertStyleWarning;
     alert.messageText = [NSString stringWithFormat:@"Delete %@ from the disk?", target.lastPathComponent];
     alert.informativeText = @"This cannot be undone.";
-    [alert addButtonWithTitle:@"Cancel"];
-    [alert addButtonWithTitle:@"Delete"];
-    if ([alert runModal] != NSAlertSecondButtonReturn) { [self say:@"not deleted"]; return; }
+    // Delete is the action and goes where the action goes, marked destructive, and Return does
+    // not press it; Cancel is Escape's (L3).
+    NSButton* remove = [alert addButtonWithTitle:@"Delete"];
+    NSButton* cancel = [alert addButtonWithTitle:@"Cancel"];
+    remove.keyEquivalent = @"";
+    cancel.keyEquivalent = @"\033";
+    if (@available(macOS 11.0, *)) remove.hasDestructiveAction = YES;
+    if ([alert runModal] != NSAlertFirstButtonReturn) { [self say:@"not deleted"]; return; }
     if (![self did:ride_delete_file(project_, Utf8(target))]) return;
     Sheet* open = [self sheetFor:target];
     if (open != nil) {
@@ -1744,8 +2043,8 @@ static NSColor* ColourOf(unsigned char kind) {
     NSMutableIndexSet* warnings = [NSMutableIndexSet indexSet];
     NSString* here = current_.path.stringByStandardizingPath;
     for (Issue* issue in issues_) {
-        if (here == nil || issue.line <= 0) continue;
-        if (issue.file != nil && ![issue.file.stringByStandardizingPath isEqualToString:here]) continue;
+        if (here == nil || issue.line <= 0 || issue.file == nil) continue;
+        if (![issue.file.stringByStandardizingPath isEqualToString:here]) continue;
         if (issue.warning) [warnings addIndex:(NSUInteger)issue.line];
         else [errors addIndex:(NSUInteger)issue.line];
     }
@@ -1753,8 +2052,10 @@ static NSColor* ColourOf(unsigned char kind) {
     gutter_.warningLines = warnings;
 }
 
+// The file a diagnostic names, made absolute; nil when it names none or one that is not there -
+// a linker's message, say - rather than the source, or the project's directory (M3).
 - (NSString*)absoluteFor:(NSString*)file source:(NSString*)source {
-    if (file.length == 0) return source;
+    if (file.length == 0) return source.length > 0 ? source : nil;
     if (file.isAbsolutePath) return file.stringByStandardizingPath;
     if (ride_project_loaded(project_)) {
         NSString* full = Str(ride_project_absolute(project_, Utf8(file)));
@@ -1764,7 +2065,7 @@ static NSColor* ColourOf(unsigned char kind) {
         NSString* beside = [source.stringByDeletingLastPathComponent stringByAppendingPathComponent:file];
         if ([NSFileManager.defaultManager fileExistsAtPath:beside]) return beside.stringByStandardizingPath;
     }
-    return file;
+    return nil;
 }
 
 // Every diagnostic in what the compilers printed, read line by line with the
@@ -1780,16 +2081,20 @@ static NSColor* ColourOf(unsigned char kind) {
         size_t end = text.find('\n', at);
         std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
         // The line on its own first; then with the one before it, which is
-        // how cc1's two-line preprocessor form is read.
-        editor::Diagnostic d = editor::parseDiagnostic(line, sourcePath);
-        if (!d.present && !previous.empty())
-            d = editor::parseDiagnostic(previous + "\n" + line, sourcePath);
-        if (d.present) {
+        // how cc1's two-line preprocessor form is read. Through the bridge (M11).
+        int row = 0, column = 0;
+        const char* file = "";
+        const char* message = "";
+        int found = ride_parse_diagnostic(line.c_str(), sourcePath.c_str(), &row, &column, &file, &message);
+        if (!found && !previous.empty())
+            found = ride_parse_diagnostic((previous + "\n" + line).c_str(), sourcePath.c_str(), &row,
+                                          &column, &file, &message);
+        if (found) {
             Issue* issue = [[Issue alloc] init];
-            issue.file = [self absoluteFor:Str(d.file.c_str()) source:source];
-            issue.line = (NSInteger)d.line;
-            issue.column = (NSInteger)d.col;
-            issue.message = Str(d.message.c_str());
+            issue.file = [self absoluteFor:StrLossy(file, std::strlen(file)) source:source];
+            issue.line = row;
+            issue.column = column;
+            issue.message = StrLossy(message, std::strlen(message));
             issue.warning = line.find("warning") != std::string::npos &&
                             line.find("error") == std::string::npos;
             BOOL seen = NO;
@@ -1804,14 +2109,14 @@ static NSColor* ColourOf(unsigned char kind) {
     }
 
     if (outcome.hasError) {
-        NSString* message = Str(outcome.errorMessage.c_str());
+        NSString* message = StrLossy(outcome.errorMessage);
         BOOL seen = NO;
         for (Issue* issue in issues_)
             if (!issue.warning && issue.line == outcome.errorLine &&
                 [issue.message isEqualToString:message]) { seen = YES; break; }
         if (!seen) {
             Issue* issue = [[Issue alloc] init];
-            issue.file = [self absoluteFor:Str(outcome.errorFile.c_str()) source:source];
+            issue.file = [self absoluteFor:StrLossy(outcome.errorFile) source:source];
             issue.line = outcome.errorLine;
             issue.column = outcome.errorColumn;
             issue.message = message;
@@ -1825,9 +2130,18 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (void)goToIssue:(Issue*)issue {
     if (issue == nil) return;
-    if (issue.file != nil && [NSFileManager.defaultManager fileExistsAtPath:issue.file])
-        [self openPath:issue.file];
-    if (current_ == nil) return;
+    BOOL directory = NO;
+    BOOL there = issue.file != nil &&
+                 [NSFileManager.defaultManager fileExistsAtPath:issue.file isDirectory:&directory] &&
+                 !directory;
+    if (there) [self openPath:issue.file];
+    // A diagnostic in no file this window can show goes nowhere, rather than to a line of
+    // whatever file is in front.
+    if (current_ == nil || !there || ![current_.path.stringByStandardizingPath
+                                          isEqualToString:issue.file.stringByStandardizingPath]) {
+        [self say:issue.message ?: @""];
+        return;
+    }
     [code_ goToLine:issue.line column:issue.column];
     [self.window makeFirstResponder:code_];
     [self say:[NSString stringWithFormat:@"%@:%ld:%ld: %@: %@",
@@ -1906,9 +2220,13 @@ static NSColor* ColourOf(unsigned char kind) {
 }
 
 - (void)append:(NSString*)text to:(NSTextView*)view {
+    [self append:text to:view colour:nil];
+}
+
+- (void)append:(NSString*)text to:(NSTextView*)view colour:(NSColor*)colour {
     NSDictionary* attributes = @{
         NSFontAttributeName : view.font ?: [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular],
-        NSForegroundColorAttributeName : [NSColor textColor],
+        NSForegroundColorAttributeName : colour ?: [NSColor textColor],
     };
     [view.textStorage appendAttributedString:[[NSAttributedString alloc] initWithString:text
                                                                              attributes:attributes]];
@@ -1957,7 +2275,7 @@ static NSColor* ColourOf(unsigned char kind) {
 
 - (BOOL)mayStartWork {
     if (busy_) {
-        [self say:@"still working - give it a moment"];
+        [self say:@"still working - Build > Stop (Command-.) ends it"];
         return NO;
     }
     return YES;
@@ -1968,11 +2286,30 @@ static NSColor* ColourOf(unsigned char kind) {
 - (void)buildProjectAction:(id)sender { (void)sender; [self buildProject:NO]; }
 - (void)runProjectAction:(id)sender { (void)sender; [self buildProject:YES]; }
 
+// Build > Stop: the program running, or the build - its compiler or linker killed, and the build
+// then ending as a failure that says it was stopped (H2).
+- (void)stopWork:(id)sender {
+    (void)sender;
+    if (running_ != NULL) ride_running_stop(running_);
+    else if (busy_) ride_cancel_builds();
+    else return;
+    [self say:@"stopping..."];
+}
+
+// Stops what is running and waits for it, for the application going (main.mm).
+- (void)stopEverything {
+    if (running_ != NULL) {
+        ride_running_stop(running_);
+        ride_running_wait(running_, 5000);
+    }
+    ride_cancel_builds();
+}
+
 - (void)buildFile:(BOOL)andRun {
     if (![self mayStartWork]) return;
     if (current_ == nil) { [self say:@"no file is open"]; return; }
     if (current_.path == nil && ![self saveSheetAs:current_]) return;
-    [self saveEveryModified];
+    if (![self saveEveryModified]) return;
 
     NSString* path = current_.path;
     int of = ride_project_runs_as_project(project_, Utf8(path));
@@ -2015,68 +2352,60 @@ static NSColor* ColourOf(unsigned char kind) {
     [self advanceWork:[@"$ " stringByAppendingString:command]];
     [self showPanel:kPanelProgress];
 
+    if (andRun) {
+        // Built and run on the core's worker, the program's output here as it comes and the input
+        // line open to it; the project is read now, on this thread, and not again.
+        [self showPanel:kPanelOutput];
+        [self startRun:ride_run_start(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(), kind,
+                                      source.c_str(), language, arch.c_str(), config,
+                                      RunOutput, (__bridge void*)self)
+                source:path compiler:compiler program:nil];
+        return;
+    }
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        Outcome outcome;
-        if (!andRun) {
-            RIDEBuild* built = ride_build(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
-                                          kind, source.c_str(), language, arch.c_str(), config);
-            outcome.ran = true;
-            outcome.ok = ride_build_ok(built) != 0;
-            outcome.output = ride_build_output(built);
-            outcome.hasError = ride_build_has_error(built) != 0;
-            outcome.errorFile = ride_build_error_file(built);
-            outcome.errorLine = ride_build_error_line(built);
-            outcome.errorColumn = ride_build_error_column(built);
-            outcome.errorMessage = ride_build_error_message(built);
-            outcome.assembly = ride_build_assembly(built);
-            outcome.assemblyLines = ride_build_assembly_lines(built);
-            ride_build_free(built);
-        } else {
-            RIDERan* ran = ride_run(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
-                                    kind, source.c_str(), language, arch.c_str(), config);
-            outcome.ran = true;
-            outcome.ok = ride_ran_built(ran) != 0;
-            outcome.output = ride_ran_output(ran);
-            outcome.hasError = ride_ran_has_error(ran) != 0;
-            outcome.errorLine = ride_ran_error_line(ran);
-            outcome.errorColumn = ride_ran_error_column(ran);
-            outcome.errorMessage = ride_ran_error_message(ran);
-            outcome.programRan = ride_ran_ran(ran) != 0;
-            outcome.status = ride_ran_status(ran);
-            ride_run_free(ran);
-        }
+        RIDEBuild* built = ride_build(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
+                                      kind, source.c_str(), language, arch.c_str(), config);
+        Outcome outcome = OutcomeOf(built);
+        ride_build_free(built);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self finishFile:outcome source:path compiler:compiler run:andRun];
+            [self finishFile:outcome source:path compiler:compiler run:NO];
         });
     });
 }
 
 - (void)finishFile:(const Outcome&)outcome source:(NSString*)path
           compiler:(NSString*)compiler run:(BOOL)andRun {
-    [self append:Str(outcome.output.c_str()) to:output_];
+    // A run's build streamed its lines into Output as it went; a compile's come now.
+    if (!andRun) [self append:StrLossy(outcome.output) to:output_];
     [self collectIssues:outcome source:path];
 
+    if (outcome.stopped && !andRun) {
+        [self endWork:[compiler stringByAppendingString:@" stopped"] ok:NO];
+        [self showPanel:kPanelOutput];
+        return;
+    }
     if (outcome.hasError) {
         [self advanceWork:[NSString stringWithFormat:@"%@ stopped at line %d: %@", compiler,
-                                                     outcome.errorLine, Str(outcome.errorMessage.c_str())]];
+                                                     outcome.errorLine, StrLossy(outcome.errorMessage)]];
+        NSString* where = outcome.errorFile.empty() ? path.lastPathComponent
+                                                    : StrLossy(outcome.errorFile).lastPathComponent;
         [self endWork:[NSString stringWithFormat:@"%lu issue(s) - %@:%d:%d: error: %@",
-                                                 (unsigned long)issues_.count, path.lastPathComponent,
+                                                 (unsigned long)issues_.count, where,
                                                  outcome.errorLine, outcome.errorColumn,
-                                                 Str(outcome.errorMessage.c_str())]
+                                                 StrLossy(outcome.errorMessage)]
                    ok:NO];
         [self showPanel:kPanelErrors];
         if (issues_.count > 0) {
             [issueTable_ selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
-            Issue* first = issues_.firstObject;
-            [self openPath:first.file ?: path];
-            [code_ goToLine:first.line column:first.column];
+            [self goToIssue:issues_.firstObject];
         }
         return;
     }
     if (!outcome.ok) {
-        [self advanceWork:[compiler stringByAppendingString:@" did not finish"]];
-        [self endWork:[NSString stringWithFormat:andRun ? @"%@ built no program - see Output"
-                                                        : @"%@ failed - see Output", compiler]
+        [self advanceWork:[compiler stringByAppendingString:outcome.stopped ? @" stopped" : @" did not finish"]];
+        [self endWork:outcome.stopped ? [compiler stringByAppendingString:@" stopped"]
+                     : [NSString stringWithFormat:andRun ? @"%@ built no program - see Output"
+                                                         : @"%@ failed - see Output", compiler]
                    ok:NO];
         [self showPanel:issues_.count > 0 ? kPanelErrors : kPanelOutput];
         return;
@@ -2088,7 +2417,7 @@ static NSColor* ColourOf(unsigned char kind) {
         if (!outcome.assembly.empty()) {
             [self append:[NSString stringWithFormat:@"\n---- assembly, %d lines ----\n", outcome.assemblyLines]
                       to:output_];
-            [self append:Str(outcome.assembly.c_str()) to:output_];
+            [self append:StrLossy(outcome.assembly) to:output_];
             [output_ scrollRangeToVisible:NSMakeRange(0, 0)];
         }
         NSString* verdict = [NSString stringWithFormat:@"%@ compiled - %d lines of assembly%@",
@@ -2098,14 +2427,109 @@ static NSColor* ColourOf(unsigned char kind) {
         [self showPanel:issues_.count > 0 ? kPanelErrors : kPanelOutput];
         return;
     }
+    [self finishRun:outcome name:path.lastPathComponent];
+}
 
-    [self advanceWork:@"built; running it"];
+// ---- a program the window watches -------------------------------------------
+
+// RIDEOutput: on the core's worker thread, so the bytes are copied and carried to the main one.
+static void RunOutput(void* user, const char* bytes, int size, int stream) {
+    WindowController* window = (__bridge WindowController*)user;
+    if (bytes == NULL) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [window runEnded]; });
+        return;
+    }
+    std::string piece(bytes, (size_t)size);
+    dispatch_async(dispatch_get_main_queue(), ^{ [window runSaid:piece stream:stream]; });
+}
+
+- (void)startRun:(RIDERunning*)running source:(NSString*)source compiler:(NSString*)compiler
+         program:(NSString*)program {
+    if (running == NULL) {
+        [self endWork:@"the program could not be started - no thread for it" ok:NO];
+        return;
+    }
+    running_ = running;
+    runSource_ = source;
+    runCompiler_ = compiler;
+    runProgram_ = program;
+    for (std::string& pending : pending_) pending.clear();
+    inputLine_.enabled = YES;
+    inputLine_.stringValue = @"";
+    [self.window makeFirstResponder:inputLine_];
+}
+
+- (void)runSaid:(const std::string&)piece stream:(int)stream {
+    if (stream < 0 || stream > 2) stream = 0;
+    pending_[stream] += piece;
+    NSString* text = StrLossy(WholeCharacters(pending_[stream]));
+    if (text.length == 0) return;
+    NSColor* colour = stream == RIDE_STREAM_ERR ? [NSColor systemRedColor]
+                    : stream == RIDE_STREAM_BUILD ? [NSColor secondaryLabelColor] : nil;
+    [self append:text to:output_ colour:colour];
+}
+
+- (void)runEnded {
+    if (running_ == NULL) return;
+    for (int stream = 0; stream < 3; ++stream)
+        if (!pending_[stream].empty()) {
+            [self append:StrLossy(pending_[stream]) to:output_];
+            pending_[stream].clear();
+        }
+    Outcome outcome = OutcomeOf(running_);
+    bool ran = ride_running_ran(running_) != 0;
+    ride_running_free(running_);
+    running_ = NULL;
+    inputLine_.enabled = NO;
+    if (self.window.firstResponder == inputLine_.currentEditor || self.window.firstResponder == inputLine_)
+        [self.window makeFirstResponder:current_ != nil ? (NSResponder*)code_ : nil];
+
+    if (runProgram_ != nil) {
+        // Run Project: the build is done; this was the program.
+        outcome.ok = ran;
+        [self finishRun:outcome name:runProgram_.lastPathComponent];
+    } else {
+        [self finishFile:outcome source:runSource_ compiler:runCompiler_ run:YES];
+    }
+}
+
+- (void)finishRun:(const Outcome&)outcome name:(NSString*)name {
+    if (outcome.stopped) {
+        [self append:@"\n[stopped]\n" to:output_];
+        [self endWork:[name stringByAppendingString:@" was stopped"] ok:NO];
+        [self showPanel:kPanelOutput];
+        return;
+    }
+    [self advanceWork:@"built; ran it"];
     [self append:[NSString stringWithFormat:@"\n[program returned %d]\n", outcome.status] to:output_];
     [self advanceWork:[NSString stringWithFormat:@"the program returned %d", outcome.status]];
-    [self endWork:[NSString stringWithFormat:@"%@ ran - it returned %d", path.lastPathComponent,
-                                             outcome.status]
+    [self endWork:[NSString stringWithFormat:@"%@ ran - it returned %d", name, outcome.status]
                ok:outcome.status == 0];
     [self showPanel:kPanelOutput];
+}
+
+// The input line: Return sends it and a newline; the program's terminal shows it as it reads.
+- (void)inputEntered:(id)sender {
+    (void)sender;
+    if (running_ == NULL) return;
+    std::string line = StdString(inputLine_.stringValue) + "\n";
+    if (!ride_running_send(running_, line.data(), (int)line.size()))
+        [self say:@"the program is not reading any more"];
+    inputLine_.stringValue = @"";
+}
+
+// Control-D on the input line ends the program's input, as at a terminal; the field editor asks
+// it as deleteForward:, which Control-D is bound to.
+- (BOOL)control:(NSControl*)control textView:(NSTextView*)view doCommandBySelector:(SEL)command {
+    (void)view;
+    if (control != inputLine_ || command != @selector(deleteForward:)) return NO;
+    NSEvent* event = NSApp.currentEvent;
+    if (event.type != NSEventTypeKeyDown || !(event.modifierFlags & NSEventModifierFlagControl)) return NO;
+    if (running_ == NULL) return YES;
+    if (inputLine_.stringValue.length > 0) [self inputEntered:nil];
+    ride_running_close_input(running_);
+    [self say:@"the program's input is closed - its next read sees the end of it"];
+    return YES;
 }
 
 - (void)buildProject:(BOOL)andRun {
@@ -2119,7 +2543,7 @@ static NSColor* ColourOf(unsigned char kind) {
         [self showPanel:kPanelOutput];
         return;
     }
-    [self saveEveryModified];
+    if (![self saveEveryModified]) return;
 
     std::string cc1 = StdString(cc1_), cl = StdString(cl_), shc = StdString(shc_), cxx1 = StdString(cxx1_);
     std::string arch = StdString(arch_);
@@ -2168,53 +2592,35 @@ static NSColor* ColourOf(unsigned char kind) {
     for (NSString* step in plan) [self progress:step];
     [self showPanel:kPanelProgress];
 
-    NSString* root = [self rootNow];
-    std::string programPath = StdString(program);
+    NSString* joined = [compilers componentsJoinedByString:@", "];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        Outcome outcome;
         RIDEBuild* made = ride_build_target(project, cc1.c_str(), cl.c_str(), shc.c_str(), cxx1.c_str(),
                                             toolKind, arch.c_str(), config);
-        if (made != NULL) {
-            outcome.ran = true;
-            outcome.ok = ride_build_ok(made) != 0;
-            outcome.output = ride_build_output(made);
-            outcome.hasError = ride_build_has_error(made) != 0;
-            outcome.errorFile = ride_build_error_file(made);
-            outcome.errorLine = ride_build_error_line(made);
-            outcome.errorColumn = ride_build_error_column(made);
-            outcome.errorMessage = ride_build_error_message(made);
-            ride_build_free(made);
-        }
-        if (andRun && outcome.ok && !outcome.hasError) {
-            RIDERan* ran = ride_run_built(programPath.c_str());
-            outcome.programRan = ride_ran_ran(ran) != 0;
-            outcome.status = ride_ran_status(ran);
-            outcome.programOutput = ride_ran_output(ran);
-            ride_run_free(ran);
-        }
+        Outcome outcome = OutcomeOf(made);
+        if (made != NULL) ride_build_free(made);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self finishProject:outcome program:program root:root parts:parts
-                      compilers:[compilers componentsJoinedByString:@", "] run:andRun];
+            [self finishProject:outcome program:program parts:parts compilers:joined run:andRun];
         });
     });
 }
 
-- (void)finishProject:(const Outcome&)outcome program:(NSString*)program root:(NSString*)root
+- (void)finishProject:(const Outcome&)outcome program:(NSString*)program
                 parts:(int)parts compilers:(NSString*)compilers run:(BOOL)andRun {
     if (!outcome.ran) {
         [self endWork:Str(ride_project_target_why(project_)) ok:NO];
         return;
     }
-    [self append:Str(outcome.output.c_str()) to:output_];
-    [self collectIssues:outcome source:[root stringByAppendingPathComponent:@"."]];
+    [self append:StrLossy(outcome.output) to:output_];
+    // A diagnostic with no file of its own - a linker's - belongs to no file (M3).
+    [self collectIssues:outcome source:nil];
     for (int i = 0; i < parts; ++i) [self advanceWork:[NSString stringWithFormat:@"part %d done", i + 1]];
 
     if (outcome.hasError) {
         [self endWork:[NSString stringWithFormat:@"%lu issue(s) - %@:%d:%d: error: %@",
                                                  (unsigned long)issues_.count,
-                                                 Str(outcome.errorFile.c_str()).lastPathComponent,
+                                                 StrLossy(outcome.errorFile).lastPathComponent,
                                                  outcome.errorLine, outcome.errorColumn,
-                                                 Str(outcome.errorMessage.c_str())]
+                                                 StrLossy(outcome.errorMessage)]
                    ok:NO];
         [self showPanel:kPanelErrors];
         if (issues_.count > 0) {
@@ -2224,7 +2630,9 @@ static NSColor* ColourOf(unsigned char kind) {
         return;
     }
     if (!outcome.ok) {
-        [self endWork:[compilers stringByAppendingString:@" did not build it - see Output"] ok:NO];
+        [self endWork:outcome.stopped ? @"the build was stopped"
+                                      : [compilers stringByAppendingString:@" did not build it - see Output"]
+                   ok:NO];
         [self showPanel:issues_.count > 0 ? kPanelErrors : kPanelOutput];
         return;
     }
@@ -2235,13 +2643,9 @@ static NSColor* ColourOf(unsigned char kind) {
         [self showPanel:issues_.count > 0 ? kPanelErrors : kPanelOutput];
         return;
     }
-    [self append:Str(outcome.programOutput.c_str()) to:output_];
-    [self append:[NSString stringWithFormat:@"\n[program returned %d]\n", outcome.status] to:output_];
-    [self advanceWork:[NSString stringWithFormat:@"the program returned %d", outcome.status]];
-    [self endWork:[NSString stringWithFormat:@"ran %@ - it returned %d", program.lastPathComponent,
-                                             outcome.status]
-               ok:outcome.status == 0];
     [self showPanel:kPanelOutput];
+    [self startRun:ride_run_built_start(Utf8(program), RunOutput, (__bridge void*)self)
+            source:nil compiler:compilers program:program];
 }
 
 - (void)convertFile:(id)sender {
@@ -2280,9 +2684,14 @@ static NSColor* ColourOf(unsigned char kind) {
         outcome.ok = ride_conversion_ok(made) != 0;
         outcome.output = ride_conversion_output(made);
         outcome.produced = ride_conversion_produced(made);
+        outcome.stopped = ride_conversion_stopped(made) != 0;
         ride_conversion_free(made);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self append:Str(outcome.output.c_str()) to:self->output_];
+            [self append:StrLossy(outcome.output) to:self->output_];
+            if (outcome.stopped) {
+                [self endWork:@"the conversion was stopped" ok:NO];
+                return;
+            }
             if (!outcome.ran) {
                 [self endWork:[@"could not run " stringByAppendingString:converter] ok:NO];
                 return;
@@ -2323,31 +2732,38 @@ static NSColor* ColourOf(unsigned char kind) {
     [code_ goToLine:line column:column];
 }
 
-// Shift the selected lines a step left or right, as the project spells one.
-- (void)shiftBy:(int)direction {
+// The rows the selection touches, handed to `change` without their '\n's and put back as one
+// undoable edit, selected - what Shift and Comment share (L15). Rows are the core's (M2).
+- (void)rewriteSelectedRows:(NSArray<NSString*>* (^)(NSArray<NSString*>* rows))change {
     if (current_ == nil) return;
-    NSString* all = code_.string;
-    NSRange lines = [all lineRangeForRange:code_.selectedRange];
-    NSString* block = [all substringWithRange:lines];
+    NSRange lines = [code_ rowsOfRange:code_.selectedRange];
+    NSString* block = [code_.string substringWithRange:lines];
     BOOL endsWithNewline = [block hasSuffix:@"\n"];
     if (endsWithNewline) block = [block substringToIndex:block.length - 1];
+    NSString* changed = [change([block componentsSeparatedByString:@"\n"]) componentsJoinedByString:@"\n"];
+    if (endsWithNewline) changed = [changed stringByAppendingString:@"\n"];
+    [code_ replaceRange:lines with:changed];
+    code_.selectedRange = NSMakeRange(lines.location, changed.length);
+}
+
+// Shift the selected lines a step left or right, as the project spells one.
+- (void)shiftBy:(int)direction {
     NSString* unit = indentTabs_ ? @"\t" : [@"" stringByPaddingToLength:(NSUInteger)[self indentWidth]
                                                             withString:@" " startingAtIndex:0];
-    NSMutableArray<NSString*>* out = [NSMutableArray array];
-    for (NSString* line in [block componentsSeparatedByString:@"\n"]) {
-        if (direction > 0) {
-            [out addObject:line.length > 0 ? [unit stringByAppendingString:line] : line];
-        } else {
-            NSUInteger cut = 0;
-            if ([line hasPrefix:@"\t"]) cut = 1;
-            else while (cut < unit.length && cut < line.length && [line characterAtIndex:cut] == ' ') ++cut;
-            [out addObject:[line substringFromIndex:cut]];
+    [self rewriteSelectedRows:^NSArray<NSString*>*(NSArray<NSString*>* rows) {
+        NSMutableArray<NSString*>* out = [NSMutableArray array];
+        for (NSString* line in rows) {
+            if (direction > 0) {
+                [out addObject:line.length > 0 ? [unit stringByAppendingString:line] : line];
+            } else {
+                NSUInteger cut = 0;
+                if ([line hasPrefix:@"\t"]) cut = 1;
+                else while (cut < unit.length && cut < line.length && [line characterAtIndex:cut] == ' ') ++cut;
+                [out addObject:[line substringFromIndex:cut]];
+            }
         }
-    }
-    NSString* shifted = [out componentsJoinedByString:@"\n"];
-    if (endsWithNewline) shifted = [shifted stringByAppendingString:@"\n"];
-    [code_ replaceRange:lines with:shifted];
-    code_.selectedRange = NSMakeRange(lines.location, shifted.length);
+        return out;
+    }];
 }
 - (void)shiftLeft:(id)sender { (void)sender; [self shiftBy:-1]; }
 - (void)shiftRight:(id)sender { (void)sender; [self shiftBy:1]; }
@@ -2356,34 +2772,26 @@ static NSColor* ColourOf(unsigned char kind) {
 // with it here, as the syntax colouring reads them.
 - (void)toggleComment:(id)sender {
     (void)sender;
-    if (current_ == nil) return;
-    NSString* all = code_.string;
-    NSRange lines = [all lineRangeForRange:code_.selectedRange];
-    NSString* block = [all substringWithRange:lines];
-    BOOL endsWithNewline = [block hasSuffix:@"\n"];
-    if (endsWithNewline) block = [block substringToIndex:block.length - 1];
-    NSArray<NSString*>* rows = [block componentsSeparatedByString:@"\n"];
-    BOOL allCommented = YES;
-    for (NSString* row in rows) {
-        NSString* trimmed = [row stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-        if (trimmed.length > 0 && ![trimmed hasPrefix:@"//"]) { allCommented = NO; break; }
-    }
-    NSMutableArray<NSString*>* out = [NSMutableArray array];
-    for (NSString* row in rows) {
-        if (allCommented) {
-            NSRange mark = [row rangeOfString:@"//"];
-            if (mark.location == NSNotFound) { [out addObject:row]; continue; }
-            NSUInteger end = NSMaxRange(mark);
-            if (end < row.length && [row characterAtIndex:end] == ' ') ++end;
-            [out addObject:[[row substringToIndex:mark.location] stringByAppendingString:[row substringFromIndex:end]]];
-        } else {
-            [out addObject:row.length > 0 ? [@"// " stringByAppendingString:row] : row];
+    [self rewriteSelectedRows:^NSArray<NSString*>*(NSArray<NSString*>* rows) {
+        BOOL allCommented = YES;
+        for (NSString* row in rows) {
+            NSString* trimmed = [row stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            if (trimmed.length > 0 && ![trimmed hasPrefix:@"//"]) { allCommented = NO; break; }
         }
-    }
-    NSString* changed = [out componentsJoinedByString:@"\n"];
-    if (endsWithNewline) changed = [changed stringByAppendingString:@"\n"];
-    [code_ replaceRange:lines with:changed];
-    code_.selectedRange = NSMakeRange(lines.location, changed.length);
+        NSMutableArray<NSString*>* out = [NSMutableArray array];
+        for (NSString* row in rows) {
+            if (allCommented) {
+                NSRange mark = [row rangeOfString:@"//"];
+                if (mark.location == NSNotFound) { [out addObject:row]; continue; }
+                NSUInteger end = NSMaxRange(mark);
+                if (end < row.length && [row characterAtIndex:end] == ' ') ++end;
+                [out addObject:[[row substringToIndex:mark.location] stringByAppendingString:[row substringFromIndex:end]]];
+            } else {
+                [out addObject:row.length > 0 ? [@"// " stringByAppendingString:row] : row];
+            }
+        }
+        return out;
+    }];
 }
 
 // ---- View -----------------------------------------------------------------------
@@ -2421,8 +2829,9 @@ static NSColor* ColourOf(unsigned char kind) {
     [blank_.storage setAttributes:attributes range:NSMakeRange(0, blank_.storage.length)];
     code_.font = font;
     code_.typingAttributes = attributes;
+    [code_ breakUndoCoalescing];
     [gutter_ textDidChange];
-    [self recolour];
+    [self recolourAll];
     ride_remember_code_font(Utf8([NSString stringWithFormat:@"%@ %g", font.fontName, font.pointSize]));
     [self say:[NSString stringWithFormat:@"font: %@ %g", font.displayName, font.pointSize]];
 }
@@ -2447,8 +2856,10 @@ static NSColor* ColourOf(unsigned char kind) {
     return [@" - but " stringByAppendingString:Str(ride_outcome_message(project_))];
 }
 
-- (void)chooseArch:(NSMenuItem*)sender {
-    arch_ = Str(ride_arch((int)(sender.tag - kTagArchBase)));
+- (void)chooseArch:(NSMenuItem*)sender { [self useArch:(int)(sender.tag - kTagArchBase)]; }
+
+- (void)useArch:(int)index {
+    arch_ = Str(ride_arch(index));
     NSString* said = [@"target: " stringByAppendingString:arch_];
     if (ride_project_loaded(project_))
         said = [said stringByAppendingString:[self writtenToProject:ride_project_set_arch(project_, Utf8(arch_))]];
@@ -2456,8 +2867,10 @@ static NSColor* ColourOf(unsigned char kind) {
     [self say:said];
 }
 
-- (void)chooseTool:(NSMenuItem*)sender {
-    toolKind_ = (int)(sender.tag - kTagToolBase);
+- (void)chooseTool:(NSMenuItem*)sender { [self useTool:(int)(sender.tag - kTagToolBase)]; }
+
+- (void)useTool:(int)kind {
+    toolKind_ = kind;
     NSString* said = toolKind_ == RIDE_TOOL_AUTO
                          ? @"compiler: chosen by the file"
                          : [@"compiler: " stringByAppendingString:Str(ride_toolchain_name(toolKind_))];
@@ -2473,7 +2886,7 @@ static NSColor* ColourOf(unsigned char kind) {
     if (current_ == nil) { [self say:@"no file is open"]; return; }
     current_.language = sender.tag == kTagLangAuto ? -1 : (int)(sender.tag - kTagLangBase);
     [self sayBuild];
-    [self recolour];
+    [self recolourAll];
     [self say:[@"language: " stringByAppendingString:current_.language < 0
                                                          ? @"chosen by the name"
                                                          : Str(ride_language_name(current_.language))]];
@@ -2495,9 +2908,7 @@ static NSColor* ColourOf(unsigned char kind) {
     NSArray<NSNumber*>* kinds = [self toolKinds];
     NSUInteger at = [kinds indexOfObject:@(toolKind_)];
     NSUInteger next = at == NSNotFound ? 0 : (at + 1) % kinds.count;
-    NSMenuItem* item = [[NSMenuItem alloc] init];
-    item.tag = kTagToolBase + kinds[next].intValue;
-    [self chooseTool:item];
+    [self useTool:kinds[next].intValue];
 }
 
 - (void)nextTarget:(id)sender {
@@ -2507,9 +2918,7 @@ static NSColor* ColourOf(unsigned char kind) {
     int at = 0;
     for (int i = 0; i < count; ++i)
         if ([Str(ride_arch(i)) isEqualToString:arch_]) { at = i; break; }
-    NSMenuItem* item = [[NSMenuItem alloc] init];
-    item.tag = kTagArchBase + (at + 1) % count;
-    [self chooseArch:item];
+    [self useArch:(at + 1) % count];
 }
 
 // ---- Option ---------------------------------------------------------------------
@@ -2679,7 +3088,8 @@ static NSColor* ColourOf(unsigned char kind) {
         NSAboutPanelOptionVersion : @"",
         NSAboutPanelOptionCredits : [[NSAttributedString alloc]
             initWithString:about
-                attributes:@{NSFontAttributeName : [NSFont systemFontOfSize:[NSFont smallSystemFontSize]]}],
+                attributes:@{NSFontAttributeName : [NSFont systemFontOfSize:[NSFont smallSystemFontSize]],
+                             NSForegroundColorAttributeName : [NSColor labelColor]}],
     };
     [NSApp orderFrontStandardAboutPanelWithOptions:options];
 }
@@ -2747,12 +3157,17 @@ static NSColor* ColourOf(unsigned char kind) {
         action == @selector(addFiles:) || action == @selector(projectIncludes:) ||
         action == @selector(projectLibraries:))
         return project && !busy_;
-    if (action == @selector(addCurrentFile:)) return project && file && current_.path != nil &&
+    // Nothing that loads, replaces or changes the project while a build reads it (H1).
+    if (action == @selector(addCurrentFile:)) return project && file && current_.path != nil && !busy_ &&
                                                     !ride_project_holds(project_, Utf8(current_.path));
     if (action == @selector(removeFromProject:) || action == @selector(moveToGroup:)) {
         NSString* target = [self targetFile];
-        return project && target != nil && ride_project_holds(project_, Utf8(target));
+        return project && target != nil && !busy_ && ride_project_holds(project_, Utf8(target));
     }
+    if (action == @selector(openDocument:) || action == @selector(openRecentProject:) ||
+        action == @selector(openRecentFile:))
+        return !busy_;
+    if (action == @selector(stopWork:)) return busy_ || running_ != NULL;
     if (action == @selector(renameFile:) || action == @selector(deleteFile:))
         return [self targetFile] != nil && !busy_;
     if (action == @selector(nextIssue:) || action == @selector(clearIssuesAction:)) return issues_.count > 0;
@@ -2892,7 +3307,11 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
             kTagPanelBase + (NSInteger)i;
     [view addItem:[NSMenuItem separatorItem]];
     [self add:@"Line Numbers" to:view action:@selector(toggleLineNumbers:) key:@""];
-    [self add:@"Bigger Font" to:view action:@selector(biggerFont:) key:@"+"];
+    // Command-= is the key without Shift on most keyboards; Command-+ stays, hidden, for the rest (L5).
+    [self add:@"Bigger Font" to:view action:@selector(biggerFont:) key:@"="];
+    NSMenuItem* plus = [self add:@"Bigger Font" to:view action:@selector(biggerFont:) key:@"+"];
+    plus.hidden = YES;
+    plus.allowsKeyEquivalentWhenHidden = YES;
     [self add:@"Smaller Font" to:view action:@selector(smallerFont:) key:@"-"];
     [self add:@"Actual Size" to:view action:@selector(actualFontSize:) key:@"0" mods:cmd | ctrl];
     [view addItem:[NSMenuItem separatorItem]];
@@ -2928,6 +3347,7 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     [build addItem:[NSMenuItem separatorItem]];
     [self add:@"Build Project" to:build action:@selector(buildProjectAction:) key:@"b" mods:cmd | shift];
     [self add:@"Run Project" to:build action:@selector(runProjectAction:) key:@"r" mods:cmd | shift];
+    [self add:@"Stop" to:build action:@selector(stopWork:) key:@"."];
     [build addItem:[NSMenuItem separatorItem]];
     [self add:@"Debug Configuration" to:build action:@selector(chooseConfig:) key:@""].tag =
         kTagConfigBase + RIDE_CONFIG_DEBUG;
@@ -2943,7 +3363,8 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     NSMenu* target = [self submenu:@"Target" of:bar];
     for (int i = 0; i < ride_arch_count(); ++i)
         [self add:Str(ride_arch(i)) to:target action:@selector(chooseArch:) key:@""].tag = kTagArchBase + i;
-    [self add:@"Next Target" to:target action:@selector(nextTarget:) key:@"t" mods:ctrl];
+    // Command-Option, not Control: Control-T and Control-K are the text view's own (M9).
+    [self add:@"Next Target" to:target action:@selector(nextTarget:) key:@"t" mods:cmd | opt];
     [target addItem:[NSMenuItem separatorItem]];
     NSMenu* compilers = [self submenu:@"Compiler" of:target];
     for (NSNumber* kind in [self toolKinds]) {
@@ -2954,7 +3375,7 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
         [self add:name to:compilers action:@selector(chooseTool:) key:@""].tag = kTagToolBase + kind.intValue;
     }
     [compilers addItem:[NSMenuItem separatorItem]];
-    [self add:@"Next Compiler" to:compilers action:@selector(nextCompiler:) key:@"k" mods:ctrl];
+    [self add:@"Next Compiler" to:compilers action:@selector(nextCompiler:) key:@"k" mods:cmd | opt];
     NSMenu* languages = [self submenu:@"Language" of:target];
     [self add:@"By Extension" to:languages action:@selector(chooseLanguage:) key:@""].tag = kTagLangAuto;
     NSArray<NSArray*>* langs = @[ @[ @"C", @(RIDE_LANG_C) ], @[ @"C++", @(RIDE_LANG_CPP) ],

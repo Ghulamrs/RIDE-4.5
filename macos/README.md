@@ -71,7 +71,49 @@ after the `C90`, `CPP11` and `SHALIMAR` environment variables. The manual goes t
 * **Status line** (bottom) - the last thing that happened; what the next build
   will use (language, debug/release, compiler, target); line and column.
 * Builds run off the main thread; the window stays live and the Build and
-  Target menus wait until it is done.
+  Target menus wait until it is done - as do Open, the recent lists and every
+  Project item that changes the project, since a build reads it as it goes.
+
+## Running a program that reads
+
+**Run File and Run Project run the program with an input of its own.** Its
+output comes into Output as it is written, not when it ends, and the line under
+Output is its keyboard: Return sends what is typed there and a newline,
+Control-D ends its input (its next read sees end of file). The program's input
+and output are a pseudo-terminal, so `printf("a number? "); scanf(...)` shows
+the prompt before it waits, as at a shell, and the terminal echoes what is sent -
+the window does not echo it again. What it writes to stderr comes in red, and
+the build's own lines before it in grey.
+
+**Build > Stop (Command-.) ends it**, and everything it started. During a build
+it ends the compiler or linker running, and the build fails saying it was
+stopped. Quitting stops both. `../README.md`, "Input, and Stop", has what the
+core does and what differs on Windows.
+
+## The file as it was
+
+A file is read as UTF-8, or as Latin-1 when it is not (the status line says so),
+and a BOM and CRLF or CR line endings are remembered: Save writes it back the
+way it came, so a file shared with the Windows editor is not rewritten to LF.
+Inside the window every line ends in `\n`, which is what the core counts - a
+row is what the core calls one, and U+0085 or U+2028 in a Latin-1 file do not
+split it. Revert and Reload read through the same reader as Open.
+
+Save asks before it writes over a file that changed on the disk since it was
+read here; coming back to the window reads such a file again when it has no
+changes of its own, and asks when it has. A build that could not save a file
+does not run.
+
+## Colour, and large files
+
+The colours are the layout manager's temporary attributes, not the text, so
+colouring never enters undo and never marks a file changed. They are made again
+only where an edit can have changed them: from the first row it touched, past
+the last, until a row starts in the lexer state it started in before. The rows
+themselves come from an index of where each begins, kept as the text is edited,
+so the caret's row, the gutter and the colouring never count newlines from the
+top of the file. Enter and a typed `}`, `#` or `:` hand the core the rows above
+the caret and not the whole file, since those are all the layout reads.
 
 ## Menus
 
@@ -81,10 +123,40 @@ after the `C90`, `CPP11` and `SHALIMAR` environment variables. The manual goes t
 | Edit | Undo/Redo, Cut/Copy/Paste, Find (the find bar), Go to Line, Re-indent, Shift Left/Right, Comment |
 | View | Navigator, Bottom Panel, Errors/Progress/Output, Line Numbers, font size, next/previous file, Full Screen |
 | Project | New/Open/Recent/Save As/Close project, New/Add/Remove/Rename/Move/Delete file, project include paths and libraries |
-| Build | Compile File (Cmd-B), Run File (Cmd-R), Build Project (Shift-Cmd-B), Run Project (Shift-Cmd-R), Debug/Release, Convert C to/from Shalimar, next issue |
+| Build | Compile File (Cmd-B), Run File (Cmd-R), Build Project (Shift-Cmd-B), Run Project (Shift-Cmd-R), Stop (Cmd-.), Debug/Release, Convert C to/from Shalimar, next issue |
 | Target | the four targets, Compiler (by language, c90, cpp11, shalimar, host c++), Language |
 | Option | Font, header directories, shared include paths and libraries, the assembler, linkers and TI compiler, the tools in use |
 | Help | the manual, Keys, the Shalimar reference, About |
+
+## Where the keys differ from the other two
+
+The terminal and Windows editors use Control keys throughout; here a menu item
+takes Command, because Control-K, Control-T and their neighbours are the text
+view's own Emacs keys in every Mac text field. So Next Target is Command-Option-T
+and Next Compiler Command-Option-K. Bigger Font is Command-= (Command-+ works
+too). Re-indent keeps Control-I and the panel tabs Control-1 to 3, which nothing
+in a text view uses.
+
+**The menu row inside the window is kept on purpose.** It repeats the menu bar,
+one button per menu popping up the bar's own menu, because RIDE is used on
+Windows and Linux too and its users look for the menus in the window. It was
+asked for; the review's L1 suggestion to drop it is declined.
+
+## Signing
+
+`make` signs ad hoc, for this Mac: each Mach-O helper on its own and then the
+app, not `--deep`. For another's, name a Developer ID and the hardened runtime,
+then notarize:
+
+```
+make SIGN="Developer ID Application: ..." HARDENED=--options=runtime
+xcrun notarytool submit RIDE.zip --keychain-profile ... --wait
+```
+
+`ARCHS="arm64 x86_64"` builds a universal app, and `DEBUG=1` adds `-g` and a
+`.dSYM` beside it. Compilers are found in the bundle first, then - when the app
+sits in a checkout - the checkout's `bin/`, then on PATH; never a directory the
+app merely happens to be in.
 
 ## Not here yet
 

@@ -52,9 +52,12 @@
     [sender replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
 }
 
+// A program left running would outlive the window, and a build would go on writing; both end.
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
     (void)sender;
-    return [self.window mayClose] ? NSTerminateNow : NSTerminateCancel;
+    if (![self.window mayClose]) return NSTerminateCancel;
+    [self.window stopEverything];
+    return NSTerminateNow;
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
