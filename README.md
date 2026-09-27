@@ -1202,8 +1202,14 @@ default the next time a tab opens.
 
 ### One thing at a time
 
-**Compile, Run, Build project, Run project, Convert and every debugger step run
-on a worker thread**, and the window keeps drawing while they do. What the
+**Compile, Build project, Convert and every debugger step run on a worker
+thread**, and the window keeps drawing while they do. **Run and Run project**
+start the program through `ride_run_start` and let go: what it prints comes onto
+the Console as it prints it, and a line under the Console - `input` - is its
+keyboard. Enter sends the line, `Ctrl+Z` in that line ends its input (the
+Windows console's end of file), and the pseudo-console echoes what was sent, so
+the window does not. An error in the build before it runs is taken to the file
+it names, a header included. What the
 worker holds - the project, the debugger, the settings the build reads - is
 not touched from the window until it is done, and that is enforced rather than
 hoped for: every menu item that reaches the core is greyed while it works, its
@@ -1211,13 +1217,14 @@ key says `still working`, and the pane and the title are refreshed from the
 project only afterwards. Editing, finding, the View and Help menus and the
 Language menu stay live, since none of them reaches what the worker has.
 
-**Build ▸ Stop** (`Ctrl+Break`, Visual Studio's key) ends what the worker is
-waiting on: the compiler, the linker, the program, the debugger. It ends the
-processes the window started and theirs, by process tree - the hidden
-console's `conhost` excepted - so the core sees them finish and hands the
-worker back, and the Console says `[stopped]`. **Debug ▸ Stop debugging** does
-the same to a program running under the debugger, which is how a program in an
-endless loop is stopped without Task Manager. Closing the window while
+**Build ▸ Stop** (`Ctrl+Break`, Visual Studio's key) ends what is running: a
+program through its own `ride_running_stop`, a build through the core's
+`ride_cancel_builds`, and the debugger - which has no stop of its own - by
+ending the processes the window started and theirs, by process tree, the hidden
+console's `conhost` excepted. Each comes back as usual, and the Console says
+`[stopped]`. **Debug ▸ Stop debugging** does the last of these to a program
+running under the debugger, which is how a program in an endless loop is
+stopped without Task Manager. Closing the window while
 something runs asks first, stops it, and closes once the worker is back;
 nothing the worker holds is freed under it.
 

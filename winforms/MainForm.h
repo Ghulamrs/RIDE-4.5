@@ -105,9 +105,7 @@ protected:
 ref class Job {
 public:
     literal int Build = 1;          // one file compiled: build
-    literal int Run = 2;            // one file compiled and run: ran
     literal int BuildTarget = 3;    // the project built: build
-    literal int RunBuilt = 4;       // the project's program run: ran
     literal int Convert = 5;        // c2s: converted
     literal int BuildProgram = 6;   // one file built for the debugger: made
     literal int DebugStart = 7;     // the debugger started on program: result
@@ -129,16 +127,18 @@ public:
     int toShalimar;
 
     RIDEBuild* build;
-    RIDERan* ran;
     RIDEProgram* made;
     RIDEConversion* converted;
     int result;
     bool stopped;       // Build > Stop ended it: what it made is what was there when it died
 
-    Job(int what) : what(what), build(nullptr), ran(nullptr), made(nullptr), converted(nullptr),
+    Job(int what) : what(what), build(nullptr), made(nullptr), converted(nullptr),
                     result(0), stopped(false) {}
     ~Job() { delete tools; delete source; delete program; delete into; }
 };
+
+// The bridge's RIDEOutput for a program the window runs: defined after MainForm, which it posts to.
+void OutputToWindow(void* user, const char* bytes, int size, int stream);
 
 public ref class MainForm : public Form {
 public:
@@ -156,6 +156,10 @@ protected:
     }
 
     virtual bool ProcessCmdKey(System::Windows::Forms::Message% message, Keys keys) override {
+        if (keys == static_cast<Keys>(Keys::Control | Keys::Z) && input_ != nullptr && input_->Focused) {
+            EndInput();
+            return true;
+        }
         if (keys == static_cast<Keys>(Keys::Control | Keys::PageDown)) { StepFile(1); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::PageUp)) { StepFile(-1); return true; }
         bool moving = keys == static_cast<Keys>(Keys::Control | Keys::D) ||
@@ -176,6 +180,17 @@ protected:
         return Form::ProcessCmdKey(message, keys);
     }
 
+public:
+    // Called on the run's worker thread: a copy of what it said, or nullptr when it is over, sent
+    // to this window's thread. Nothing here waits for the window, and a window gone drops it.
+    void Post(array<Byte>^ bytes, int stream) {
+        try {
+            if (IsDisposed || !IsHandleCreated) return;
+            BeginInvoke(gcnew Action<array<Byte>^, int>(this, &MainForm::Heard), bytes, stream);
+        } catch (Exception^) { }
+    }
+
+protected:
     virtual void OnFormClosing(System::Windows::Forms::FormClosingEventArgs^ e) override {
         // Nothing the worker holds is freed under it: the close waits for the work to stop.
         if (busy_) {
@@ -238,6 +253,11 @@ protected:
         this->!MainForm();
     }
     !MainForm() {
+        if (running_ != nullptr) {
+            ride_running_free(running_);
+            running_ = nullptr;
+        }
+        if (self_.IsAllocated) self_.Free();
         if (project_ != nullptr) {
             ride_project_free(project_);
             project_ = nullptr;
@@ -285,6 +305,15 @@ private:
     bool treeStale_;
     String^ projectName_;
     ToolStripMenuItem^ stopItem_;
+    // A program running with a real input: its handle, what it was built from, and each stream's
+    // decoder, so a character split between two pieces of output arrives whole.
+    RIDERunning* running_;
+    Toolchain^ runTools_;
+    String^ runSource_;
+    String^ runProgram_;
+    array<System::Text::Decoder^>^ decoders_;
+    Runtime::InteropServices::GCHandle self_;
+    TextBox^ input_;
     System::Collections::Generic::List<ToolStripMenuItem^>^ gated_;
     System::Collections::Generic::List<ToolStripItem^>^ live_;
 
@@ -395,6 +424,8 @@ private:
         targetBuilt_ = nullptr;
         busy_ = false;
         job_ = nullptr;
+        running_ = nullptr;
+        self_ = Runtime::InteropServices::GCHandle::Alloc(this);
         closeWhenIdle_ = false;
         treeStale_ = false;
         projectName_ = nullptr;
@@ -856,6 +887,7 @@ private:
         panel_->Dock = DockStyle::Fill;
 
         console_ = ReadOnlyBox();
+        console_->Name = "console";
 
         console_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnConsoleKey);
         console_->DoubleClick += gcnew EventHandler(this, &MainForm::OnConsoleDoubleClick);
@@ -872,6 +904,26 @@ private:
 
         TabPage^ one = gcnew TabPage("Console");
         one->Controls->Add(console_);
+        // The running program's input, under what it prints: Enter sends the line, Ctrl+Z ends it.
+        Panel^ inputRow = gcnew Panel();
+        inputRow->Dock = DockStyle::Bottom;
+        inputRow->Height = 24;
+        Label^ inputLabel = gcnew Label();
+        inputLabel->Text = "input";
+        inputLabel->Dock = DockStyle::Left;
+        inputLabel->Width = 44;
+        inputLabel->TextAlign = System::Drawing::ContentAlignment::MiddleLeft;
+        inputLabel->ForeColor = System::Drawing::Color::FromArgb(90, 90, 90);
+        input_ = gcnew TextBox();
+        input_->Name = "input";
+        input_->Dock = DockStyle::Fill;
+        input_->Font = gcnew System::Drawing::Font("Consolas", 10.0f);
+        input_->Enabled = false;
+        input_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnInputKey);
+        inputRow->Controls->Add(input_);
+        inputRow->Controls->Add(inputLabel);
+        one->Controls->Add(inputRow);
+        console_->BringToFront();
         TabPage^ two = gcnew TabPage("Debug");
         two->Controls->Add(debug_);
         TabPage^ three = gcnew TabPage("Assembly");
@@ -3205,6 +3257,7 @@ private:
         table->Append("  Tab, Shift+Tab    over lines chosen, one level in or out\r\n");
         table->Append("  Ctrl+PageDown     the next open file, Ctrl+PageUp the one before\r\n");
         table->Append("  Enter             on the Console, go to the place that line names\r\n");
+        table->Append("  Enter, Ctrl+Z     in the Console's input line: send it, end the input\r\n");
 
         msclr::auto_handle<Form> box(gcnew Form());
         box->Text = "Keys";
@@ -3352,55 +3405,115 @@ private:
         int kind = 0, language = 0;
         if (!SingleFileReady(kind, language)) return;
 
-        String^ source = path_;
-        Job^ job = SingleFileJob(Job::Run, kind, language);
-        if (ride_runs_here(kind, job->tools->arch()) == 0) {
-            what_->Text = FromUtf8(ride_why_not_run(kind, job->tools->arch()));
-            delete job;
+        Toolchain^ tools = ToolsNow();
+        if (ride_runs_here(kind, tools->arch()) == 0) {
+            what_->Text = FromUtf8(ride_why_not_run(kind, tools->arch()));
+            delete tools;
             return;
         }
 
-        console_->Text = "$ " + FromUtf8(ride_shown_run_command(project_, job->tools->cc1(), job->tools->cl(),
-                                                                job->tools->shc(), job->tools->cxx1(), kind,
-                                                                job->source->c(), language,
-                                                                job->tools->arch(), config_)) + "\r\n";
+        Utf8 source(path_);
+        console_->Text = "$ " + FromUtf8(ride_shown_run_command(project_, tools->cc1(), tools->cl(),
+                                                                tools->shc(), tools->cxx1(), kind,
+                                                                source.c(), language,
+                                                                tools->arch(), config_)) + "\r\n";
         panel_->SelectedIndex = 0;
-        what_->Text = "building and running " + System::IO::Path::GetFileName(source) + " ...";
+        what_->Text = "building and running " + System::IO::Path::GetFileName(path_) + " ...";
 
-        bool finished = WhileBusy(job);
-        RIDERan* ran = job->ran;
-        delete job;
-        if (ran == nullptr) { what_->Text = finished ? "nothing ran" : "stopped"; return; }
+        RIDERunning* running = ride_run_start(project_, tools->cc1(), tools->cl(), tools->shc(),
+                                              tools->cxx1(), kind, source.c(), language,
+                                              tools->arch(), config_, &OutputToWindow,
+                                              Runtime::InteropServices::GCHandle::ToIntPtr(self_).ToPointer());
+        StartedRunning(running, tools, path_, nullptr);
+    }
 
-        Say(FromUtf8(ride_ran_output(ran)));
-        if (!finished) {
-            ride_run_free(ran);
+    // ---- a program running with a real input -------------------------------------
+    // Its output arrives through Post as it comes and is added to the Console here; the window
+    // stays live but for what reaches the core, as while the worker works, until Heard gets the end.
+
+    void StartedRunning(RIDERunning* running, Toolchain^ tools, String^ source, String^ program) {
+        if (running == nullptr) {
+            delete tools;
+            what_->Text = "the program could not be started";
+            return;
+        }
+        running_ = running;
+        runTools_ = tools;
+        runSource_ = source;
+        runProgram_ = program;
+        decoders_ = gcnew array<System::Text::Decoder^>(3);
+        for (int i = 0; i < 3; ++i) decoders_[i] = System::Text::Encoding::UTF8->GetDecoder();
+        SetBusy(true);
+        input_->Enabled = true;
+        input_->Clear();
+        input_->Focus();
+    }
+
+    void Heard(array<Byte>^ bytes, int stream) {
+        if (running_ == nullptr) return;
+        if (bytes == nullptr) { EndedRunning(); return; }
+        if (stream < 0 || stream > 2) stream = RIDE_STREAM_OUT;
+        array<wchar_t>^ chars = gcnew array<wchar_t>(decoders_[stream]->GetCharCount(bytes, 0, bytes->Length));
+        decoders_[stream]->GetChars(bytes, 0, bytes->Length, chars, 0);
+        Say(gcnew String(chars));
+        if (stream != RIDE_STREAM_BUILD && what_->Text->StartsWith("building and running"))
+            what_->Text = "running - type under the Console, Enter sends, Ctrl+Z ends the input";
+    }
+
+    void OnInputKey(Object^, KeyEventArgs^ e) {
+        if (e->KeyCode != Keys::Enter) return;
+        e->SuppressKeyPress = true;
+        if (running_ == nullptr) return;
+        String^ line = input_->Text;
+        input_->Clear();
+        // Not echoed here: the program's pseudo-console echoes what it reads, as a terminal would.
+        Utf8 bytes(line + "\n");
+        int length = System::Text::Encoding::UTF8->GetByteCount(line + "\n");
+        if (ride_running_send(running_, bytes.c(), length) == 0)
+            what_->Text = "the program is no longer reading - it has ended or its input was ended";
+    }
+
+    // Ctrl+Z in the input line: end of file, as Ctrl+Z then Enter is at a Windows console.
+    void EndInput() {
+        if (running_ == nullptr) return;
+        ride_running_close_input(running_);
+        input_->Enabled = false;
+        what_->Text = "the program's input is ended";
+    }
+
+    void EndedRunning() {
+        RIDERunning* running = running_;
+        ride_running_wait(running, -1);
+        String^ source = runSource_;
+        String^ program = runProgram_;
+
+        if (ride_running_stopped(running) != 0) {
             Say("\n[stopped]\n");
             what_->Text = "stopped";
-            return;
+        } else if (ride_running_has_error(running) != 0) {
+            int line = ride_running_error_line(running);
+            int column = ride_running_error_column(running);
+            String^ message = FromUtf8(ride_running_error_message(running));
+            String^ where = FromUtf8(ride_running_error_file(running));
+            ShowError(line, column, message, where, source);
+        } else if (ride_running_built(running) == 0 || ride_running_ran(running) == 0) {
+            what_->Text = program == nullptr ? "no program was built - see the console"
+                                             : "could not start " + System::IO::Path::GetFileName(program);
+        } else {
+            int status = ride_running_status(running);
+            Say(String::Format("\n[program returned {0}]\n", status));
+            String^ named = program != nullptr ? program : source;
+            what_->Text = String::Format("{0} ran - it returned {1}",
+                                         System::IO::Path::GetFileName(named), status);
         }
 
-        if (ride_ran_has_error(ran) != 0) {
-            int line = ride_ran_error_line(ran);
-            int column = ride_ran_error_column(ran);
-            String^ message = FromUtf8(ride_ran_error_message(ran));
-            ride_run_free(ran);
-            ShowError(line, column, message, nullptr, source);
-            return;
-        }
-
-        if (ride_ran_built(ran) == 0) {
-            what_->Text = FromUtf8(ride_toolchain_name(kind)) + " built no program - see the console";
-            ride_run_free(ran);
-            return;
-        }
-
-        int status = ride_ran_status(ran);
-        ride_run_free(ran);
-
-        Say(String::Format("\n[program returned {0}]\n", status));
-        what_->Text = String::Format("{0} ran - it returned {1}",
-                                     System::IO::Path::GetFileName(source), status);
+        running_ = nullptr;
+        ride_running_free(running);
+        delete runTools_;
+        runTools_ = nullptr;
+        input_->Enabled = false;
+        SetBusy(false);
+        if (closeWhenIdle_) BeginInvoke(gcnew Action(this, &MainForm::CloseNow));
     }
 
     void OnBuildProject(Object^, EventArgs^) { BuildProject(false); }
@@ -3507,25 +3620,12 @@ private:
             return;
         }
 
-        Job^ run = gcnew Job(Job::RunBuilt);
-        run->program = gcnew Utf8(program);
+        Say("\n");
         what_->Text = "running " + System::IO::Path::GetFileName(program) + " ...";
-        finished = WhileBusy(run);
-        RIDERan* ran = run->ran;
-        delete run;
-        if (ran == nullptr) { what_->Text = finished ? "nothing ran" : "stopped"; return; }
-        Say(FromUtf8(ride_ran_output(ran)));
-        int status = ride_ran_status(ran);
-        ride_run_free(ran);
-
-        if (!finished) {
-            Say("\n[stopped]\n");
-            what_->Text = "stopped";
-            return;
-        }
-        Say(String::Format("\n[program returned {0}]\n", status));
-        what_->Text = String::Format("ran {0} - it returned {1}",
-                                     System::IO::Path::GetFileName(program), status);
+        Utf8 built(program);
+        RIDERunning* running = ride_run_built_start(built.c(), &OutputToWindow,
+                                                    Runtime::InteropServices::GCHandle::ToIntPtr(self_).ToPointer());
+        StartedRunning(running, nullptr, nullptr, program);
     }
 
     bool SaveEveryDirty() {
@@ -3574,17 +3674,10 @@ private:
                 job->build = ride_build(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(), job->kind,
                                         job->source->c(), job->language, t->arch(), job->config);
                 break;
-            case Job::Run:
-                job->ran = ride_run(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(), job->kind,
-                                    job->source->c(), job->language, t->arch(), job->config);
-                break;
             case Job::BuildTarget:
                 job->build = ride_build_target(project_, t->cc1(), t->cl(), t->shc(), t->cxx1(),
                                                job->toolKind, t->arch(), job->config);
                 job->result = job->build != nullptr && ride_build_ok(job->build) != 0 ? 1 : 0;
-                break;
-            case Job::RunBuilt:
-                job->ran = ride_run_built(job->program->c());
                 break;
             case Job::Convert:
                 job->converted = ride_convert(job->program->c(), job->source->c(), job->into->c(),
@@ -3663,16 +3756,19 @@ private:
     }
 
     void OnStop(Object^, EventArgs^) {
-        if (!busy_ || job_ == nullptr) { what_->Text = "nothing is running"; return; }
+        if (running_ == nullptr && (!busy_ || job_ == nullptr)) { what_->Text = "nothing is running"; return; }
         StopWork();
     }
 
-    // Ends whatever the worker is waiting on - the compiler, the program, the debugger - so that
-    // the core sees it finish and hands the worker back. Build > Stop, and the close box.
+    // Ends whatever is running so its call comes back: a program through its own Stop, a build
+    // through the core's, and the debugger - which has none - by ending the processes the window started.
     void StopWork() {
-        if (job_ != nullptr) job_->stopped = true;
-        int ended = StopChildren();
-        what_->Text = ended > 0 ? "stopping ..." : "stopping - nothing had started yet ...";
+        what_->Text = "stopping ...";
+        if (running_ != nullptr) { ride_running_stop(running_); return; }
+        if (job_ == nullptr) return;
+        job_->stopped = true;
+        ride_cancel_builds();
+        if (job_->what >= Job::DebugStart) StopChildren();
     }
 
     System::Collections::Generic::List<int>^ BreaksFor(String^ file) {
@@ -3883,7 +3979,8 @@ private:
                                  : ride_program_error_column(built_);
             String^ message = FromUtf8(project ? ride_build_error_message(targetBuilt_)
                                                : ride_program_error_message(built_));
-            String^ where = project ? FromUtf8(ride_build_error_file(targetBuilt_)) : nullptr;
+            String^ where = FromUtf8(project ? ride_build_error_file(targetBuilt_)
+                                             : ride_program_error_file(built_));
             ShowError(line, column, message, where, debugSource_);
         } else {
             what_->Text = FromUtf8(ride_toolchain_name(kind)) +
@@ -4568,5 +4665,17 @@ private:
         ChooseLanguage(RIDE_LANG_PLAIN, "language: plain text");
     }
 };
+
+void OutputToWindow(void* user, const char* bytes, int size, int stream) {
+    MainForm^ form = dynamic_cast<MainForm^>(
+        Runtime::InteropServices::GCHandle::FromIntPtr(IntPtr(user)).Target);
+    if (form == nullptr) return;
+    array<Byte>^ copy = nullptr;
+    if (bytes != nullptr) {
+        copy = gcnew array<Byte>(size > 0 ? size : 0);
+        if (size > 0) Runtime::InteropServices::Marshal::Copy(IntPtr(const_cast<char*>(bytes)), copy, 0, size);
+    }
+    form->Post(copy, stream);
+}
 
 }

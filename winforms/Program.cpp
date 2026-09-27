@@ -59,6 +59,9 @@ static bool IsProject(String^ named) {
                           StringComparison::OrdinalIgnoreCase);
 }
 
+// A hidden console, so that a child _popen starts has one and opens no window of its own - and the
+// null device for the standard handles themselves, which a child inherits: freopen_s moves only the
+// CRT's streams, and a child left reading the hidden console waited on a keyboard nobody could reach.
 static void QuietConsoleForChildren() {
     if (GetConsoleWindow() != NULL) return;
     if (!AllocConsole()) return;
@@ -70,6 +73,17 @@ static void QuietConsoleForChildren() {
     freopen_s(&ignored, "NUL", "r", stdin);
     freopen_s(&ignored, "NUL", "w", stdout);
     freopen_s(&ignored, "NUL", "w", stderr);
+
+    SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
+    HANDLE reads = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherited,
+                               OPEN_EXISTING, 0, NULL);
+    HANDLE writes = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherited,
+                                OPEN_EXISTING, 0, NULL);
+    if (reads != INVALID_HANDLE_VALUE) SetStdHandle(STD_INPUT_HANDLE, reads);
+    if (writes != INVALID_HANDLE_VALUE) {
+        SetStdHandle(STD_OUTPUT_HANDLE, writes);
+        SetStdHandle(STD_ERROR_HANDLE, writes);
+    }
 }
 
 [STAThreadAttribute]
