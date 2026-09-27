@@ -55,15 +55,16 @@ struct Process::Held {
     std::atomic<bool> reaped;
     int status;
     // An interactive child on a pseudo-console: its input half a line, and where the reading of
-    // the console's escape sequences has got to (vtState, the parameters so far, the row).
+    // the console's escape sequences has got to (vtState, the parameters so far, the row, the column).
     bool midLine;
     int vtState;
     std::string vtParams;
     int row;
+    int column;
 
     Held() : toChild(NULL), fromChild(NULL), child(NULL), console(NULL), errFromChild(NULL),
              job(NULL), grouped(false), outOpen(false), errOpen(false), reaped(false), status(0),
-             midLine(false), vtState(0), row(1) {}
+             midLine(false), vtState(0), row(1), column(1) {}
 };
 
 #else
@@ -527,6 +528,7 @@ bool Process::startOnPseudoConsole(const std::string& command) {
     held_->vtState = 0;
     held_->vtParams.clear();
     held_->row = 1;
+    held_->column = 1;
     killed_ = false;
     running_ = true;
     return true;
@@ -535,9 +537,10 @@ bool Process::startOnPseudoConsole(const std::string& command) {
 namespace {
 
 // What a pseudo-console writes, as text: its escape sequences out - CSI, OSC such as the title,
-// the short ones - "\r" dropped, and the cursor sent to a lower row as that many newlines, which
-// is how the console sometimes ends a line. One state across reads; a sequence may be split.
-std::string plainText(const char* bytes, size_t size, int& state, std::string& params, int& row) {
+// the short ones - "\r" dropped, the cursor sent to a lower row as that many newlines, and sent
+// right as that many spaces: the console writes a trailing space as a move. One state across reads.
+std::string plainText(const char* bytes, size_t size, int& state, std::string& params, int& row,
+                      int& column) {
     std::string out;
     for (size_t i = 0; i < size; ++i) {
         unsigned char c = static_cast<unsigned char>(bytes[i]);
@@ -545,7 +548,8 @@ std::string plainText(const char* bytes, size_t size, int& state, std::string& p
         case 0:
             if (c == 0x1b) { state = 1; continue; }
             if (c == '\r' || c == 0x07) continue;
-            if (c == '\n') ++row;
+            if (c == '\n') { ++row; column = 1; }
+            else if ((c & 0xc0) != 0x80) ++column;   // a UTF-8 continuation byte is no column
             out += static_cast<char>(c);
             continue;
         case 1:  // after ESC
@@ -559,7 +563,18 @@ std::string plainText(const char* bytes, size_t size, int& state, std::string& p
                 if (c == 'H' || c == 'f') {
                     int wanted = std::atoi(params.c_str());
                     if (wanted < 1) wanted = 1;
+                    size_t semi = params.find(';');
+                    int col = semi == std::string::npos ? 1 : std::atoi(params.c_str() + semi + 1);
+                    if (col < 1) col = 1;
+                    if (row < wanted) column = 1;
                     for (; row < wanted; ++row) out += '\n';
+                    for (; row == wanted && column < col; ++column) out += ' ';
+                } else if (c == 'C') {
+                    int n = std::atoi(params.c_str());
+                    for (n = n < 1 ? 1 : n; n > 0; --n, ++column) out += ' ';
+                } else if (c == 'G') {
+                    int col = std::atoi(params.c_str());
+                    for (; column < col; ++column) out += ' ';
                 }
                 state = 0;
             } else {
@@ -648,7 +663,7 @@ int Process::readAny(std::string& into, bool* isStderr, int timeoutMs) {
                 continue;
             }
             if (held_->console && i == 0)
-                into += plainText(chunk, got, held_->vtState, held_->vtParams, held_->row);
+                into += plainText(chunk, got, held_->vtState, held_->vtParams, held_->row, held_->column);
             else
                 into.append(chunk, got);
             if (isStderr) *isStderr = i == 1;
