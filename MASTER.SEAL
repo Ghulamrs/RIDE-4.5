@@ -1,13 +1,13 @@
 ©2026 G. R. Akhtar - RIDE 4.5 and the programs it drives
 Master seal: each project's seal, listed and combined into one
 Written by tools/master-seal; check it with `tools/master-seal check`.
-10 projects, 609 files, master seal 306B512A
+10 projects, 623 files, master seal 9F3BFFF8
 ------------------------------------------------------------------------
 program   seal     file CRC  files  seal file
-RIDE      24E98D04 BEDA8F68    178  ride-4.5.dat
-c90       87E259F4 336D1A9E     86  ../VM6747/Compiler-Ci/c90-1.1.dat
-cpp11     0627B4CD 3271D87F    162  ../VM6747/Compiler-Cppi/cxx1-1.4.dat
-shalimar  B4DE502F 55679F89     76  ../VM6747/Compiler-Si/shalimar-1.2.dat
+RIDE      963682B6 9E692DA2    178  ride-4.5.dat
+c90       78192CC3 605DD082     91  ../VM6747/Compiler-Ci/c90-1.1.dat
+cpp11     E327A890 5F3C838C    162  ../VM6747/Compiler-Cppi/cxx1-1.4.dat
+shalimar  875D8B33 F2598FCB     85  ../VM6747/Compiler-Si/shalimar-1.2.dat
 c2s       7419F4D7 D1D448C0     48  ../Converter-C2S/c2s-1.2.dat
 vm6747    63A06E47 14A4FA32     13  ../VM6747/Emulator/vm6747-1.0.dat
 asm6x     7FD57174 A5855CD9     12  ../ASM6x/asm6x-0.2.dat
@@ -15,5 +15,5 @@ masm      306906C4 C8570D80     14  ../MASM/masm-1.0.dat
 link      588C5F1F 21F8CD18      9  ../LINK/link-1.0.dat
 lnk6x     77B2F229 048153EB     11  ../LNK6x/lnk6x-1.0.dat
 ------------------------------------------------------------------------
-Master seal 306B512A
+Master seal 9F3BFFF8
 Sealed on 30-09-2026
