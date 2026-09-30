@@ -5502,7 +5502,10 @@ void ccsProjectsAsTheyAre() {
         check(dbg.link.searchPaths.size() == 1 && dbg.link.searchPaths[0] == "C:/cxx1/c6747-lib", "and ${MYLIBDIR} resolves in the search path");
         checkEqual(dbg.postbuild, "echo post-build P7misc.out", "the post-build step, ${BuildArtifactFileName} resolved");
         check(dbg.excluded.size() == 1 && dbg.excluded[0] == "extra.c", "extra.c is excluded");
-        check(dbg.sources.size() == 1 && dbg.sources[0] == r.dir + "/main.c", "so main.c is the one source, and the #error in extra.c is never compiled");
+        bool noExtra = true;
+        for (size_t i = 0; i < dbg.sources.size(); ++i) if (dbg.sources[i] == r.dir + "/extra.c") noExtra = false;
+        check(dbg.sources.size() == 2 && dbg.sources[0] == r.dir + "/lib/util.c" && dbg.sources[1] == r.dir + "/main.c" && noExtra,
+              "so main.c and lib/util.c are the sources, and the #error in extra.c is never compiled");
         check(dbg.unsupported.size() == 1 && dbg.unsupported[0].compare(0, 11, "lib/util.c:") == 0 &&
                   dbg.unsupported[0].find("-O3") != std::string::npos && dbg.unsupported[0].find("--define=PERFILE=1") != std::string::npos &&
                   dbg.unsupported[0].find("(per-file options)") != std::string::npos,
