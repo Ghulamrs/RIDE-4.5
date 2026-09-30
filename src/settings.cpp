@@ -516,6 +516,43 @@ bool rememberTilinker(const std::string& file) {
     return writeInstall(root);
 }
 
+// A plain bool and a pointer, never a std::string global: the window's rule, as above.
+static bool ccsForThisRun = false;
+static std::string* ccsRootForThisRun = 0;
+void overrideCcs(bool enabled, const std::string& root) { ccsForThisRun = enabled; overrideWith(ccsRootForThisRun, root); }
+
+bool ccsEnabled() { return ccsForThisRun || readInstall().get("ccs").get("enabled").boolean(false); }
+
+std::string ccsRoot() {
+    if (ccsRootForThisRun && !ccsRootForThisRun->empty()) return *ccsRootForThisRun;
+    Json root = readInstall();
+    return root.get("ccs").get("root").text(std::string());
+}
+
+bool rememberCcs(bool enabled, const std::string& dir) {
+    Json root = readInstall();
+    Json ccs = root.get("ccs").is(Json::Object) ? root.get("ccs") : Json::object();
+    ccs.set("enabled", Json::fromBool(enabled));
+    ccs.set("root", Json::fromText(dir));
+    root.set("ccs", ccs);
+    return writeInstall(root);
+}
+
+Json ccsProjectState(const std::string& dir) {
+    Json root = readInstall();
+    return root.get("ccs").get("projects").get(path::withSlashes(path::absolute(dir)));
+}
+
+bool rememberCcsProjectState(const std::string& dir, const Json& state) {
+    Json root = readInstall();
+    Json ccs = root.get("ccs").is(Json::Object) ? root.get("ccs") : Json::object();
+    Json projects = ccs.get("projects").is(Json::Object) ? ccs.get("projects") : Json::object();
+    projects.set(path::withSlashes(path::absolute(dir)), state);
+    ccs.set("projects", projects);
+    root.set("ccs", ccs);
+    return writeInstall(root);
+}
+
 bool writeInstallFileIfAbsent() {
     std::string file = installFile();
     if (file.empty() || path::exists(file)) return true;
@@ -535,6 +572,10 @@ bool writeInstallFileIfAbsent() {
     root.set("font", Json::fromText(""));
     root.set("includes", Json::array());
     root.set("libraries", Json::array());
+    Json ccs = Json::object();
+    ccs.set("enabled", Json::fromBool(false));
+    ccs.set("root", Json::fromText(""));
+    root.set("ccs", ccs);
     writeInstall(root);   // declined where there is no installation, rightly
     return true;
 }

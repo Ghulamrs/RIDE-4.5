@@ -153,6 +153,11 @@ BIN="$DIR\\bin"
   printf 'set VM6747=%s\\vm6747.exe\r\n' "$BIN"
   printf 'set SHC=%s\\shalimar.exe\r\n' "$BIN"
   printf 'set C2S=%s\\c2s.exe\r\n' "$BIN"
+  # For the CCS end-to-end cases (tests/test.cpp, ccsProjectsBuiltAndRun): the C6000 assembler and
+  # linker beside the compilers, and the box's exception-handling runtime, which CCS does not ship.
+  printf 'set ASM6X=%s\\asm6x.exe\r\n' "$BIN"
+  printf 'set LNK6X=%s\\lnk6x.exe\r\n' "$BIN"
+  printf 'set C6747_EHLIB=C:\\cxx1\\c6747-lib\r\n'
   case "$WHAT" in
     build)
       printf 'call build.bat\r\n' ;;

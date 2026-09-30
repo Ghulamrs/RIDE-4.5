@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "ccs/ccsproject.h"
 #include "indent.h"
 #include "options.h"
 #include "toolchain.h"
@@ -119,6 +120,22 @@ public:
     const options::Store& compilerOptions() const { return options_; }
     void setCompilerOptions(const options::Store& store) { options_ = store; }
 
+    // **A CCS project opened as it is** (ccs/ccsproject.h): read afresh at every open and every
+    // build, never written - save() keeps RIDE's own state in settings.json - and its options
+    // read-only. isCcs() says so; the rest answer what was read.
+    bool isCcs() const { return ccs_; }
+    const ccs::Reading& ccsReading() const { return ccsReading_; }
+    // The Messages lines for a configuration: the options line, then the sources line when there is one.
+    std::vector<std::string> ccsReport(Configuration config) const;
+    std::string ccsMapping(Configuration config) const;
+    // What lnk6x is handed for this configuration; not given for a .pro project.
+    TiLink tiLink(Configuration config) const;
+    // The configuration settings.json remembers for this CCS project: 0 Debug, 1 Release, -1 unsaid.
+    int ccsConfiguration() const;
+    bool rememberConfiguration(Configuration config);
+    // Reads the three CCS files again; a .pro project is left as it is. False, with the reason, when they no longer read.
+    bool reloadIfCcs(std::string& error);
+
     void setIndent(const IndentStyle& style) { indent_ = style; indentSaid_ = true; }
     void setToolchain(ToolchainKind kind) { toolchain_ = kind; }
     void setArch(const std::string& arch) { arch_ = arch; }
@@ -162,6 +179,9 @@ private:
     // installation's settings.json answers and nothing is written.
     bool indentSaid_ = false;
     options::Store options_;
+    bool ccs_ = false;
+    ccs::Reading ccsReading_;
+    bool loadCcs(const std::string& dir, std::string& error);
 };
 
 }

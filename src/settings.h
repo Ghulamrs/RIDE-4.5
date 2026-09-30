@@ -100,6 +100,17 @@ bool rememberAssembler(const std::string& file);
 bool rememberLinker(const std::string& file);
 bool rememberTi(const std::string& dir, const std::string& lib);
 bool rememberTilinker(const std::string& file);
+// **CCS projects opened as they are** (ccs/ccsproject.h): "ccs": { "enabled": true, "root": "C:/ti/ccsv7" }
+// in the installation's settings.json. The root resolves ${CG_TOOL_ROOT} and may be empty - a Mac
+// has no CCS - in which case the TI compiler directory a tms6747 build already links against stands in.
+bool ccsEnabled();
+std::string ccsRoot();
+bool rememberCcs(bool enabled, const std::string& root);
+void overrideCcs(bool enabled, const std::string& root);   // --ccs [--ccs-root dir], for this run only
+// **RIDE's own state for a CCS project goes here, never into CCS's files**: the open file and the
+// configuration, under "ccs": { "projects": { "<absolute dir>": { "open": ..., "config": ... } } }.
+Json ccsProjectState(const std::string& dir);
+bool rememberCcsProjectState(const std::string& dir, const Json& state);
 // Writes the file with the two directories when there is none yet, so a person opening the installation sees what is in force.
 bool writeInstallFileIfAbsent();
 // For the suite: take this directory for the installation's, in place of the one above the running binary. Empty puts it back.

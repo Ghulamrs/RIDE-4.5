@@ -134,6 +134,9 @@
          everything else: bridge.cpp holds a Session beside the Debugger and
          asks which of the two is live. Native for the same reason as the
          rest - both of these instantiate std::string and std::vector. -->
+    <ClCompile Include="..\src\ccs\ccsproject.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <ClCompile Include="..\src\ccs\ccsoptions.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <ClCompile Include="..\src\ccs\ccsxml.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\shalimar\channel.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\shalimar\session.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
   </ItemGroup>

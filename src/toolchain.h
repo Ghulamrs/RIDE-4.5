@@ -39,6 +39,20 @@ const char* hostCxxName();
 
 ToolchainKind hostCppToolchain();
 
+// **What lnk6x is handed for a tms6747 link besides the objects**, from a CCS project
+// (ccs/ccsproject.h): its linker command files, sizes, search paths and libraries. Not given,
+// and the link takes RIDE's own flat memory map (compile.cpp, tiLinkCmd).
+struct TiLink {
+    bool given;
+    std::vector<std::string> cmdFiles;      // absolute, in the order CCS lists them
+    std::string heap, stack;                // --heap_size=, --stack_size=; "" leaves the command file's
+    std::vector<std::string> searchPaths;   // -i, absolute; the compiler's own two are left out
+    std::vector<std::string> libraries;     // -l, libc.a already mapped to rts6740_elf_eh.lib
+    int romModel;                           // 1 --rom_model, 0 --ram_model, -1 unsaid
+
+    TiLink() : given(false), romModel(-1) {}
+};
+
 // c90, cpp11 and shalimar since 3.5: the VM6747 line, the first two carrying tms6747. The kinds
 // keep their names, cc1, cxx1 and shc, being the same compilers one target on.
 struct Toolchain {
@@ -59,6 +73,8 @@ struct Toolchain {
     // after the objects.
     std::vector<std::string> includes;
     std::vector<std::string> libraries;
+    // A CCS project's link, for tms6747; given nowhere else.
+    TiLink tiLink;
 
     Toolchain()
         : kind(ToolAuto), cc1("c90.exe"), cl("cl"), shc("shalimar.exe"),

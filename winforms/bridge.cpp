@@ -259,7 +259,7 @@ std::string resolved(const std::string& name) {
 // installation's header directories, and the project's own paths when a
 // project is open. The window has one project and passes it, loaded or not.
 editor::Toolchain toolFrom(RIDEProject* project, const char* cc1, const char* cl,
-                           const char* shc, const char* cxx1) {
+                           const char* shc, const char* cxx1, int config = -1) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
@@ -275,6 +275,8 @@ editor::Toolchain toolFrom(RIDEProject* project, const char* cc1, const char* cl
     if (project && project->project.loaded()) {
         tool.includes = project->project.absoluteIncludes();
         tool.libraries = project->project.absoluteLibraries();
+        // A CCS project's link, for the configuration being built (ccs/ccsproject.h).
+        if (config >= 0) tool.tiLink = project->project.tiLink(static_cast<editor::Configuration>(config));
     }
     std::vector<std::string> shared = editor::settings::includes();
     tool.includes.insert(tool.includes.end(), shared.begin(), shared.end());
@@ -581,6 +583,32 @@ const char* ride_project_arch(RIDEProject* project) {
     if (!project) return "";
     project->answer = project->project.arch();
     return project->answer.c_str();
+}
+
+int ride_project_is_ccs(RIDEProject* project) {
+    return project && project->project.loaded() && project->project.isCcs() ? 1 : 0;
+}
+
+const char* ride_project_ccs_report(RIDEProject* project, int config) {
+    if (!project || !project->project.isCcs()) return "";
+    project->answer.clear();
+    std::vector<std::string> lines = project->project.ccsReport(static_cast<editor::Configuration>(config == RIDE_CONFIG_RELEASE ? 1 : 0));
+    for (size_t i = 0; i < lines.size(); ++i) project->answer += (i ? "\n" : "") + lines[i];
+    return project->answer.c_str();
+}
+
+const char* ride_project_ccs_mapping(RIDEProject* project, int config) {
+    if (!project) return "";
+    project->answer = project->project.ccsMapping(static_cast<editor::Configuration>(config == RIDE_CONFIG_RELEASE ? 1 : 0));
+    return project->answer.c_str();
+}
+
+int ride_project_ccs_configuration(RIDEProject* project) {
+    return project ? project->project.ccsConfiguration() : -1;
+}
+
+void ride_project_remember_configuration(RIDEProject* project, int config) {
+    if (project) project->project.rememberConfiguration(config == RIDE_CONFIG_RELEASE ? editor::ConfigRelease : editor::ConfigDebug);
 }
 
 int ride_project_runs_as_project(RIDEProject* project, const char* source) {
@@ -1447,6 +1475,13 @@ int ride_project_builds(RIDEProject* project) {
 int ride_project_target_ready(RIDEProject* project) {
     if (!project) return 0;
 
+    // A CCS project is read again for every build, so an edit made in CCS is what is built.
+    if (project->project.isCcs() && !project->project.reloadIfCcs(project->why)) {
+        project->detail.clear();
+        project->sources.clear();
+        project->parts.clear();
+        return 0;
+    }
     project->sources.clear();
     bool ok = project->project.targetParts(project->parts, project->why, &project->detail);
     if (ok)
@@ -1556,7 +1591,7 @@ RIDEBuild* ride_build_target(RIDEProject* project, const char* cc1, const char* 
                            int kind, const char* arch, int config) {
     if (!ride_project_target_ready(project)) return 0;
 
-    editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1);
+    editor::Toolchain tool = toolFrom(project, cc1, cl, shc, cxx1, config);
 
     tool.kind = static_cast<editor::ToolchainKind>(kind);
 
@@ -1796,7 +1831,7 @@ RIDERunning* ride_run_start(RIDEProject* project, const char* cc1, const char* c
     running->onOutput = onOutput;
     running->user = user;
     running->fromSource = true;
-    running->tool = toolFrom(project, cc1, cl, shc, cxx1);
+    running->tool = toolFrom(project, cc1, cl, shc, cxx1, config);
     running->kind = static_cast<editor::ToolchainKind>(kind);
     running->source = source ? source : "";
     running->language = static_cast<editor::Language>(language);
@@ -1971,6 +2006,8 @@ const char* ride_options_preview(RIDEProject* project, int config, int tab, cons
 int ride_options_commit(RIDEProject* project) {
     if (!project || !project->project.loaded())
         return editor::settings::rememberCompilerOptions(draftOf(project).toJson()) ? 1 : 0;
+    // A CCS project's options are CCS's to write; the dialog shows them and changes nothing.
+    if (project->project.isCcs()) return 0;
     project->project.setCompilerOptions(project->draft);
     project->last = editor::saveProject(project->project);
     return project->last.ok ? 1 : 0;

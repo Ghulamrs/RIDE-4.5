@@ -581,7 +581,7 @@ std::vector<std::string> assemblyIn(const std::string& dir) {
 // **A tms6747 build makes a real TI program too.** The emulator runs the assembly in <program>.vm;
 // with asm6x beside the editor each .s becomes a TI object, and with TI's compiler directory named
 // under Tools lnk6x links them into <program>.out for the board. A refusal or a failed link fails the build: what the emulator runs must be a TI program.
-void makeTiProgram(Built& result, const std::string& program, LineSink sink, void* context) {
+void makeTiProgram(Built& result, const Toolchain& tool, const std::string& program, LineSink sink, void* context) {
     if (!result.ok) return;
     std::string as = c6xAssembler();
     if (as.empty()) return;
@@ -650,19 +650,46 @@ void makeTiProgram(Built& result, const std::string& program, LineSink sink, voi
         if (sink) sink(context, choice.say);
     }
     std::string lnk = choice.path;
+    // **A CCS project's link is the project's**: its .cmd files, sizes, search paths, libraries
+    // and initialisation model, as .cproject says them (ccs/ccsproject.h); RIDE's own flat memory map otherwise.
+    const TiLink& given = tool.tiLink;
     std::string cmdfile = path::join(dir, "ti-link.cmd");
-    if (std::FILE* f = std::fopen(cmdfile.c_str(), "wb")) { std::fputs(tiLinkCmd().c_str(), f); std::fclose(f); }
+    if (!given.given || given.cmdFiles.empty()) {
+        if (std::FILE* f = std::fopen(cmdfile.c_str(), "wb")) { std::fputs(tiLinkCmd().c_str(), f); std::fclose(f); }
+    }
     // the exception-handling build of TI's runtime where there is one (CCS
     // ships the other; the C++ programs need this one), else the shipped one
     std::string rts = eh ? "rts6740_elf_eh.lib" : "rts6740_elf.lib";
     std::string out = program;
     if (out.size() > 4 && out.compare(out.size() - 4, 4, ".exe") == 0) out.resize(out.size() - 4);
     out += ".out";
-    std::string link = q(lnk) + " -mv6740 --abi=eabi -i " + q(lib) + (extra.empty() ? std::string() : " -i " + q(extra)) +
-                       " " + q(cmdfile);
+    std::string link = q(lnk) + " -mv6740 --abi=eabi -i " + q(lib) + (extra.empty() ? std::string() : " -i " + q(extra));
+    for (size_t i = 0; i < given.searchPaths.size(); ++i) {
+        if (path::isDirectory(given.searchPaths[i])) { link += " -i " + q(given.searchPaths[i]); continue; }
+        std::string left = "[library search path not on this machine, left out: " + given.searchPaths[i] + "]";
+        result.output += left + "\n";
+        if (sink) sink(context, left);
+    }
+    if (given.given && !given.cmdFiles.empty()) {
+        for (size_t i = 0; i < given.cmdFiles.size(); ++i) link += " " + q(given.cmdFiles[i]);
+    } else {
+        link += " " + q(cmdfile);
+    }
+    if (given.given && !given.heap.empty()) link += " --heap_size=" + given.heap;
+    if (given.given && !given.stack.empty()) link += " --stack_size=" + given.stack;
+    if (given.given && given.romModel == 1) link += " --rom_model";
+    if (given.given && given.romModel == 0) link += " --ram_model";
     for (size_t i = 0; i < objects.size(); ++i) link += " " + q(objects[i]);
-    link += " -l " + rts + " -o " + q(out);
-    if (sink) sink(context, "$ lnk6x " + std::to_string(objects.size()) + " objects, " + rts + " -o " + path::filename(out));
+    if (given.given && !given.libraries.empty()) {
+        rts = given.libraries[0];
+        for (size_t i = 0; i < given.libraries.size(); ++i) link += " -l " + given.libraries[i];
+    } else {
+        link += " -l " + rts;
+    }
+    link += " -o " + q(out);
+    if (sink) sink(context, "$ lnk6x " + std::to_string(objects.size()) + " objects, " + rts +
+                    (given.given && !given.cmdFiles.empty() ? ", " + path::filename(given.cmdFiles[0]) : std::string()) +
+                    " -o " + path::filename(out));
     if (runCaptured(link, result.output, sink, context) != 0) {
         result.ok = false;
         std::string hint = "lnk6x did not link it - see its messages above";
@@ -746,7 +773,7 @@ Built buildTargetOnce(const Toolchain& tool, ToolchainKind kind,
     for (size_t i = 0; i < result.leftovers.size(); ++i)
         std::remove(result.leftovers[i].c_str());
     result.leftovers.clear();
-    if (isEmulated(arch)) makeTiProgram(result, program, sink, context);
+    if (isEmulated(arch)) makeTiProgram(result, tool, program, sink, context);
     return result;
 }
 
@@ -842,7 +869,7 @@ Built buildPartsOnce(const Toolchain& tool, const std::vector<Part>& parts,
         result.ok = true;
         for (size_t i = 0; i < parts.size(); ++i)
             if (toolchainOf(tool, parts[i]) == ToolShc) result.shalimar = true;
-        makeTiProgram(result, program, sink, context);
+        makeTiProgram(result, tool, program, sink, context);
         return result;
     }
 

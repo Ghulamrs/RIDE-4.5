@@ -534,6 +534,15 @@ void Editor::openProject(const std::string& path) {
             said += " - " + number(named) + " projects here, Project > Open chooses";
         say(said);
         sayIfSettingsWereBad();
+        // A CCS project: its remembered configuration, and the line naming what of it RIDE
+        // cannot honour - on the console, so that it is read rather than overwritten by the next message.
+        if (project_.isCcs()) {
+            int remembered = project_.ccsConfiguration();
+            if (remembered >= 0) config_ = static_cast<Configuration>(remembered);
+            std::vector<std::string> lines = project_.ccsReport(config_);
+            for (size_t i = 0; i < lines.size(); ++i) console_.push_back(lines[i]);
+            say(lines.empty() ? said : lines[0]);
+        }
 
         // The project's own file comes to the front - the one it names,
         // else the one defining main, else the first - whichever way the
@@ -2064,6 +2073,7 @@ Toolchain Editor::toolFor() const {
     if (project_.loaded()) {
         tool.includes = project_.absoluteIncludes();
         tool.libraries = project_.absoluteLibraries();
+        tool.tiLink = project_.tiLink(config_);
     }
     std::vector<std::string> shared = settings::includes();
     tool.includes.insert(tool.includes.end(), shared.begin(), shared.end());
@@ -2733,6 +2743,11 @@ std::string Editor::compilersNamed(const std::vector<Part>& parts) const {
 void Editor::buildProject(bool andRun) {
     std::vector<Part> parts;
     std::string why, detail;
+    // A CCS project is read again for every build, so an edit made in CCS is what is built.
+    if (project_.isCcs() && !project_.reloadIfCcs(why)) {
+        say(why);
+        return;
+    }
     if (!project_.targetParts(parts, why, &detail)) {
 
         say(why);
@@ -2762,6 +2777,10 @@ void Editor::buildProject(bool andRun) {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
+    if (project_.isCcs()) {
+        std::vector<std::string> lines = project_.ccsReport(config_);
+        for (size_t i = 0; i < lines.size(); ++i) console_.push_back(lines[i]);
+    }
 
     std::string program = project_.targetProgram();
     size_t count = 0;
@@ -3373,6 +3392,7 @@ void Editor::perform(Action action) {
         case ActionConfigDebug:
             config_ = ConfigDebug;
             settings::rememberConfiguration("debug");
+            project_.rememberConfiguration(config_);
             resetDebug();
 
             say("debug:" + configFlags(resolve(tool_, lang_), config_, kArches[arch_]) +
@@ -3383,6 +3403,7 @@ void Editor::perform(Action action) {
         case ActionConfigRelease:
             config_ = ConfigRelease;
             settings::rememberConfiguration("release");
+            project_.rememberConfiguration(config_);
             resetDebug();
             say("release:" + configFlags(resolve(tool_, lang_), config_, kArches[arch_]) +
                 (optimises(resolve(tool_, lang_))

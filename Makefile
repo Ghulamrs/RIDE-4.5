@@ -51,7 +51,8 @@ CORE_SRC := src/buffer.cpp src/compile.cpp src/convert.cpp \
        src/indent.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/options.cpp src/about.cpp
+       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/options.cpp src/about.cpp \
+       src/ccs/ccsproject.cpp src/ccs/ccsoptions.cpp src/ccs/ccsxml.cpp
 
 # The terminal's own half. src/help.cpp is here rather than in the core because
 # only this front end shows the manual - the window's Help menu has Keys and
@@ -196,7 +197,8 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
             src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/options.cpp src/about.cpp src/help.cpp \
-            src/buffer.cpp \
+            src/buffer.cpp src/ccs/ccsproject.cpp src/ccs/ccsoptions.cpp src/ccs/ccsxml.cpp \
+            src/ccs/ccsproject.h src/ccs/ccsoptions.h src/ccs/ccsxml.h \
             winforms/bridge.cpp winforms/bridge.h src/compile.h src/convert.h \
             src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
@@ -205,7 +207,7 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
 	    src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/options.cpp src/about.cpp src/help.cpp \
-	    src/buffer.cpp $(SHM_SRC)
+	    src/buffer.cpp src/ccs/ccsproject.cpp src/ccs/ccsoptions.cpp src/ccs/ccsxml.cpp $(SHM_SRC)
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1, CXX1 and SHC name compilers for the build cases, and C2S the converter
@@ -323,6 +325,9 @@ product: confirm
 	cp -R $(CXX1_DIR)/include "$(PRODUCT_DIR)/include"
 	cp $(CXX1_DIR)/lib/*.h "$(PRODUCT_DIR)/include/"
 	cp -R $(CC1_DIR)/lib "$(PRODUCT_DIR)/lib"
+# TI's option definitions, which a CCS project's unstored options are read from (src/ccs/ccsoptions.h).
+	mkdir -p "$(PRODUCT_DIR)/lib/ccs"
+	cp docs/ccs-reference/ti-option-definitions/*.tsv "$(PRODUCT_DIR)/lib/ccs/"
 	printf '{\n  "include": "include",\n  "lib": "lib",\n  "vcvars": "",\n  "compiler": "auto",\n  "indent": 4,\n  "tabs": false,\n  "font": "",\n  "includes": [],\n  "libraries": []\n}\n' > "$(PRODUCT_DIR)/settings.json"
 # Into bin/lib/ rather than anywhere tidier, because that is where shc looks:
 # beside its own binary. Both archives, debug included - see DEPENDENCIES.

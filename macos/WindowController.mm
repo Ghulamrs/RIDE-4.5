@@ -187,6 +187,7 @@ static void RunOutput(void* user, const char* bytes, int size, int stream);
     NSPopUpButton* configPick_;
     NSTextField* preview_;
     NSMutableDictionary<NSString*, NSControl*>* controls_;
+    NSTextView* ccsText_;
     NSModalResponse answer_;
 }
 
@@ -276,6 +277,26 @@ static void RunOutput(void* user, const char* bytes, int size, int stream);
         item.view = view;
         [tabs_ addTabViewItem:item];
     }
+    // A CCS project's options are read from its files and shown, not edited: a tab of what was
+    // read and where each option went, every control greyed, and OK keeps nothing (bridge.h).
+    if (ride_project_is_ccs(project_)) {
+        NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, page.width, page.height)];
+        NSTextView* text = [[NSTextView alloc] initWithFrame:scroll.bounds];
+        text.editable = NO;
+        text.font = [NSFont userFixedPitchFontOfSize:[NSFont smallSystemFontSize]];
+        text.string = Str(ride_project_ccs_mapping(project_, config_));
+        scroll.documentView = text;
+        scroll.hasVerticalScroller = YES;
+        NSTabViewItem* item = [[NSTabViewItem alloc] initWithIdentifier:@"CCS project"];
+        item.label = @"CCS project";
+        item.view = scroll;
+        [tabs_ insertTabViewItem:item atIndex:0];
+        for (NSString* identifier in controls_) {
+            controls_[identifier].enabled = NO;
+            controls_[identifier].toolTip = @"Read from the CCS project - edit it in CCS";
+        }
+        ccsText_ = text;
+    }
     tabs_.delegate = (id<NSTabViewDelegate>)self;
     [content addSubview:tabs_];
 
@@ -290,6 +311,7 @@ static void RunOutput(void* user, const char* bytes, int size, int stream);
 
     NSButton* reset = [NSButton buttonWithTitle:@"Restore Defaults" target:self action:@selector(restoreDefaults:)];
     reset.frame = NSMakeRect(14, 12, 150, 30);
+    reset.enabled = ride_project_is_ccs(project_) == 0;
     [content addSubview:reset];
     NSButton* cancel = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
     cancel.frame = NSMakeRect(width - 214, 12, 96, 30);
@@ -335,14 +357,15 @@ static void RunOutput(void* user, const char* bytes, int size, int stream);
 
 - (void)configChosen:(id)sender {
     (void)sender;
-    [self pull];
+    if (ccsText_ == nil) [self pull];
     config_ = (int)configPick_.indexOfSelectedItem;
     [self push];
+    if (ccsText_ != nil) ccsText_.string = Str(ride_project_ccs_mapping(project_, config_));
 }
 
 - (void)restoreDefaults:(id)sender { (void)sender; ride_options_reset(project_, config_); [self push]; }
 - (void)cancel:(id)sender { (void)sender; answer_ = NSModalResponseCancel; [NSApp stopModal]; }
-- (void)ok:(id)sender { (void)sender; [self pull]; answer_ = NSModalResponseOK; [NSApp stopModal]; }
+- (void)ok:(id)sender { (void)sender; if (ccsText_ == nil) [self pull]; answer_ = NSModalResponseOK; [NSApp stopModal]; }
 
 - (BOOL)run:(NSWindow*)parent {
     (void)parent;
@@ -352,7 +375,11 @@ static void RunOutput(void* user, const char* bytes, int size, int stream);
     return answer_ == NSModalResponseOK && ride_options_commit(project_) != 0;
 }
 
-- (void)selectTab:(int)tab { if (tab >= 0 && tab < tabs_.numberOfTabViewItems) [tabs_ selectTabViewItemAtIndex:tab]; [self showPreview]; }
+- (void)selectTab:(int)tab {
+    if (ccsText_ != nil) tab = 0;   // the CCS tab first: it is what there is to read
+    if (tab >= 0 && tab < tabs_.numberOfTabViewItems) [tabs_ selectTabViewItemAtIndex:tab];
+    [self showPreview];
+}
 @end
 
 @interface WindowController ()
@@ -1914,11 +1941,25 @@ static NSColor* ColourOf(unsigned char kind) {
     [self say:[NSString stringWithFormat:@"ready - %@, %d groups",
                                          Str(ride_project_name(project_)),
                                          ride_project_groups(project_)]];
+    [self sayCcsProject];
     if (started_) {
         NSString* said = statusMessage_.stringValue;
         [self openFirstOfProject];
         [self say:said];
     }
+}
+
+// A CCS project opened as it is (bridge.h): its remembered configuration, and the line naming
+// what of it RIDE cannot honour - said, and kept on the Output pane where the next message does not overwrite it.
+- (void)sayCcsProject {
+    if (!ride_project_is_ccs(project_)) return;
+    int remembered = ride_project_ccs_configuration(project_);
+    if (remembered >= 0) config_ = remembered;
+    NSString* report = Str(ride_project_ccs_report(project_, config_));
+    if (report.length == 0) return;
+    [self append:[report stringByAppendingString:@"\n"] to:output_];
+    [self say:[report componentsSeparatedByString:@"\n"].firstObject];
+    [self sayBuild];
 }
 
 - (void)projectArrived:(NSString*)where {
@@ -2183,6 +2224,8 @@ static NSColor* ColourOf(unsigned char kind) {
     if ([dialog run:self.window])
         [self say:ride_project_loaded(project_) ? @"compiler options written to the project"
                                                  : @"compiler options written to settings.json"];
+    else if (ride_project_is_ccs(project_))
+        [self say:@"a CCS project's options are read from it - edit them in CCS"];
     else
         [self say:@"compiler options unchanged"];
 }
@@ -3107,6 +3150,7 @@ static void RunOutput(void* user, const char* bytes, int size, int stream) {
 - (void)chooseConfig:(NSMenuItem*)sender {
     config_ = (int)(sender.tag - kTagConfigBase);
     ride_remember_configuration(config_);
+    ride_project_remember_configuration(project_, config_);
     [self sayBuild];
     [self say:Str(ride_config_name(config_))];
 }
