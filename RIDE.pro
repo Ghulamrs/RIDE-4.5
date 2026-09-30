@@ -40,6 +40,14 @@
       "src/terminal_common.cpp",
       "src/terminal_win.cpp"
     ],
+    "CCS projects": [
+      "src/ccs/ccsproject.cpp",
+      "src/ccs/ccsoptions.cpp",
+      "src/ccs/ccsxml.cpp",
+      "src/ccs/ccsproject.h",
+      "src/ccs/ccsoptions.h",
+      "src/ccs/ccsxml.h"
+    ],
     "Shalimar debugging": [
       "src/shalimar/channel.cpp",
       "src/shalimar/session.cpp",

@@ -34,6 +34,8 @@ int main(int argc, char** argv) {
     std::string arch;
     std::string assembler, linker;
     std::string ti, tilib, tilinker;
+    std::string ccsRoot;
+    bool ccs = false;
     bool build = false, runIt = false;
     long width = 0;
     int plain = 0;
@@ -74,6 +76,11 @@ int main(int argc, char** argv) {
             ti = argv[++i];
         } else if (std::strcmp(argv[i], "--tilib") == 0 && i + 1 < argc) {
             tilib = argv[++i];
+        } else if (std::strcmp(argv[i], "--ccs") == 0) {
+            ccs = true;
+        } else if (std::strcmp(argv[i], "--ccs-root") == 0 && i + 1 < argc) {
+            ccs = true;
+            ccsRoot = argv[++i];
         } else if (std::strcmp(argv[i], "--build") == 0) {
             build = true;
         } else if (std::strcmp(argv[i], "--run") == 0) {
@@ -92,7 +99,7 @@ int main(int argc, char** argv) {
                 "           [--shalimar path] [--cxx path] [--c2s path]\n"
                 "           [--width n] [--tabs] [--case-indent] [--plain]\n"
                 "       %s <project.pro or dir> [--arch a] [--assembler path] [--linker path]\n"
-                "           [--ti dir [--tilib dir] [--tilinker path]] --build | --run\n"
+                "           [--ti dir [--tilib dir] [--tilinker path]] [--ccs [--ccs-root dir]] --build | --run\n"
                 "  %s - the console half, which is %s.exe on Linux and\n"
                 "  macOS and %sConsole.exe on Windows. %s.exe on Windows is the\n"
                 "  same editor in a window, over the same core.\n"
@@ -130,7 +137,10 @@ int main(int argc, char** argv) {
                 "                 --ti names TI's C6000 compiler directory, whose\n"
                 "                 lnk6x links a tms6747 build into a .out, and\n"
                 "                 --tilib a directory with rts6740_elf_eh.lib,\n"
-                "                 --tilinker the project's linker in place of lnk6x\n"
+                "                 --tilinker the project's linker in place of lnk6x;\n"
+                "                 --ccs opens a CCS 7.4 or 5.5 C6747 project folder as it\n"
+                "                 is, which settings.json's \"ccs\" switch does for every run,\n"
+                "                 and --ccs-root names the CCS install ${CG_TOOL_ROOT} is under\n"
                 "  --width n      columns per indent step (4)\n"
                 "  --tabs         indent with tabs instead of spaces\n"
                 "  --plain        frame the screen with - | + instead of the box\n"
@@ -185,6 +195,7 @@ int main(int argc, char** argv) {
     if (!ti.empty()) editor::settings::overrideTi(ti);
     if (!tilib.empty()) editor::settings::overrideTilib(tilib);
     if (!tilinker.empty()) editor::settings::overrideTilinker(tilinker);
+    if (ccs) editor::settings::overrideCcs(true, ccsRoot);
 
     bool onItsOwn = false;
     if (project.empty() && !file.empty()) {

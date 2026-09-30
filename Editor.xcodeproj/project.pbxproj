@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		C45721AA0A8F9B747607FAAF /* src/about.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 53A999C42C9671A019D8A765 /* src/about.cpp */; };
 		3759E1DE49A5A047B1FD92F6 /* src/buffer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8C00B5B59F5572B6B53CE399 /* src/buffer.cpp */; };
+		E23EED208E56D37CAE53DC5A /* src/ccs/ccsoptions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 42C2524950308952518DA92E /* src/ccs/ccsoptions.cpp */; };
+		E367EC7379091671D941A164 /* src/ccs/ccsproject.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5905159552EC19757AF47EC4 /* src/ccs/ccsproject.cpp */; };
+		49451D0141C057A13FE859A0 /* src/ccs/ccsxml.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8DF7773F5AE10F2061C0933B /* src/ccs/ccsxml.cpp */; };
 		3D912BE475A22DD3A6039374 /* src/compile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = EA4CCB1DFB2AECDB0402CF58 /* src/compile.cpp */; };
 		319EBB26E9A9D41EF297C51C /* src/convert.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F522DD9C4F2C1158C6C8EA4 /* src/convert.cpp */; };
 		219518665EABAB5920FEDA40 /* src/debugger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1A539DA37C7D0ED8101CDB5F /* src/debugger.cpp */; };
@@ -40,6 +43,9 @@
 /* Begin PBXFileReference section */
 		53A999C42C9671A019D8A765 /* src/about.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/about.cpp; sourceTree = "<group>"; };
 		8C00B5B59F5572B6B53CE399 /* src/buffer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/buffer.cpp; sourceTree = "<group>"; };
+		42C2524950308952518DA92E /* src/ccs/ccsoptions.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/ccs/ccsoptions.cpp; sourceTree = "<group>"; };
+		5905159552EC19757AF47EC4 /* src/ccs/ccsproject.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/ccs/ccsproject.cpp; sourceTree = "<group>"; };
+		8DF7773F5AE10F2061C0933B /* src/ccs/ccsxml.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/ccs/ccsxml.cpp; sourceTree = "<group>"; };
 		EA4CCB1DFB2AECDB0402CF58 /* src/compile.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/compile.cpp; sourceTree = "<group>"; };
 		2F522DD9C4F2C1158C6C8EA4 /* src/convert.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/convert.cpp; sourceTree = "<group>"; };
 		1A539DA37C7D0ED8101CDB5F /* src/debugger.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/debugger.cpp; sourceTree = "<group>"; };
@@ -68,6 +74,9 @@
 		43ED8A3ECC93C5C87FEBA2CD /* src/workspace.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/workspace.cpp; sourceTree = "<group>"; };
 		A5197A2600D6316CAFF6E755 /* src/about.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/about.h; sourceTree = "<group>"; };
 		811ABF9EEB8290B62B89B8B5 /* src/buffer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/buffer.h; sourceTree = "<group>"; };
+		FC5B6C18B6726C5CB328BEFA /* src/ccs/ccsoptions.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/ccs/ccsoptions.h; sourceTree = "<group>"; };
+		C009C44122A359AB93571B54 /* src/ccs/ccsproject.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/ccs/ccsproject.h; sourceTree = "<group>"; };
+		F6C4A1C87C814B6E873410C7 /* src/ccs/ccsxml.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/ccs/ccsxml.h; sourceTree = "<group>"; };
 		24592E5790C07D5F48B7698B /* src/compile.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/compile.h; sourceTree = "<group>"; };
 		F9233243DDFF03FDE29EF1A1 /* src/convert.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/convert.h; sourceTree = "<group>"; };
 		04298D6AA66AFA4847F44903 /* src/debugger.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/debugger.h; sourceTree = "<group>"; };
@@ -266,6 +275,9 @@
 			children = (
 				53A999C42C9671A019D8A765 /* src/about.cpp */,
 				8C00B5B59F5572B6B53CE399 /* src/buffer.cpp */,
+				42C2524950308952518DA92E /* src/ccs/ccsoptions.cpp */,
+				5905159552EC19757AF47EC4 /* src/ccs/ccsproject.cpp */,
+				8DF7773F5AE10F2061C0933B /* src/ccs/ccsxml.cpp */,
 				EA4CCB1DFB2AECDB0402CF58 /* src/compile.cpp */,
 				2F522DD9C4F2C1158C6C8EA4 /* src/convert.cpp */,
 				1A539DA37C7D0ED8101CDB5F /* src/debugger.cpp */,
@@ -294,6 +306,9 @@
 				43ED8A3ECC93C5C87FEBA2CD /* src/workspace.cpp */,
 				A5197A2600D6316CAFF6E755 /* src/about.h */,
 				811ABF9EEB8290B62B89B8B5 /* src/buffer.h */,
+				FC5B6C18B6726C5CB328BEFA /* src/ccs/ccsoptions.h */,
+				C009C44122A359AB93571B54 /* src/ccs/ccsproject.h */,
+				F6C4A1C87C814B6E873410C7 /* src/ccs/ccsxml.h */,
 				24592E5790C07D5F48B7698B /* src/compile.h */,
 				F9233243DDFF03FDE29EF1A1 /* src/convert.h */,
 				04298D6AA66AFA4847F44903 /* src/debugger.h */,
@@ -634,6 +649,9 @@
 			files = (
 				C45721AA0A8F9B747607FAAF /* src/about.cpp in Sources */,
 				3759E1DE49A5A047B1FD92F6 /* src/buffer.cpp in Sources */,
+				E23EED208E56D37CAE53DC5A /* src/ccs/ccsoptions.cpp in Sources */,
+				E367EC7379091671D941A164 /* src/ccs/ccsproject.cpp in Sources */,
+				49451D0141C057A13FE859A0 /* src/ccs/ccsxml.cpp in Sources */,
 				3D912BE475A22DD3A6039374 /* src/compile.cpp in Sources */,
 				319EBB26E9A9D41EF297C51C /* src/convert.cpp in Sources */,
 				219518665EABAB5920FEDA40 /* src/debugger.cpp in Sources */,

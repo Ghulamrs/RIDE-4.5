@@ -35,6 +35,36 @@ opened is the one reopened next time.
 **`Project ▸ Save as...`** writes one out under a name of its own.
 That is the only thing that converts a project — see below.
 
+## A CCS project, opened as it is
+
+A Code Composer Studio 7.4 or 5.5 project for the TMS320C6747 opens without
+being converted, once `settings.json` says so:
+
+```json
+"ccs": { "enabled": true, "root": "C:/ti/ccsv7" }
+```
+
+`Project ▸ Open...` then also takes a folder holding `.project` and
+`.ccsproject`. RIDE reads those and `.cproject` afresh every time the project is
+opened or built, so an edit made in CCS is seen at once, and it writes nothing
+into them: the file it opens with and the configuration it builds go into
+`settings.json` under the project's path. `root` resolves `${CG_TOOL_ROOT}`; it
+may be left out on a machine with no CCS, and the TI compiler directory a
+tms6747 build already links against stands in. `--ccs` on the console does the
+same for one run.
+
+CCS's Debug and Release are RIDE's. What of the project's options RIDE's own
+toolchain can honour is applied - the optimisation level (-O3 as -O2), `-g`,
+defines, undefines, include paths, `--no_compress`, and for the link the
+project's `.cmd` file, heap and stack sizes, `-i` paths, `-l` libraries
+(`libc.a`, TI's index, becomes `rts6740_elf_eh.lib`) and `--rom_model`. Every
+other option takes RIDE's default, and one line in the Messages pane names them:
+`CCS project K6747c (Release): 1 option not supported, using RIDE's defaults:
+--opt_for_speed=5; ...`. The Compiler Options dialog shows what was read and
+changes nothing - edit it in CCS. Only C6000 C674x devices open; any other is
+refused with its device named. The sources are every file in the folder by
+extension, the linked files from `.project`, minus what `.cproject` excludes.
+
 ## One kind of project file
 
 A project is a `.pro` file and nothing else. Older releases also read a

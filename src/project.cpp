@@ -70,12 +70,16 @@ std::string Project::fileIn(const std::string& directory) {
 
 std::string Project::absolute(const std::string& rel) const {
     if (root_.empty()) return rel;
+    // A CCS project's linked file is named absolutely, and joins nothing.
+    if (rel[0] == '/' || (rel.size() > 1 && rel[1] == ':')) return rel;
     return root_ + "/" + rel;
 }
 
 std::string Project::relative(const std::string& file) const {
     std::string out = path::relativeTo(file, root_);
-    if (out.empty()) return withSlashes(file);
+    // A file outside the root - a CCS project's linked source, its program in the temporary
+    // directory - is named whole rather than by a chain of "..", which is how its group holds it.
+    if (out.empty() || out.compare(0, 2, "..") == 0) return withSlashes(file);
     return out;
 }
 
@@ -89,6 +93,7 @@ void Project::begin(const std::string& dir, const std::string& name) {
     open_.clear();
     options_ = options::Store();
     options::setActive(&options_);
+    ccs_ = false;
     indentSaid_ = false;
     indent_.width = settings::indentWidth();
     indent_.tabs = settings::indentTabs();
@@ -203,6 +208,14 @@ bool Project::load(const std::string& dir, std::string& error) {
     loaded_ = false;
 
     std::string base = path::absolute(dir);
+    ccs_ = false;
+
+    // **A CCS project folder, with the switch on** - or one of its three files named outright.
+    // A .pro beside them wins: that is RIDE's own, and the folder was chosen for it before.
+    if (settings::ccsEnabled()) {
+        std::string folder = path::isDirectory(base) ? base : ccs::isProjectFile(base) ? path::parent(base) : std::string();
+        if (!folder.empty() && ccs::isProject(folder) && fileIn(folder).empty()) return loadCcs(folder, error);
+    }
 
     std::string path;
     if (path::isDirectory(base)) {
@@ -347,6 +360,17 @@ bool Project::save(std::string& error) {
     if (!loaded_) {
         error = "there is no project to save";
         return false;
+    }
+    // CCS's files are CCS's: what RIDE keeps of its own goes to settings.json, keyed by the folder.
+    if (ccs_) {
+        Json state = settings::ccsProjectState(root_);
+        if (!state.is(Json::Object)) state = Json::object();
+        state.set("open", Json::fromText(open_));
+        if (!settings::rememberCcsProjectState(root_, state)) {
+            error = "cannot write settings.json, where a CCS project's state is kept";
+            return false;
+        }
+        return true;
     }
 
     Json root = Json::object();
@@ -496,6 +520,7 @@ void Project::close() {
     options_ = options::Store();
     options::release(&options_);
     loaded_ = false;
+    ccs_ = false;
     root_.clear();
     file_.clear();
     name_.clear();
@@ -824,7 +849,135 @@ std::string Project::targetProgram() const {
 #ifdef _WIN32
     if (name.size() < 4 || name.compare(name.size() - 4, 4, ".exe") != 0) name += ".exe";
 #endif
+    // Never into a CCS folder: the .vm of assembly RIDE would leave there is a directory of .s
+    // files, which CCS's next build would take for assembly sources of the project.
+    if (ccs_) {
+        std::string dir = path::join(path::tempDir(), std::string("ride-ccs-") + name_);
+        path::makeDirectories(dir);
+        return path::join(dir, name);
+    }
     return path::join(root_, name);
+}
+
+// **The CCS project, as read** - groups, target, options and includes filled from the reading
+// and nothing of it written back. Files the folder holds go in Sources by their relative
+// names, linked ones in Linked by their absolute ones, and what every configuration excludes in Excluded, which the target does not build.
+bool Project::loadCcs(const std::string& folder, std::string& error) {
+    ccs::Reading reading;
+    if (!ccs::read(folder, reading, error)) return false;
+    ccsReading_ = reading;
+    ccs_ = true;
+    root_ = reading.dir;
+    file_ = path::join(root_, ".ccsproject");
+    name_ = reading.name;
+    toolchain_ = ToolAuto;
+    arch_ = "tms6747";
+    indentSaid_ = false;
+    indent_.width = settings::indentWidth();
+    indent_.tabs = settings::indentTabs();
+
+    Group sources, linked, excluded;
+    sources.name = "Sources";
+    linked.name = "Linked";
+    excluded.name = "Excluded";
+    std::vector<std::string> built;
+    for (size_t c = 0; c < reading.configs.size(); ++c)
+        for (size_t i = 0; i < reading.configs[c].sources.size(); ++i)
+            if (std::find(built.begin(), built.end(), reading.configs[c].sources[i]) == built.end())
+                built.push_back(reading.configs[c].sources[i]);
+    for (size_t i = 0; i < built.size(); ++i) {
+        std::string rel = path::relativeTo(built[i], root_);
+        bool isLinked = std::find(reading.linked.begin(), reading.linked.end(), built[i]) != reading.linked.end();
+        if (isLinked || rel.empty() || rel.compare(0, 2, "..") == 0) linked.files.push_back(withSlashes(built[i]));
+        else sources.files.push_back(rel);
+    }
+    for (size_t c = 0; c < reading.configs.size(); ++c)
+        for (size_t i = 0; i < reading.configs[c].excluded.size(); ++i) {
+            const std::string& rel = reading.configs[c].excluded[i];
+            bool everywhere = true;
+            for (size_t k = 0; k < reading.configs.size(); ++k)
+                if (std::find(reading.configs[k].excluded.begin(), reading.configs[k].excluded.end(), rel) == reading.configs[k].excluded.end()) everywhere = false;
+            if (everywhere && path::exists(absolute(rel)) && std::find(excluded.files.begin(), excluded.files.end(), rel) == excluded.files.end())
+                excluded.files.push_back(rel);
+        }
+    std::sort(sources.files.begin(), sources.files.end());
+    groups_.clear();
+    groups_.push_back(sources);
+    if (!linked.files.empty()) groups_.push_back(linked);
+    if (!excluded.files.empty()) groups_.push_back(excluded);
+
+    target_ = Target();
+    target_.name = name_;
+    target_.groups.push_back(sources.name);
+    if (!linked.files.empty()) target_.groups.push_back(linked.name);
+
+    includes_.clear();
+    libraries_.clear();
+    options_ = options::Store();
+    for (size_t c = 0; c < reading.configs.size(); ++c) {
+        const ccs::Config& config = reading.configs[c];
+        for (size_t i = 0; i < config.includes.size(); ++i)
+            if (std::find(includes_.begin(), includes_.end(), config.includes[i]) == includes_.end()) includes_.push_back(config.includes[i]);
+        const char* tools[2] = { "c90", "cpp11" };
+        for (int t = 0; t < 2; ++t) {
+            std::string tool(tools[t]);
+            if (!config.opt.empty()) options_.set(config.which, tool + ".opt", config.opt);
+            if (config.debugSaid) options_.set(config.which, tool + ".g", config.debug ? "1" : "0");
+            std::string defines, undefines;
+            for (size_t i = 0; i < config.defines.size(); ++i) defines += (i ? ";" : "") + config.defines[i];
+            for (size_t i = 0; i < config.undefines.size(); ++i) undefines += (i ? ";" : "") + config.undefines[i];
+            if (!config.defines.empty()) options_.set(config.which, tool + ".defines", defines);
+            if (!config.undefines.empty()) options_.set(config.which, tool + ".undefines", undefines);
+        }
+        options_.set(config.which, "cpp11.compress", config.noCompress ? "0" : "1");
+    }
+    options::setActive(&options_);
+
+    Json state = settings::ccsProjectState(root_);
+    open_ = withSlashes(state.get("open").text(std::string()));
+    loaded_ = true;
+    return true;
+}
+
+std::vector<std::string> Project::ccsReport(Configuration config) const {
+    std::vector<std::string> lines;
+    if (!ccs_) return lines;
+    lines.push_back(ccs::report(ccsReading_, config));
+    std::string sources = ccs::sourceReport(ccsReading_);
+    if (!sources.empty()) lines.push_back(sources);
+    return lines;
+}
+
+std::string Project::ccsMapping(Configuration config) const {
+    return ccs_ ? ccs::mappingText(ccsReading_, config) : std::string();
+}
+
+TiLink Project::tiLink(Configuration config) const {
+    const ccs::Config* one = ccs_ ? ccsReading_.config(config) : 0;
+    return one ? one->link : TiLink();
+}
+
+int Project::ccsConfiguration() const {
+    if (!ccs_) return -1;
+    std::string said = settings::ccsProjectState(root_).get("config").text(std::string());
+    return said == "release" ? ConfigRelease : said == "debug" ? ConfigDebug : -1;
+}
+
+bool Project::rememberConfiguration(Configuration config) {
+    if (!ccs_) return false;
+    Json state = settings::ccsProjectState(root_);
+    if (!state.is(Json::Object)) state = Json::object();
+    state.set("config", Json::fromText(configName(config)));
+    return settings::rememberCcsProjectState(root_, state);
+}
+
+bool Project::reloadIfCcs(std::string& error) {
+    error.clear();
+    if (!ccs_) return true;
+    std::string open = open_, folder = root_;
+    if (!loadCcs(folder, error)) return false;
+    open_ = open;
+    return true;
 }
 
 }

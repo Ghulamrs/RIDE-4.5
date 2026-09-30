@@ -63,6 +63,7 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
    src\indent.cpp src\menu.cpp src\tree.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp src\demangle_win.cpp ^
    src\path.cpp src\process.cpp src\debugger.cpp src\settings.cpp src\options.cpp src\about.cpp src\help.cpp ^
+   src\ccs\ccsproject.cpp src\ccs\ccsoptions.cpp src\ccs\ccsxml.cpp ^
    src\shalimar\channel.cpp src\shalimar\session.cpp ^
    src\terminal_common.cpp ^
    src\terminal_win.cpp
@@ -197,6 +198,9 @@ if exist "%PRODUCT_DIR%\lib" rmdir /s /q "%PRODUCT_DIR%\lib"
 if exist "%CXX1_DIR%\include" xcopy /e /i /q "%CXX1_DIR%\include" "%PRODUCT_DIR%\include" >nul
 if exist "%CXX1_DIR%\lib\*.h" copy /y "%CXX1_DIR%\lib\*.h" "%PRODUCT_DIR%\include\" >nul
 if exist "%CC1_DIR%\lib" xcopy /e /i /q "%CC1_DIR%\lib" "%PRODUCT_DIR%\lib" >nul
+rem TI's option definitions, which a CCS project's unstored options are read from (src\ccs\ccsoptions.h).
+if not exist "%PRODUCT_DIR%\lib\ccs" mkdir "%PRODUCT_DIR%\lib\ccs"
+copy /y docs\ccs-reference\ti-option-definitions\*.tsv "%PRODUCT_DIR%\lib\ccs\" >nul
 (
    echo {
    echo   "include": "include",
@@ -245,6 +249,7 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
    src\json.cpp src\project.cpp src\find.cpp src\buffer.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp ^
    src\demangle_win.cpp src\path.cpp src\process.cpp src\debugger.cpp ^
    src\settings.cpp src\options.cpp src\about.cpp src\help.cpp ^
+   src\ccs\ccsproject.cpp src\ccs\ccsoptions.cpp src\ccs\ccsxml.cpp ^
    src\shalimar\channel.cpp src\shalimar\session.cpp ^
    winforms\bridge.cpp
 if errorlevel 1 goto :fail

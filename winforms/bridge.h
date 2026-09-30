@@ -87,6 +87,16 @@ int ride_project_toolchain(RIDEProject* project);
 int ride_configuration(void);
 void ride_remember_configuration(int config);
 const char* ride_project_arch(RIDEProject* project);
+/* **A CCS project opened as it is** (src/ccs/ccsproject.h), when settings.json's "ccs" switch is
+   on: ride_project_load takes its folder. Nothing of CCS's is written; the options dialog shows
+   what was read and commits nothing; the report is the Messages line naming what RIDE cannot honour
+   (lines '\n' apart, the first for Messages), the mapping the dialog's text, and the
+   configuration the one settings.json remembers for it (-1 unsaid), which the window keeps there. */
+int ride_project_is_ccs(RIDEProject* project);
+const char* ride_project_ccs_report(RIDEProject* project, int config);
+const char* ride_project_ccs_mapping(RIDEProject* project, int config);
+int ride_project_ccs_configuration(RIDEProject* project);
+void ride_project_remember_configuration(RIDEProject* project, int config);
 /* Run file on one source of a several-source build: the count of sources it
    is one of, or 0 - then the window runs the project instead. */
 int ride_project_runs_as_project(RIDEProject* project, const char* source);
