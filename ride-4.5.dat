@@ -1,11 +1,11 @@
 ©2026 G. R. Akhtar - RIDE 4.5, the editor
-Release seal, version 4.5, sealed 27-09-2026
+Release seal, version 4.5, sealed 30-09-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 178 files, seal 24E98D04
+CRC32  size  file - 178 files, seal 963682B6
 ------------------------------------------------------------------
 69341037     18346  Makefile
 62EB2DAD      2814  RIDE.pro
-AB55CDEC      7098  RIDE.sln
+494C87DE      7105  RIDE.sln
 C1F9CE89      3751  RIDEConsole.vcxproj
 7907ECC2     15412  build.bat
 D12111F1       575  examples/counter.c
@@ -35,7 +35,7 @@ A2B21358    971341  macos/RIDE.icns
 7E2C43FD      2767  macos/Text.h
 C0CB4A1F     20125  macos/Window.xcodeproj/project.pbxproj
 CC9071D2      1441  macos/WindowController.h
-167C5D66    153724  macos/WindowController.mm
+5A884B19    153971  macos/WindowController.mm
 B9E7FEC5      4079  macos/main.mm
 07969C88      3339  macos/make-icon.swift
 64DF2508     12347  macos/make-xcodeproj.py
@@ -169,7 +169,7 @@ BFBE5EFC      6263  src/toolchain.h
 D93038C5       572  src/utf8.h
 3064C9A6     12564  src/workspace.cpp
 F35C52A2      2086  src/workspace.h
-6B113C2C    205535  winforms/MainForm.h
+FBD6BED4    205808  winforms/MainForm.h
 6BA8DA64      2289  winforms/Marshal.h
 3D89F3C4      6415  winforms/Program.cpp
 1F889F5F       157  winforms/RIDEGui.rc
@@ -182,4 +182,4 @@ BE6A6F09     72502  winforms/ride.ico
 51E334AF     11065  winforms/show.ps1
 646AA652     10211  workspace.mk
 ------------------------------------------------------------------
-Sealed on 27-09-2026
+Sealed on 30-09-2026
