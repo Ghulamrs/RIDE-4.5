@@ -151,6 +151,7 @@ public:
         tips_ = gcnew ToolTip();
         ride_options_begin(project_);
         Build();
+        if (ccsText_ != nullptr) tab = 0;   // the CCS page first: it is what there is to read
         if (tab >= 0 && tab < tabs_->TabCount) tabs_->SelectedIndex = tab;
         Push();
     }
@@ -165,6 +166,7 @@ private:
     TabControl^ tabs_;
     ComboBox^ configPick_;
     TextBox^ preview_;
+    TextBox^ ccsText_;
     System::Collections::Generic::Dictionary<String^, Control^>^ controls_;
     ToolTip^ tips_;
 
@@ -269,6 +271,24 @@ private:
             }
             tabs_->TabPages->Add(page);
         }
+        // A CCS project's options are read from its files and shown, not edited: a page of what
+        // was read and where each option went, every control greyed, and OK keeps nothing (bridge.h).
+        if (ride_project_is_ccs(project_) != 0) {
+            TabPage^ page = gcnew TabPage("CCS project");
+            ccsText_ = gcnew TextBox();
+            ccsText_->ReadOnly = true;
+            ccsText_->Multiline = true;
+            ccsText_->ScrollBars = ScrollBars::Vertical;
+            ccsText_->Font = gcnew System::Drawing::Font("Consolas", 9.0f);
+            ccsText_->Dock = DockStyle::Fill;
+            ccsText_->Text = FromUtf8(ride_project_ccs_mapping(project_, config_))->Replace("\n", "\r\n");
+            page->Controls->Add(ccsText_);
+            tabs_->TabPages->Insert(0, page);
+            for each (System::Collections::Generic::KeyValuePair<String^, Control^> pair in controls_) {
+                pair.Value->Enabled = false;
+                tips_->SetToolTip(pair.Value, "Read from the CCS project - edit it in CCS");
+            }
+        }
         tabs_->SelectedIndexChanged += gcnew EventHandler(this, &OptionsDialog::TabChosen);
         Controls->Add(tabs_);
 
@@ -287,6 +307,7 @@ private:
         reset->Text = "Restore defaults";
         reset->SetBounds(12, 444, 140, 30);
         reset->Click += gcnew EventHandler(this, &OptionsDialog::RestoreDefaults);
+        reset->Enabled = ride_project_is_ccs(project_) == 0;
         Controls->Add(reset);
         Button^ ok = gcnew Button();
         ok->Text = "OK";
@@ -347,9 +368,10 @@ private:
 
     void ConfigChosen(Object^, EventArgs^) {
         if (pushing_) return;
-        Pull();
+        if (ccsText_ == nullptr) Pull();
         config_ = configPick_->SelectedIndex == 1 ? RIDE_CONFIG_RELEASE : RIDE_CONFIG_DEBUG;
         Push();
+        if (ccsText_ != nullptr) ccsText_->Text = FromUtf8(ride_project_ccs_mapping(project_, config_))->Replace("\n", "\r\n");
     }
 
     void RestoreDefaults(Object^, EventArgs^) {
@@ -357,7 +379,7 @@ private:
         Push();
     }
 
-    void Accepted(Object^, EventArgs^) { Pull(); }
+    void Accepted(Object^, EventArgs^) { if (ccsText_ == nullptr) Pull(); }
 };
 
 public ref class MainForm : public Form {
@@ -2470,6 +2492,7 @@ private:
                                                        ride_project_groups(project_));
         SayWhere();
         RefreshTitle();
+        SayCcsProject();
 
         // The project's own file comes to the front whichever way the
         // project was opened - Start() asks the same after the command
@@ -2479,6 +2502,18 @@ private:
             OpenFirstOfProject();
             what_->Text = kept;
         }
+    }
+
+    // A CCS project opened as it is (bridge.h): its remembered configuration, and the line naming
+    // what of it RIDE cannot honour - said, and kept on the Console where the next message does not overwrite it.
+    void SayCcsProject() {
+        if (project_ == nullptr || ride_project_is_ccs(project_) == 0) return;
+        int remembered = ride_project_ccs_configuration(project_);
+        if (remembered >= 0) { config_ = remembered; ShowChoices(); }
+        String^ report = FromUtf8(ride_project_ccs_report(project_, config_));
+        if (report->Length == 0) return;
+        Say(report + "\n");
+        what_->Text = report->Split('\n')[0];
     }
 
     void PaneFollowsTabs() {
@@ -2887,6 +2922,8 @@ private:
         bool inProject = project_ != nullptr && ride_project_loaded(project_) != 0;
         if (box->Commit())
             what_->Text = inProject ? "compiler options written to the project" : "compiler options written to settings.json";
+        else if (ride_project_is_ccs(project_) != 0)
+            what_->Text = "a CCS project's options are read from it - edit them in CCS";
         else
             what_->Text = "compiler options were not written - settings.json may be unreadable, or the project read-only";
     }
@@ -4754,12 +4791,14 @@ private:
     void OnDebugConfig(Object^, EventArgs^) {
         config_ = RIDE_CONFIG_DEBUG;
         ride_remember_configuration(config_);
+        ride_project_remember_configuration(project_, config_);
         ShowChoices();
         what_->Text = "debug";
     }
     void OnReleaseConfig(Object^, EventArgs^) {
         config_ = RIDE_CONFIG_RELEASE;
         ride_remember_configuration(config_);
+        ride_project_remember_configuration(project_, config_);
         ShowChoices();
         what_->Text = "release";
     }
