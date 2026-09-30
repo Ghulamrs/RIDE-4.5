@@ -1,13 +1,13 @@
 ©2026 G. R. Akhtar - RIDE 4.5, the editor
 Release seal, version 4.5, sealed 30-09-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 178 files, seal 963682B6
+CRC32  size  file - 180 files, seal 8428FF30
 ------------------------------------------------------------------
-69341037     18346  Makefile
-62EB2DAD      2814  RIDE.pro
+F0689E7A     18394  Makefile
+BFFAB0F1      2862  RIDE.pro
 494C87DE      7105  RIDE.sln
-C1F9CE89      3751  RIDEConsole.vcxproj
-7907ECC2     15412  build.bat
+16FC4D36      3795  RIDEConsole.vcxproj
+ADD55E5E     15444  build.bat
 D12111F1       575  examples/counter.c
 171AC707       871  examples/counter.h
 6223D7EE       133  examples/demo.pro
@@ -29,13 +29,13 @@ D9515CD9      3368  examples/smart.cpp
 577E189B      3104  macos/Info.plist
 8528B8CC       612  macos/LineNumbers.h
 A7F98CCC      5957  macos/LineNumbers.mm
-A7B8BF11      5712  macos/Makefile
+81B5B822      5728  macos/Makefile
 1D13C44E      8759  macos/README.md
 A2B21358    971341  macos/RIDE.icns
 7E2C43FD      2767  macos/Text.h
-C0CB4A1F     20125  macos/Window.xcodeproj/project.pbxproj
+ED99CA71     20556  macos/Window.xcodeproj/project.pbxproj
 CC9071D2      1441  macos/WindowController.h
-5A884B19    153971  macos/WindowController.mm
+E376BD8E    164026  macos/WindowController.mm
 B9E7FEC5      4079  macos/main.mm
 07969C88      3339  macos/make-icon.swift
 64DF2508     12347  macos/make-xcodeproj.py
@@ -119,14 +119,14 @@ EACB8DB9       902  projects/thirdparty-mathx/third_party/mathx/source/mathx.c
 3C69FD29       364  src/about.h
 634B7DB9      8502  src/buffer.cpp
 985593C8      2268  src/buffer.h
-4E09915E     38250  src/compile.cpp
+50EAD924     38282  src/compile.cpp
 606DD812      5167  src/compile.h
 30128498      3193  src/convert.cpp
 E5744BBB       644  src/convert.h
 0007F760     34825  src/debugger.cpp
 EDA5FB1A      4293  src/debugger.h
 DA6DC095       811  src/demangle_win.cpp
-46A71F5F    135797  src/editor.cpp
+7ECF961A    136063  src/editor.cpp
 0751DB9E     10104  src/editor.h
 94F415BD      2273  src/find.cpp
 BCA6BAC7       589  src/find.h
@@ -137,17 +137,19 @@ DC8B18AF      1891  src/indent.h
 C644F94E      9211  src/json.cpp
 D12A8855      1365  src/json.h
 2F976EDB     12607  src/main.cpp
-8AB2FE86     11802  src/menu.cpp
-914957F1      3653  src/menu.h
+FFFC8102     11921  src/menu.cpp
+B20E4785      3788  src/menu.h
+CC1C5FB8      8536  src/options.cpp
+26E451F0      3026  src/options.h
 9D5861D3     11660  src/path.cpp
 0D96D4B3      1304  src/path.h
 AA505B11     36918  src/process.cpp
 AAB34DCA      1876  src/process.h
 292A8766      1332  src/product.h
-B3CC4F7E     29106  src/project.cpp
-5345D8E2      5966  src/project.h
-F8C2B202     19576  src/settings.cpp
-953D76BF      5607  src/settings.h
+28C4B7B7     29440  src/project.cpp
+D69BFADC      6338  src/project.h
+51B2033F     21725  src/settings.cpp
+F4041C30      5791  src/settings.h
 E46E1607      4314  src/shalimar/README.md
 4B7E8748      9069  src/shalimar/channel.cpp
 22E40405       577  src/shalimar/channel.h
@@ -161,22 +163,22 @@ A3B49E8E      1446  src/terminal.cpp
 B8391162      1412  src/terminal.h
 05542A5F      4191  src/terminal_common.cpp
 1AB6B9AB      3202  src/terminal_win.cpp
-FDFAD459     34848  src/toolchain.cpp
-BFBE5EFC      6263  src/toolchain.h
+729056FB     36130  src/toolchain.cpp
+4A9F268C      6307  src/toolchain.h
 36906883      3898  src/tree.cpp
 3DB0E288      1196  src/tree.h
 60E1C337      3330  src/utf8.cpp
 D93038C5       572  src/utf8.h
 3064C9A6     12564  src/workspace.cpp
 F35C52A2      2086  src/workspace.h
-FBD6BED4    205808  winforms/MainForm.h
+47AC3BE2    216533  winforms/MainForm.h
 6BA8DA64      2289  winforms/Marshal.h
 3D89F3C4      6415  winforms/Program.cpp
 1F889F5F       157  winforms/RIDEGui.rc
-25ACE50B      8887  winforms/RIDEGui.vcxproj
+DF9CC201      9029  winforms/RIDEGui.vcxproj
 B2EA0EE1      4860  winforms/TextFile.h
-F07E15F7     69907  winforms/bridge.cpp
-5D594D8A     22122  winforms/bridge.h
+B3005F5E     73852  winforms/bridge.cpp
+2E1CC00B     23622  winforms/bridge.h
 BBD2FAFE      2198  winforms/children.h
 BE6A6F09     72502  winforms/ride.ico
 51E334AF     11065  winforms/show.ps1
