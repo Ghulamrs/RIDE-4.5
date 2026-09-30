@@ -99,10 +99,10 @@ tar --no-mac-metadata \
 # c2s: the converter, beside this checkout as ../Converter-C2S; RIDE.sln builds it, so a fresh root needs it.
 ( cd ../Converter-C2S && tar --no-mac-metadata --exclude '* 2.*' --exclude '*.exe' --exclude 'obj' \
     -czf "$TMP/c2s-src.tgz" src tests c2s.vcxproj Makefile README.md ) || exit 2
-# shalimar: what shc.vcxproj compiles - src and the runtime it builds beside the
+# shalimar: what ide/shc.vcxproj compiles - src and the runtime it builds beside the
 # binary - and nothing built here; lib/ holds this machine's archives.
 ( cd ../VM6747/Compiler-Si && tar --no-mac-metadata --exclude '* 2.*' --exclude '*.exe' --exclude 'lib' --exclude 'out-*' \
-    -czf "$TMP/shalimar-src.tgz" src runtime tests examples Makefile build.bat shc.vcxproj README.md ) || exit 2
+    -czf "$TMP/shalimar-src.tgz" src runtime tests examples Makefile build.bat ide README.md ) || exit 2
 
 say "copying to $BOX:$DIR and $VM_ROOT"
 # One directory per call: in cmd, `if not exist X mkdir X & if ...` makes the

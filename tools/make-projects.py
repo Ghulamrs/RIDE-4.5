@@ -18,7 +18,7 @@ Three command line tools, built by clang++, from three separate repositories:
     RIDE  this editor         RIDE/Editor.xcodeproj
     cc1      the C compiler      ../VM6747/Compiler-Ci/ide/cc1.xcodeproj    (its own)
     cxx1     the C++ compiler    ../VM6747/Compiler-Cppi/ide/cxx1.xcodeproj (its own)
-    shc      the Shalimar one    ../Compiler-S/shc.xcodeproj
+    shc      the Shalimar one    ../VM6747/Compiler-Si/ide/shc.xcodeproj    (its own)
 
 Since 3.5 the compilers are the VM6747 line - ../VM6747/Compiler-Ci,
 Compiler-Cppi and Compiler-Si, building c90, cpp11 and shalimar - and the
@@ -228,7 +228,7 @@ def projects():
                         ("masm.exe", "../" + MASM_REPO + "/masm.xcodeproj"),
                         ("link.exe", "../" + LINK_REPO + "/link.xcodeproj"),
                         ("lnk6x.exe", "../" + LNK6X_REPO + "/lnk6x.xcodeproj"),
-                        ("shalimar.exe", "../" + SHC_REPO + "/shc.xcodeproj"),
+                        ("shalimar.exe", "../" + SHC_REPO + "/ide/shc.xcodeproj"),
                         ("c2s.exe", "../Converter-C2S/c2s.xcodeproj")],
         },
         {
@@ -256,7 +256,8 @@ def projects():
             # is what changed, and that is what the identifiers derive from.
             "product": "shalimar.exe",
             "root": os.path.join(SIBLINGS, SHC_REPO),
-            "out": os.path.join(SIBLINGS, SHC_REPO, "shc.xcodeproj"),
+            "out": os.path.join(SIBLINGS, SHC_REPO, "ide", "shc.xcodeproj"),
+            "foreign": True,          # its own ide/generate.py writes it, runtime phase and all
             # SOURCES names runtime/Shortest.cpp as well as src/, which is why
             # paths here are relative to the repository and not to src/.
             "sources": sorted(set(from_makefile(os.path.join(SIBLINGS, SHC_REPO),
@@ -1098,6 +1099,8 @@ def guid_in(where, what):
 CC1_GUID = cc1_guid()
 CXX1_GUID = guid_in(os.path.join(SIBLINGS, CXX1_REPO, "ide", "cxx1.vcxproj"),
                     "cxx1's own project")
+SHC_GUID = guid_in(os.path.join(SIBLINGS, SHC_REPO, "ide", "shc.vcxproj"),
+                   "shalimar's own project")
 GUI_GUID = guid_in(os.path.join(HERE, "winforms", "RIDEGui.vcxproj"),
                    "the window's own project")
 
@@ -1499,10 +1502,7 @@ def main():
                                 ["_CRT_SECURE_NO_WARNINGS"],
                                 target="$(PRODUCT)Console", props="product.props"),
                    "RIDEConsole.vcxproj"))
-    wanted.append((os.path.join(SIBLINGS, SHC_REPO, "shc.vcxproj"),
-                   vcxproj_text("shalimar", spec_of["shalimar.exe"]["sources"], ["_CRT_SECURE_NO_WARNINGS"],
-                                shc_runtime_step()),
-                   "shc.vcxproj"))
+    # shalimar's is its own ide/shc.vcxproj, runtime step and all, as cc1's and cxx1's are theirs.
     # The converter's, which docs/ANALYSIS.md section 12 scheduled as part of
     # milestone 0 and which was never written. It is generated here rather
     # than by hand for the same reason the others are: its Makefile is five
@@ -1563,7 +1563,7 @@ def main():
         ("lnk6x", "../" + LNK6X_REPO + "/lnk6x.vcxproj", guid("lnk6x"), []),
         # shalimar after cpp11: its post-build step compiles the Shalimar runtime
         # for the C6000 with the cpp11.exe beside it (shc_runtime_step).
-        ("shalimar", "../" + SHC_REPO.replace(os.sep, "/") + "/shc.vcxproj", guid("shalimar"), [CXX1_GUID]),
+        ("shalimar", "../" + SHC_REPO.replace(os.sep, "/") + "/ide/shc.vcxproj", SHC_GUID, [CXX1_GUID]),
         # c2s is built with them and not by them: the editor runs it over the
         # open file from the Language menu, and finds it beside itself the
         # same way it finds the compilers.
@@ -1590,7 +1590,7 @@ def main():
                    "workspace.mk"))
 
     # The compilers' own ide/ projects, written by their own generate.py: asked, never written.
-    for repo in (CC1_REPO, CXX1_REPO):
+    for repo in (CC1_REPO, CXX1_REPO, SHC_REPO):
         gen = os.path.join(SIBLINGS, repo, "ide", "generate.py")
         if subprocess.run([sys.executable, gen, "--check"], stdout=subprocess.DEVNULL).returncode != 0:
             stale.append("%s/ide (run its ide/generate.py)" % repo.replace(os.sep, "/"))
@@ -1619,13 +1619,13 @@ def main():
         print("A project that builds fewer files than make does is not an error -")
         print("it is a smaller program, and nothing says so.")
         print("  python3 tools/make-projects.py       for the generated ones")
-        print("  python3 <compiler>/ide/generate.py  for cc1's and cxx1's, which are theirs")
+        print("  python3 <compiler>/ide/generate.py  for cc1's, cxx1's and shc's, which are theirs")
         print("  the window's project is edited by hand, on purpose")
         return 1
 
     if checking:
         print("all five projects and the workspace are what the Makefiles say,")
-        print("and so are cc1's and cxx1's own ide/ projects, and the window's, kept by hand")
+        print("and so are cc1's, cxx1's and shc's own ide/ projects, and the window's, kept by hand")
         return 0
 
     for spec in specs:

@@ -8,7 +8,7 @@
       location = "group:../VM6747/Compiler-Ci/ide/cc1.xcodeproj">
    </FileRef>
    <FileRef
-      location = "group:../VM6747/Compiler-Si/shc.xcodeproj">
+      location = "group:../VM6747/Compiler-Si/ide/shc.xcodeproj">
    </FileRef>
    <FileRef
       location = "group:../VM6747/Compiler-Cppi/ide/cxx1.xcodeproj">

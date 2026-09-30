@@ -97,7 +97,7 @@
 		C6FDAB869EEB7E10AE5FD082 /* masm.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = masm.exe.xcodeproj; path = "../MASM/masm.xcodeproj"; sourceTree = "<group>"; };
 		50D81AC569E0F891754877FB /* link.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = link.exe.xcodeproj; path = "../LINK/link.xcodeproj"; sourceTree = "<group>"; };
 		9D247B3447C62B7635D2921C /* lnk6x.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = lnk6x.exe.xcodeproj; path = "../LNK6x/lnk6x.xcodeproj"; sourceTree = "<group>"; };
-		20F47CFB1AFB49F45A779D94 /* shalimar.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = shalimar.exe.xcodeproj; path = "../VM6747/Compiler-Si/shc.xcodeproj"; sourceTree = "<group>"; };
+		20F47CFB1AFB49F45A779D94 /* shalimar.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = shalimar.exe.xcodeproj; path = "../VM6747/Compiler-Si/ide/shc.xcodeproj"; sourceTree = "<group>"; };
 		BC9013065FB079B5AABE7840 /* c2s.exe.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = c2s.exe.xcodeproj; path = "../Converter-C2S/c2s.xcodeproj"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
