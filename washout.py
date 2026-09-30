@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Washout: a copy of the RIDE tree that holds source and nothing else.
+"""Washout: a copy of RIDE and what it builds that holds what compiling needs, and nothing else.
 
     python3 washout.py DEST              copy RIDE's sources into DEST
     python3 washout.py DEST --workspace  and each project RIDE drives, beside it
     python3 washout.py DEST --force      replace DEST if it is already there
 
-Kept: the source directories (src, the macOS and Windows front ends), the
-examples, projects, programs and help that the builds copy into the app, the
-build files (Makefile, workspace.mk, product.props, RIDE.pro), the Visual
-Studio 2022 solution and projects, the Xcode projects and workspace, .json
-files, and the two icon files. Dropped: tests, docs, tools, packaging, dist,
-every build directory, and any file that is binary - by its extension (.exe,
-.com, .obj, .o, .lib, .a, .dll, ...) or by its contents (a NUL byte, or bytes
-that are not UTF-8). The icons are the one binary kept on purpose.
+**What compiling needs, and no more** (2026-09-30): the sources - src/ and every
+directory under it - the projects that build them - each compiler's ide/, and a
+tool's own .vcxproj and .xcodeproj where it has no ide/ - and the headers those
+projects compile against, lib/ and include/. Three more because the projects name
+them: msvc/compat (the <unistd.h> MSVC lacks, for cc1 and cxx1), Shalimar's
+runtime/ (its projects build the runtime from it) and, for RIDE, macos/ and
+winforms/ (its two windows), product.props, and help/, projects/ and programs/,
+which the macOS window's project copies into RIDE.app and cannot build without. Nothing else goes: no Makefile,
+README, doc, test, example, help, script or seal. A source directory keeps only
+source and project files; ide/, lib/, include/ and msvc/compat are whole.
 
-With --workspace, each program's project is laid out beside the copy exactly
-as workspace.mk expects (../VM6747/Compiler-Ci and so on), each washed to what
-its tools/seal.json names as its source: the whole workspace builds from it.
+What was measured: every path the solutions, projects and workspaces name was
+listed and is here, and a copy builds - RIDE.sln on Windows, RIDE.xcworkspace and
+each ide/ alone on the Mac. Binaries are dropped, the icons kept on purpose.
 """
 import os
 import shutil
@@ -25,16 +27,28 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# What RIDE is made of, beside its build files.
-RIDE_DIRS = ["src", "macos", "winforms", "examples", "projects", "programs", "help",
-             "Editor.xcodeproj", "RIDE.xcworkspace"]
-RIDE_FILES = ["Makefile", "workspace.mk", "product.props", "RIDE.pro", "RIDE.sln",
-              "RIDEConsole.vcxproj", "build.bat", "README.md"]
+# (project, whole directories, source directories, named files): what compiling needs.
+# help/, projects/ and programs/ because the macOS window's project copies them into
+# RIDE.app as it builds, and fails without them; the Windows projects do not use them.
+RIDE_PLAN = ("RIDE-4.5", ["Editor.xcodeproj", "RIDE.xcworkspace", "help", "projects", "programs"],
+             ["src", "macos", "winforms"],
+             ["RIDE.sln", "RIDEConsole.vcxproj", "product.props"])
+WORKSPACE = [
+    ("../VM6747/Compiler-Ci", ["ide", "lib", "msvc/compat"], ["src"], []),
+    ("../VM6747/Compiler-Cppi", ["ide", "lib", "include", "msvc/compat"], ["src"], []),
+    ("../VM6747/Compiler-Si", ["ide"], ["src", "runtime"], []),
+    ("../VM6747/Emulator", ["vm6747.xcodeproj"], ["src"], ["vm6747.vcxproj"]),
+    ("../Converter-C2S", ["c2s.xcodeproj"], ["src"], ["c2s.vcxproj"]),
+    ("../ASM6x", ["asm6x.xcodeproj"], ["src"], ["asm6x.vcxproj"]),
+    ("../MASM", ["masm.xcodeproj"], ["src"], ["masm.vcxproj"]),
+    ("../LINK", ["link.xcodeproj"], ["src"], ["link.vcxproj"]),
+    ("../LNK6x", ["lnk6x.xcodeproj"], ["src"], ["lnk6x.vcxproj"]),
+]
 
-# The projects workspace.mk builds, at the paths it builds them from.
-WORKSPACE = ["../VM6747/Compiler-Ci", "../VM6747/Compiler-Cppi", "../VM6747/Compiler-Si",
-             "../VM6747/Emulator", "../Converter-C2S", "../ASM6x", "../MASM", "../LINK",
-             "../LNK6x"]
+# What a source directory keeps: source, and the project files kept beside it (macos/Window.xcodeproj).
+SOURCE_EXT = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".inc", ".m", ".mm", ".rc", ".def",
+              ".manifest", ".plist", ".ico", ".icns", ".props", ".sln", ".vcxproj", ".filters",
+              ".pbxproj", ".xcworkspacedata", ".xcscheme", ".xcsettings"}
 
 BINARY_EXT = {".exe", ".com", ".obj", ".o", ".lib", ".a", ".dll", ".dylib", ".so", ".pdb",
               ".ilk", ".exp", ".idb", ".pch", ".ipch", ".out", ".hex", ".bin", ".elf",
@@ -91,14 +105,19 @@ def candidates(project, dirs, files):
     return out
 
 
-def wash(project, dest, dirs, files):
-    """Copy project's source files into dest; return (kept, dropped)."""
+def wash(project, dest, dirs, files, sources=()):
+    """Copy what compiling needs into dest - dirs whole, sources filtered to source and project
+    files, and the named files; return (kept, dropped)."""
     known = tracked(project)
     kept, dropped = 0, []
-    for rel in candidates(project, dirs, files):
+    wanted = [(r, False) for r in candidates(project, dirs, files)] + \
+             [(r, True) for r in candidates(project, sources, [])]
+    for rel, filtered in wanted:
         rel_posix = rel.replace(os.sep, "/")
         if known is not None and rel_posix not in known:
             continue                     # an untracked file is a build product or a stray
+        if filtered and os.path.splitext(rel)[1].lower() not in SOURCE_EXT:
+            continue                     # a README, a Makefile, a script: not what compiling needs
         src = os.path.join(project, rel)
         if is_binary(src):
             dropped.append(rel_posix)
@@ -108,18 +127,6 @@ def wash(project, dest, dirs, files):
         shutil.copy2(src, target)
         kept += 1
     return kept, dropped
-
-
-def seal_conf(project):
-    """What a project's tools/seal.json names as its source, or cxx1's own seal's list."""
-    import json
-    conf = os.path.join(project, "tools", "seal.json")
-    if os.path.exists(conf):
-        c = json.load(open(conf))
-        return c["dirs"], c.get("files", [])
-    # cxx1 (Compiler-Cppi) carries its own seal tool: src include lib examples and three build files.
-    return (["src", "include", "lib", "examples", "msvc", "ide"],
-            ["Makefile", "README.md"])
 
 
 def main(argv):
@@ -138,17 +145,17 @@ def main(argv):
         shutil.rmtree(dest)
 
     total_kept, total_dropped = 0, []
-    kept, dropped = wash(ROOT, ride_dest, RIDE_DIRS, RIDE_FILES)
+    _, whole, sources, files = RIDE_PLAN
+    kept, dropped = wash(ROOT, ride_dest, whole, files, sources)
     print("  %-26s %4d files kept, %d binaries dropped" % ("RIDE-4.5", kept, len(dropped)))
     total_kept += kept; total_dropped += ["RIDE-4.5/" + d for d in dropped]
     if workspace:
-        for rel in WORKSPACE:
+        for rel, whole, sources, files in WORKSPACE:
             project = os.path.normpath(os.path.join(ROOT, rel))
             if not os.path.isdir(project):
                 print("  %-26s MISSING - not beside RIDE here" % rel); continue
             name = os.path.relpath(project, os.path.dirname(ROOT))
-            dirs, files = seal_conf(project)
-            kept, dropped = wash(project, os.path.join(dest, name), dirs, files)
+            kept, dropped = wash(project, os.path.join(dest, name), whole, files, sources)
             print("  %-26s %4d files kept, %d binaries dropped" % (name, kept, len(dropped)))
             total_kept += kept; total_dropped += [name + "/" + d for d in dropped]
     for d in total_dropped:
