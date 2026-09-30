@@ -1832,7 +1832,12 @@ static NSColor* ColourOf(unsigned char kind) {
     Sheet* next = [sheets_ containsObject:current_] ? current_ : sheets_.firstObject;
     current_ = nil;
     [self showSheet:next];
+    // Every pane was the project's: Errors alone was cleared, and Progress and Output kept
+    // the closed project's build and run.
     [self clearIssues];
+    progressLog_.string = @"";
+    progressTitle_.stringValue = @"Nothing built yet";
+    output_.string = @"";
     [self say:[NSString stringWithFormat:@"%@ closed, and %lu file(s) with it", was,
                                          (unsigned long)theirs.count]];
 }

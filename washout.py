@@ -118,8 +118,8 @@ def seal_conf(project):
         c = json.load(open(conf))
         return c["dirs"], c.get("files", [])
     # cxx1 (Compiler-Cppi) carries its own seal tool: src include lib examples and three build files.
-    return (["src", "include", "lib", "examples", "msvc", "ide", "cxx1.xcodeproj", "cxx1.xcworkspace"],
-            ["Makefile", "cxx1.sln", "cxx1.vcxproj", "README.md"])
+    return (["src", "include", "lib", "examples", "msvc", "ide"],
+            ["Makefile", "README.md"])
 
 
 def main(argv):

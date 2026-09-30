@@ -7,7 +7,7 @@
 # projects are siblings under C:\Users\GRA\source - RIDE (4.0's own
 # directory, so the sealed 3.5 tree in RIDE is left alone), VM6747,
 # ASM6x, MASM, LINK, LNK6x, Converter-C2S - which is the shape RIDE.sln assumes when
-# it names ..\VM6747\Compiler-Ci\msvc\cc1.vcxproj and the rest.
+# it names ..\VM6747\Compiler-Ci\ide\cc1.vcxproj and the rest.
 #
 # Three rules that each cost an hour before they were written down:
 #

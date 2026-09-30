@@ -2976,6 +2976,11 @@ private:
 
         paneMode_ = PaneMode::PaneFiles;
         AfterSheetsGone();
+        // All three panes were the project's: the Console alone was cleared, and the Debug and
+        // Assembly tabs kept the closed project's build. Assembly first - the Debug tab is
+        // rebuilt from it.
+        assembly_->Text = "";
+        debug_->Text = "";
         console_->Text = "";
         what_->Text = was + " closed" + (closed > 0 ? String::Format(", and its {0} file(s) with it", closed) : "");
     }

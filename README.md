@@ -1045,10 +1045,11 @@ hand-kept project drifts, and a build tool quietly leaving a file out is not an
 error - just a smaller program - so nothing says so. That happened twice here
 in one day before the check existed.
 
-**Two are kept by hand, and are checked instead of written.**
-`Compiler-C/msvc/cc1.vcxproj` predates this and belongs to another repository;
-the solution references it rather than writing over it, and reads its GUID out
-of it so the two cannot disagree. `winforms/RIDEGui.vcxproj` is C++/CLI: one
+**Three are checked instead of written.** cc1's and cxx1's are the compilers'
+own, `VM6747/Compiler-Ci/ide/` and `VM6747/Compiler-Cppi/ide/`, written by each
+one's `ide/generate.py` and asked with its `--check`; the solution and the
+workspace open them, and read cxx1's and cc1's GUIDs out of them so the two
+cannot disagree. `winforms/RIDEGui.vcxproj` is C++/CLI: one
 file is compiled managed and every other file must be compiled native, and
 those per-file settings are the project's whole reason for existing - a
 generator that got one wrong would produce a binary that corrupts its heap

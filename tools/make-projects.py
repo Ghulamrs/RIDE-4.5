@@ -16,8 +16,8 @@ Was make-xcodeproj.py while Xcode was all it wrote.
 Three command line tools, built by clang++, from three separate repositories:
 
     RIDE  this editor         RIDE/Editor.xcodeproj
-    cc1      the C compiler      ../Compiler-C/cc1.xcodeproj
-    cxx1     the C++ compiler    ../C++/cxx1.xcodeproj
+    cc1      the C compiler      ../VM6747/Compiler-Ci/ide/cc1.xcodeproj    (its own)
+    cxx1     the C++ compiler    ../VM6747/Compiler-Cppi/ide/cxx1.xcodeproj (its own)
     shc      the Shalimar one    ../Compiler-S/shc.xcodeproj
 
 Since 3.5 the compilers are the VM6747 line - ../VM6747/Compiler-Ci,
@@ -51,11 +51,12 @@ when sources were added and this was not re-run, and once when this script
 stopped reading a Makefile variable that had been added to it. --check is the
 answer to both: it rebuilds every project in memory and compares.
 
-**Two projects are kept by hand and are checked rather than written**, because
-what is in them besides the source list cannot be derived from a Makefile:
-winforms/RIDEGui.vcxproj compiles one file managed and every other file
-native, and Compiler-C/msvc/cc1.vcxproj belongs to another repository. Their
-source lists are compared against the Makefiles all the same - that is the part
+**Three projects are checked rather than written.** winforms/RIDEGui.vcxproj is
+kept by hand, because what is in it besides the source list cannot be derived
+from a Makefile: it compiles one file managed and every other file native. cc1's
+and cxx1's are their own, in each compiler's ide/, written by its ide/generate.py
+and asked with --check (2026-09-30; RIDE wrote copies into the compilers until
+then). The window's source list is compared against the Makefile all the same - that is the part
 that drifts, and the window's had drifted the whole time nobody was checking
 it. --check also insists the Makefile is made of the variables named here and
 no others, so adding one and forgetting this script fails loudly.
@@ -72,6 +73,7 @@ that assumes all four are checked out side by side.
 
 import hashlib
 import os
+import subprocess
 import re
 import sys
 
@@ -219,8 +221,8 @@ def projects():
             # dependency and builds only this target, which is how renaming
             # cc1 to cc1.exe stopped the workspace building the compilers
             # without anything saying so.
-            "depends": [("c90.exe", "../" + CC1_REPO + "/cc1.xcodeproj"),
-                        ("cpp11.exe", "../" + CXX1_REPO + "/cxx1.xcodeproj"),
+            "depends": [("c90.exe", "../" + CC1_REPO + "/ide/cc1.xcodeproj"),
+                        ("cpp11.exe", "../" + CXX1_REPO + "/ide/cxx1.xcodeproj"),
                         ("vm6747.exe", "../" + VM_REPO + "/vm6747.xcodeproj"),
                         ("asm6x.exe", "../" + ASM_REPO + "/asm6x.xcodeproj"),
                         ("masm.exe", "../" + MASM_REPO + "/masm.xcodeproj"),
@@ -232,7 +234,12 @@ def projects():
         {
             "product": "c90.exe",
             "root": os.path.join(SIBLINGS, CC1_REPO),
-            "out": os.path.join(SIBLINGS, CC1_REPO, "cc1.xcodeproj"),
+            # **The compiler's own project, which RIDE opens and never writes**:
+            # its ide/generate.py writes it with the ids ident() would give, and
+            # --check below says whether it is current (2026-09-30; RIDE wrote a
+            # copy into the compiler's root until then).
+            "out": os.path.join(SIBLINGS, CC1_REPO, "ide", "cc1.xcodeproj"),
+            "foreign": True,
             # Its Makefile says $(wildcard src/*.cpp) $(wildcard src/backend/*.cpp),
             # so the directories are the list.
             "sources": by_glob(os.path.join(SIBLINGS, CC1_REPO),
@@ -268,7 +275,7 @@ def projects():
             # and Xcode drops a reference it cannot follow without a word -
             # the dependency graph then says "shalimar.exe (no dependencies)".
             "depends": [("cpp11.exe",
-                         os.path.relpath(os.path.join(SIBLINGS, CXX1_REPO, "cxx1.xcodeproj"),
+                         os.path.relpath(os.path.join(SIBLINGS, CXX1_REPO, "ide", "cxx1.xcodeproj"),
                                          os.path.join(SIBLINGS, SHC_REPO)))],
             "script": shc_runtime_script(),
             # The archives go with it, for the reason they were built beside it
@@ -285,7 +292,8 @@ def projects():
         {
             "product": "cpp11.exe",
             "root": os.path.join(SIBLINGS, CXX1_REPO),
-            "out": os.path.join(SIBLINGS, CXX1_REPO, "cxx1.xcodeproj"),
+            "out": os.path.join(SIBLINGS, CXX1_REPO, "ide", "cxx1.xcodeproj"),
+            "foreign": True,          # its own ide/generate.py writes it, as cc1's
             # SRCS is wildcards over src/, src/parser and src/backend, and in
             # 4.5 src/optimizer too: C++Optimize, which cpp11 is built from,
             # keeps its optimizer there. Asked for only where it exists.
@@ -1066,7 +1074,7 @@ def cc1_guid():
     the solution has to name the GUID it actually uses. Reading it is the only
     way the two cannot drift apart.
     """
-    return guid_in(os.path.join(SIBLINGS, CC1_REPO, "msvc", "cc1.vcxproj"),
+    return guid_in(os.path.join(SIBLINGS, CC1_REPO, "ide", "cc1.vcxproj"),
                    "cc1's own project")
 
 
@@ -1088,6 +1096,8 @@ def guid_in(where, what):
 
 
 CC1_GUID = cc1_guid()
+CXX1_GUID = guid_in(os.path.join(SIBLINGS, CXX1_REPO, "ide", "cxx1.vcxproj"),
+                    "cxx1's own project")
 GUI_GUID = guid_in(os.path.join(HERE, "winforms", "RIDEGui.vcxproj"),
                    "the window's own project")
 
@@ -1469,7 +1479,7 @@ def main():
             return 1
 
     wanted = [(os.path.join(s["out"], "project.pbxproj"), project_text(s), s["product"])
-              for s in specs]
+              for s in specs if not s.get("foreign")]
     wanted.append((os.path.join(HERE, "RIDE.xcworkspace", "contents.xcworkspacedata"),
                    workspace_text(specs), "RIDE.xcworkspace"))
 
@@ -1502,24 +1512,9 @@ def main():
                                 ["_CRT_SECURE_NO_WARNINGS"]),
                    "c2s.vcxproj"))
 
-    # cxx1's, at the root of its checkout beside the .xcodeproj written above,
-    # and not its own ide/cxx1.vcxproj. That one sets OutDir to its own
-    # build\ unconditionally, so a solution build would leave cxx1.exe there
-    # and not beside the editor - the cc1 trap again - and the file that
-    # writes it, ide/generate.py, is under cxx1's release seal. A project
-    # written here costs the seal nothing. What its msvc/build.cmd passes is
-    # passed here: the two header directories compiled in, spelled with
-    # forward slashes because they become C string literals, compat/ on the
-    # include path for <unistd.h>, and the five warnings it disables.
-    cxx1_root = "$([System.String]::Copy('$(ProjectDir)').Replace('\\','/'))"
-    wanted.append((os.path.join(SIBLINGS, CXX1_REPO, "cxx1.vcxproj"),
-                   vcxproj_text("cpp11", spec_of["cpp11.exe"]["sources"],
-                                ["_CRT_SECURE_NO_WARNINGS",
-                                 'CXX1_INCLUDE_DIR="%slib"' % cxx1_root,
-                                 'CXX1_CXX_INCLUDE_DIR="%sinclude"' % cxx1_root],
-                                includes=("$(ProjectDir)msvc\\compat", "$(ProjectDir)src"),
-                                disabled=("4996", "4267", "4244", "4456", "4146")),
-                   "cxx1.vcxproj"))
+    # cxx1's is its own ide/cxx1.vcxproj, as cc1's is ide/cc1.vcxproj: neither is
+    # written here. Both put the program beside the rest when a solution other than
+    # their own builds them, and --check below says whether they are current.
     # vm6747's, at the root of its checkout: the emulator's msvc/build.cmd
     # passes the one define, and its Makefile the same warnings as cc1's.
     wanted.append((os.path.join(SIBLINGS, VM_REPO, "vm6747.vcxproj"),
@@ -1559,8 +1554,8 @@ def main():
         # The VM6747 line, laid out on the Windows box as it is here:
         # VM6747\Compiler-Ci, VM6747\Compiler-Cppi and VM6747\Emulator beside
         # this checkout, which is where tools/to-windows.sh puts them.
-        ("c90", "../" + CC1_REPO.replace(os.sep, "/") + "/msvc/cc1.vcxproj", CC1_GUID, []),
-        ("cpp11", "../" + CXX1_REPO.replace(os.sep, "/") + "/cxx1.vcxproj", guid("cpp11"), []),
+        ("c90", "../" + CC1_REPO.replace(os.sep, "/") + "/ide/cc1.vcxproj", CC1_GUID, []),
+        ("cpp11", "../" + CXX1_REPO.replace(os.sep, "/") + "/ide/cxx1.vcxproj", CXX1_GUID, []),
         ("vm6747", "../" + VM_REPO.replace(os.sep, "/") + "/vm6747.vcxproj", guid("vm6747"), []),
         ("asm6x", "../" + ASM_REPO + "/asm6x.vcxproj", guid("asm6x"), []),
         ("masm", "../" + MASM_REPO + "/masm.vcxproj", guid("masm"), []),
@@ -1568,14 +1563,14 @@ def main():
         ("lnk6x", "../" + LNK6X_REPO + "/lnk6x.vcxproj", guid("lnk6x"), []),
         # shalimar after cpp11: its post-build step compiles the Shalimar runtime
         # for the C6000 with the cpp11.exe beside it (shc_runtime_step).
-        ("shalimar", "../" + SHC_REPO.replace(os.sep, "/") + "/shc.vcxproj", guid("shalimar"), [guid("cpp11")]),
+        ("shalimar", "../" + SHC_REPO.replace(os.sep, "/") + "/shc.vcxproj", guid("shalimar"), [CXX1_GUID]),
         # c2s is built with them and not by them: the editor runs it over the
         # open file from the Language menu, and finds it beside itself the
         # same way it finds the compilers.
         ("c2s", "../Converter-C2S/c2s.vcxproj", guid("c2s"), []),
         # the editor after both, which is the dependency this whole thing is
         # for - said in a .sln the way the workspace says it in a .xcodeproj.
-        ("RIDEConsole", "RIDEConsole.vcxproj", guid("RIDEConsole"), [CC1_GUID, guid("cpp11"), guid("vm6747"), guid("asm6x"), guid("masm"), guid("link"), guid("lnk6x"), guid("shalimar"), guid("c2s")]),
+        ("RIDEConsole", "RIDEConsole.vcxproj", guid("RIDEConsole"), [CC1_GUID, CXX1_GUID, guid("vm6747"), guid("asm6x"), guid("masm"), guid("link"), guid("lnk6x"), guid("shalimar"), guid("c2s")]),
         # The window, on the same footing as the console half. It is in the
         # solution for two reasons: so that one build makes all four, and
         # because being in a solution is what moves its output into the
@@ -1585,7 +1580,7 @@ def main():
         # version of it set OutDir, IntDir, BasicRuntimeChecks and a platform
         # version, and the binary died at startup with heap corruption before
         # main. Nothing in that file is touched to get this.
-        ("RIDEGui", "winforms/RIDEGui.vcxproj", GUI_GUID, [CC1_GUID, guid("cpp11"), guid("vm6747"), guid("asm6x"), guid("masm"), guid("link"), guid("lnk6x"), guid("shalimar"), guid("c2s")]),
+        ("RIDEGui", "winforms/RIDEGui.vcxproj", GUI_GUID, [CC1_GUID, CXX1_GUID, guid("vm6747"), guid("asm6x"), guid("masm"), guid("link"), guid("lnk6x"), guid("shalimar"), guid("c2s")]),
     ]
     wanted.append((os.path.join(HERE, "RIDE.sln"), solution_text(entries),
                    "RIDE.sln"))
@@ -1594,15 +1589,17 @@ def main():
     wanted.append((os.path.join(HERE, "workspace.mk"), workspace_mk_text(),
                    "workspace.mk"))
 
-    # The two kept by hand, checked and never written - see hand_kept_sources.
+    # The compilers' own ide/ projects, written by their own generate.py: asked, never written.
+    for repo in (CC1_REPO, CXX1_REPO):
+        gen = os.path.join(SIBLINGS, repo, "ide", "generate.py")
+        if subprocess.run([sys.executable, gen, "--check"], stdout=subprocess.DEVNULL).returncode != 0:
+            stale.append("%s/ide (run its ide/generate.py)" % repo.replace(os.sep, "/"))
+
+    # The one kept by hand, checked and never written - see hand_kept_sources.
     for what, path, inside, wanted_sources in (
             ("winforms/RIDEGui.vcxproj",
              os.path.join(HERE, "winforms", "RIDEGui.vcxproj"),
-             "winforms", window_sources()),
-            (CC1_REPO + "/msvc/cc1.vcxproj",
-             os.path.join(SIBLINGS, CC1_REPO, "msvc", "cc1.vcxproj"),
-             "msvc", set(by_glob(os.path.join(SIBLINGS, CC1_REPO),
-                                 ("src", "src/backend"))))):
+             "winforms", window_sources()),):
         wrong = drift(path, inside, wanted_sources)
         if wrong:
             stale.append("%s (%s)" % (what, wrong))
@@ -1622,12 +1619,13 @@ def main():
         print("A project that builds fewer files than make does is not an error -")
         print("it is a smaller program, and nothing says so.")
         print("  python3 tools/make-projects.py       for the generated ones")
-        print("  the two hand-kept ones are edited by hand, on purpose")
+        print("  python3 <compiler>/ide/generate.py  for cc1's and cxx1's, which are theirs")
+        print("  the window's project is edited by hand, on purpose")
         return 1
 
     if checking:
         print("all five projects and the workspace are what the Makefiles say,")
-        print("and so are the two kept by hand - the window's and cc1's")
+        print("and so are cc1's and cxx1's own ide/ projects, and the window's, kept by hand")
         return 0
 
     for spec in specs:
