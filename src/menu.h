@@ -107,7 +107,9 @@ enum Action {
     // The open project's own header directories and libraries, in its .pro
     // - beside the installation's two above, which every project shares.
     ActionOwnIncludes,
-    ActionOwnLibraries
+    ActionOwnLibraries,
+    // The tabbed Compiler Options dialog (options.h) - the windows' alone; the terminal shows it disabled.
+    ActionCompilerOptions
 };
 
 struct MenuItem {

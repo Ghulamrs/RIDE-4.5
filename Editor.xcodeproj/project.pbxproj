@@ -20,6 +20,7 @@
 		6A57A483F9540EF9246A960E /* src/json.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1E1DD41B88D6BF2F440B5FC /* src/json.cpp */; };
 		9E15F4B59E4BBC3E4AD2F1E7 /* src/main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8A31723E5075794E4AF1D2A4 /* src/main.cpp */; };
 		8E3CBD78070B828F024B9D5D /* src/menu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B018E6B2583F91DE614639CF /* src/menu.cpp */; };
+		4AFA48DB144293C2907D0352 /* src/options.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 395825C6E515B3A45327B338 /* src/options.cpp */; };
 		BA0190A9CEE093E268463B39 /* src/path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 91B8CD3038616B323202FF10 /* src/path.cpp */; };
 		557E7A7074A432B3AC0A3911 /* src/process.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A457EC271F005C17EB5DF796 /* src/process.cpp */; };
 		A36513F8FAD50E90AC4B8F28 /* src/project.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C55DF343937ADE51AF0B5629 /* src/project.cpp */; };
@@ -50,6 +51,7 @@
 		E1E1DD41B88D6BF2F440B5FC /* src/json.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/json.cpp; sourceTree = "<group>"; };
 		8A31723E5075794E4AF1D2A4 /* src/main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/main.cpp; sourceTree = "<group>"; };
 		B018E6B2583F91DE614639CF /* src/menu.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/menu.cpp; sourceTree = "<group>"; };
+		395825C6E515B3A45327B338 /* src/options.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/options.cpp; sourceTree = "<group>"; };
 		91B8CD3038616B323202FF10 /* src/path.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/path.cpp; sourceTree = "<group>"; };
 		A457EC271F005C17EB5DF796 /* src/process.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/process.cpp; sourceTree = "<group>"; };
 		C55DF343937ADE51AF0B5629 /* src/project.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = src/project.cpp; sourceTree = "<group>"; };
@@ -75,6 +77,7 @@
 		187A0EE377CDF3474BC72DE0 /* src/indent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/indent.h; sourceTree = "<group>"; };
 		8DB902B426D2FAB3CEAC101C /* src/json.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/json.h; sourceTree = "<group>"; };
 		104CE3D0E875083CEA40C427 /* src/menu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/menu.h; sourceTree = "<group>"; };
+		B1A797A53244358D7A139415 /* src/options.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/options.h; sourceTree = "<group>"; };
 		166382EC8142084675067278 /* src/path.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/path.h; sourceTree = "<group>"; };
 		DC8E0AB934223C7D88D10853 /* src/process.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/process.h; sourceTree = "<group>"; };
 		BF35EC2951A57DF27604F05A /* src/product.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = src/product.h; sourceTree = "<group>"; };
@@ -274,6 +277,7 @@
 				E1E1DD41B88D6BF2F440B5FC /* src/json.cpp */,
 				8A31723E5075794E4AF1D2A4 /* src/main.cpp */,
 				B018E6B2583F91DE614639CF /* src/menu.cpp */,
+				395825C6E515B3A45327B338 /* src/options.cpp */,
 				91B8CD3038616B323202FF10 /* src/path.cpp */,
 				A457EC271F005C17EB5DF796 /* src/process.cpp */,
 				C55DF343937ADE51AF0B5629 /* src/project.cpp */,
@@ -299,6 +303,7 @@
 				187A0EE377CDF3474BC72DE0 /* src/indent.h */,
 				8DB902B426D2FAB3CEAC101C /* src/json.h */,
 				104CE3D0E875083CEA40C427 /* src/menu.h */,
+				B1A797A53244358D7A139415 /* src/options.h */,
 				166382EC8142084675067278 /* src/path.h */,
 				DC8E0AB934223C7D88D10853 /* src/process.h */,
 				BF35EC2951A57DF27604F05A /* src/product.h */,
@@ -640,6 +645,7 @@
 				6A57A483F9540EF9246A960E /* src/json.cpp in Sources */,
 				9E15F4B59E4BBC3E4AD2F1E7 /* src/main.cpp in Sources */,
 				8E3CBD78070B828F024B9D5D /* src/menu.cpp in Sources */,
+				4AFA48DB144293C2907D0352 /* src/options.cpp in Sources */,
 				BA0190A9CEE093E268463B39 /* src/path.cpp in Sources */,
 				557E7A7074A432B3AC0A3911 /* src/process.cpp in Sources */,
 				A36513F8FAD50E90AC4B8F28 /* src/project.cpp in Sources */,

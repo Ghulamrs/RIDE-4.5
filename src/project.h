@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "indent.h"
+#include "options.h"
 #include "toolchain.h"
 
 namespace editor {
@@ -45,6 +46,7 @@ ToolchainKind toolchainOf(const Toolchain& tool, const Part& part);
 class Project {
 public:
     Project();
+    ~Project();
 
     static std::string fileIn(const std::string& directory);
 
@@ -112,6 +114,11 @@ public:
     std::string fileToOpen() const;
     std::string mainFile() const;
 
+    // **Compiler Options** (options.h): per configuration, in the .pro under "options", and the
+    // store every build reads while the project is open.
+    const options::Store& compilerOptions() const { return options_; }
+    void setCompilerOptions(const options::Store& store) { options_ = store; }
+
     void setIndent(const IndentStyle& style) { indent_ = style; indentSaid_ = true; }
     void setToolchain(ToolchainKind kind) { toolchain_ = kind; }
     void setArch(const std::string& arch) { arch_ = arch; }
@@ -154,6 +161,7 @@ private:
     // Whether the file names its own indentation; unsaid, the
     // installation's settings.json answers and nothing is written.
     bool indentSaid_ = false;
+    options::Store options_;
 };
 
 }

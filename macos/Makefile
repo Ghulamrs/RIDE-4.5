@@ -41,7 +41,7 @@ CORE_SRC := src/buffer.cpp src/compile.cpp src/convert.cpp \
        src/indent.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp
+       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/options.cpp src/about.cpp
 SHM_SRC := src/shalimar/channel.cpp src/shalimar/session.cpp
 BRIDGE_SRC := winforms/bridge.cpp
 MAC_SRC := main.mm WindowController.mm CodeView.mm LineNumbers.mm

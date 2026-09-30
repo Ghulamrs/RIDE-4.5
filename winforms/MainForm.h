@@ -140,6 +140,226 @@ public:
 // The bridge's RIDEOutput for a program the window runs: defined after MainForm, which it posts to.
 void OutputToWindow(void* user, const char* bytes, int size, int stream);
 
+// ---- Compiler Options: a tabbed dialog drawn from the bridge's table (src/options.h) ------------
+// One tab per compiler and one row per option; what each does, or why it is greyed for this target,
+// is its tooltip. It edits the bridge's draft: OK pulls the controls into it, Commit writes it.
+public ref class OptionsDialog : public Form {
+public:
+    OptionsDialog(RIDEProject* project, int config, String^ arch, int tab)
+        : project_(project), config_(config), arch_(arch), pushing_(false) {
+        controls_ = gcnew System::Collections::Generic::Dictionary<String^, Control^>();
+        tips_ = gcnew ToolTip();
+        ride_options_begin(project_);
+        Build();
+        if (tab >= 0 && tab < tabs_->TabCount) tabs_->SelectedIndex = tab;
+        Push();
+    }
+
+    bool Commit() { return ride_options_commit(project_) != 0; }
+
+private:
+    RIDEProject* project_;
+    int config_;
+    String^ arch_;
+    bool pushing_;
+    TabControl^ tabs_;
+    ComboBox^ configPick_;
+    TextBox^ preview_;
+    System::Collections::Generic::Dictionary<String^, Control^>^ controls_;
+    ToolTip^ tips_;
+
+    static array<Byte>^ Z(String^ text) {
+        array<Byte>^ raw = System::Text::Encoding::UTF8->GetBytes(text == nullptr ? "" : text);
+        array<Byte>^ out = gcnew array<Byte>(raw->Length + 1);
+        Array::Copy(raw, out, raw->Length);
+        return out;
+    }
+
+    String^ Value(String^ id) {
+        array<Byte>^ key = Z(id);
+        pin_ptr<Byte> k = &key[0];
+        return FromUtf8(ride_options_value(project_, config_, reinterpret_cast<const char*>(k)));
+    }
+
+    void Set(String^ id, String^ value) {
+        array<Byte>^ key = Z(id);
+        array<Byte>^ val = Z(value);
+        pin_ptr<Byte> k = &key[0];
+        pin_ptr<Byte> v = &val[0];
+        ride_options_set(project_, config_, reinterpret_cast<const char*>(k), reinterpret_cast<const char*>(v));
+    }
+
+    void Build() {
+        Text = "Compiler Options";
+        FormBorderStyle = System::Windows::Forms::FormBorderStyle::FixedDialog;
+        StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
+        MinimizeBox = false;
+        MaximizeBox = false;
+        ClientSize = System::Drawing::Size(640, 490);
+
+        // Which configuration's options are edited - not which one builds, which is Build > Debug/Release.
+        Label^ forLabel = gcnew Label();
+        forLabel->Text = "Edit options for:";
+        forLabel->SetBounds(12, 16, 110, 20);
+        Controls->Add(forLabel);
+        configPick_ = gcnew ComboBox();
+        configPick_->DropDownStyle = ComboBoxStyle::DropDownList;
+        configPick_->Items->Add("Debug");
+        configPick_->Items->Add("Release");
+        configPick_->SetBounds(124, 12, 120, 24);
+        configPick_->SelectedIndex = config_ == RIDE_CONFIG_RELEASE ? 1 : 0;
+        configPick_->SelectedIndexChanged += gcnew EventHandler(this, &OptionsDialog::ConfigChosen);
+        Controls->Add(configPick_);
+        Label^ target = gcnew Label();
+        target->Text = "Target: " + arch_ + "  (the Target menu)";
+        target->SetBounds(270, 16, 350, 20);
+        Controls->Add(target);
+
+        tabs_ = gcnew TabControl();
+        tabs_->SetBounds(12, 48, 616, 290);
+        array<Byte>^ archBytes = Z(arch_);
+        pin_ptr<Byte> archPin = &archBytes[0];
+        const char* arch = reinterpret_cast<const char*>(archPin);
+        for (int t = 0; t < ride_option_tab_count(); ++t) {
+            String^ name = FromUtf8(ride_option_tab_name(t));
+            TabPage^ page = gcnew TabPage(name);
+            int y = 14;
+            for (int i = 0; i < ride_option_count(); ++i) {
+                if (FromUtf8(ride_option_tab(i)) != name) continue;
+                String^ id = FromUtf8(ride_option_id(i));
+                String^ label = FromUtf8(ride_option_label(i));
+                int kind = ride_option_control(i);
+                Control^ made;
+                if (kind == RIDE_OPTION_CHECK) {
+                    CheckBox^ box = gcnew CheckBox();
+                    box->Text = label;
+                    box->SetBounds(12, y, 570, 24);
+                    box->CheckedChanged += gcnew EventHandler(this, &OptionsDialog::Changed);
+                    made = box;
+                } else {
+                    Label^ title = gcnew Label();
+                    title->Text = label;
+                    title->SetBounds(12, y + 4, 200, 20);
+                    page->Controls->Add(title);
+                    if (kind == RIDE_OPTION_CHOICE) {
+                        ComboBox^ pick = gcnew ComboBox();
+                        pick->DropDownStyle = ComboBoxStyle::DropDownList;
+                        for each (String^ choice in FromUtf8(ride_option_choices(i))->Split('|')) pick->Items->Add(choice);
+                        pick->SetBounds(220, y, 200, 24);
+                        pick->SelectedIndexChanged += gcnew EventHandler(this, &OptionsDialog::Changed);
+                        made = pick;
+                    } else {
+                        TextBox^ field = gcnew TextBox();
+                        field->SetBounds(220, y, 360, 24);
+                        field->TextChanged += gcnew EventHandler(this, &OptionsDialog::Changed);
+                        made = field;
+                    }
+                }
+                array<Byte>^ key = Z(id);
+                pin_ptr<Byte> k = &key[0];
+                bool usable = ride_options_available(reinterpret_cast<const char*>(k), arch) != 0;
+                String^ tip = usable ? FromUtf8(ride_option_hint(i))
+                                     : "Unavailable: " + FromUtf8(ride_options_why(reinterpret_cast<const char*>(k), arch));
+                made->Enabled = usable;
+                if (tip->Length > 0) tips_->SetToolTip(made, tip);
+                made->Tag = id;
+                page->Controls->Add(made);
+                controls_[id] = made;
+                y += 34;
+            }
+            tabs_->TabPages->Add(page);
+        }
+        tabs_->SelectedIndexChanged += gcnew EventHandler(this, &OptionsDialog::TabChosen);
+        Controls->Add(tabs_);
+
+        Label^ heading = gcnew Label();
+        heading->Text = "Command line:";
+        heading->SetBounds(12, 350, 200, 20);
+        Controls->Add(heading);
+        preview_ = gcnew TextBox();
+        preview_->ReadOnly = true;
+        preview_->Multiline = true;
+        preview_->Font = gcnew System::Drawing::Font("Consolas", 9.0f);
+        preview_->SetBounds(12, 372, 616, 52);
+        Controls->Add(preview_);
+
+        Button^ reset = gcnew Button();
+        reset->Text = "Restore defaults";
+        reset->SetBounds(12, 444, 140, 30);
+        reset->Click += gcnew EventHandler(this, &OptionsDialog::RestoreDefaults);
+        Controls->Add(reset);
+        Button^ ok = gcnew Button();
+        ok->Text = "OK";
+        ok->DialogResult = System::Windows::Forms::DialogResult::OK;
+        ok->SetBounds(466, 444, 78, 30);
+        ok->Click += gcnew EventHandler(this, &OptionsDialog::Accepted);
+        Controls->Add(ok);
+        Button^ cancel = gcnew Button();
+        cancel->Text = "Cancel";
+        cancel->DialogResult = System::Windows::Forms::DialogResult::Cancel;
+        cancel->SetBounds(550, 444, 78, 30);
+        Controls->Add(cancel);
+        AcceptButton = ok;
+        CancelButton = cancel;
+    }
+
+    // The draft's values for the configuration shown, into the controls; and back.
+    void Push() {
+        pushing_ = true;
+        for each (System::Collections::Generic::KeyValuePair<String^, Control^> pair in controls_) {
+            String^ value = Value(pair.Key);
+            CheckBox^ box = dynamic_cast<CheckBox^>(pair.Value);
+            ComboBox^ pick = dynamic_cast<ComboBox^>(pair.Value);
+            if (box != nullptr) box->Checked = value == "1";
+            else if (pick != nullptr) pick->SelectedIndex = pick->Items->IndexOf(value);
+            else pair.Value->Text = value;
+        }
+        pushing_ = false;
+        ShowPreview();
+    }
+
+    void Pull() {
+        for each (System::Collections::Generic::KeyValuePair<String^, Control^> pair in controls_) {
+            CheckBox^ box = dynamic_cast<CheckBox^>(pair.Value);
+            ComboBox^ pick = dynamic_cast<ComboBox^>(pair.Value);
+            String^ value;
+            if (box != nullptr) value = box->Checked ? "1" : "0";
+            else if (pick != nullptr) value = pick->SelectedItem == nullptr ? "" : pick->SelectedItem->ToString();
+            else value = pair.Value->Text;
+            Set(pair.Key, value);
+        }
+    }
+
+    void ShowPreview() {
+        array<Byte>^ archBytes = Z(arch_);
+        pin_ptr<Byte> a = &archBytes[0];
+        int tab = tabs_->SelectedIndex < 0 ? 0 : tabs_->SelectedIndex;
+        preview_->Text = FromUtf8(ride_options_preview(project_, config_, tab, reinterpret_cast<const char*>(a)));
+    }
+
+    void Changed(Object^, EventArgs^) {
+        if (pushing_) return;
+        Pull();
+        ShowPreview();
+    }
+
+    void TabChosen(Object^, EventArgs^) { ShowPreview(); }
+
+    void ConfigChosen(Object^, EventArgs^) {
+        if (pushing_) return;
+        Pull();
+        config_ = configPick_->SelectedIndex == 1 ? RIDE_CONFIG_RELEASE : RIDE_CONFIG_DEBUG;
+        Push();
+    }
+
+    void RestoreDefaults(Object^, EventArgs^) {
+        ride_options_reset(project_, config_);
+        Push();
+    }
+
+    void Accepted(Object^, EventArgs^) { Pull(); }
+};
+
 public ref class MainForm : public Form {
 public:
     MainForm() { Start(nullptr, nullptr); }
@@ -796,6 +1016,9 @@ private:
                                   gcnew EventHandler(this, &MainForm::OnLocateTi));
         tools->DropDownItems->Add("Linker for tms6747...", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnLocateTilinker));
+        tools->DropDownItems->Add(gcnew ToolStripSeparator());
+        tools->DropDownItems->Add("Compiler options...", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnCompilerOptions));
         bar->Items->Add(tools);
         bar->Items->Add(target);
 
@@ -2650,6 +2873,24 @@ private:
     // The open project's own, in its .pro, relative to its root - searched
     // and linked before the installation's. The bridge calls were there
     // from the start; the audit of 2026-09-19 found nothing calling them.
+    // Tools > Compiler options: the tabbed dialog, opened on the configuration the window builds with
+    // and on the tab of the compiler that builds the file in front; what OK keeps, the next build uses.
+    void OnCompilerOptions(Object^, EventArgs^) {
+        if (busy_) { what_->Text = StillWorking(); return; }
+        int kind = ride_resolve(toolKind_, LanguageNow());
+        int tab = kind == RIDE_TOOL_CC1 ? 1 : kind == RIDE_TOOL_CXX1 ? 2 : kind == RIDE_TOOL_SHC ? 3 : 0;
+        msclr::auto_handle<OptionsDialog> box(gcnew OptionsDialog(project_, config_, arch_, tab));
+        if (box->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "compiler options unchanged";
+            return;
+        }
+        bool inProject = project_ != nullptr && ride_project_loaded(project_) != 0;
+        if (box->Commit())
+            what_->Text = inProject ? "compiler options written to the project" : "compiler options written to settings.json";
+        else
+            what_->Text = "compiler options were not written - settings.json may be unreadable, or the project read-only";
+    }
+
     void OnProjectIncludes(Object^, EventArgs^) {
         if (project_ == nullptr || ride_project_loaded(project_) == 0) {
             what_->Text = "there is no project open - these are a project's own; Shared include paths... is the installation's";

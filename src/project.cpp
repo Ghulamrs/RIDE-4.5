@@ -87,6 +87,8 @@ void Project::begin(const std::string& dir, const std::string& name) {
     includes_.clear();
     libraries_.clear();
     open_.clear();
+    options_ = options::Store();
+    options::setActive(&options_);
     indentSaid_ = false;
     indent_.width = settings::indentWidth();
     indent_.tabs = settings::indentTabs();
@@ -285,6 +287,8 @@ bool Project::load(const std::string& dir, std::string& error) {
         if (!named.empty()) includes_.push_back(named);
     }
     open_ = withSlashes(root.get("open").text(std::string()));
+    options_.fromJson(root.get("options"));
+    options::setActive(&options_);
 
     libraries_.clear();
     const Json& libraries = root.get("libraries");
@@ -382,6 +386,7 @@ bool Project::save(std::string& error) {
         root.set("libraries", files);
     }
     if (!open_.empty()) root.set("open", Json::fromText(open_));
+    if (!options_.empty()) root.set("options", options_.toJson());
 
     if (builds()) {
         Json target = Json::object();
@@ -485,7 +490,11 @@ std::vector<std::string> Project::directories() const {
     return found;
 }
 
+Project::~Project() { options::release(&options_); }
+
 void Project::close() {
+    options_ = options::Store();
+    options::release(&options_);
     loaded_ = false;
     root_.clear();
     file_.clear();

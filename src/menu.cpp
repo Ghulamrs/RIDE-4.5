@@ -136,6 +136,8 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     tools.items.push_back({"Linker for x86_64-windows...", "", ActionLocateLinker});
     tools.items.push_back({"TI compiler for tms6747...", "", ActionLocateTi});
     tools.items.push_back({"Linker for tms6747...", "", ActionLocateTilinker});
+    tools.items.push_back(separator());
+    tools.items.push_back({"Compiler options...", "", ActionCompilerOptions});
     columns_.push_back(tools);
 
     MenuColumn target;

@@ -169,6 +169,192 @@ enum { kPanelErrors = 0, kPanelProgress = 1, kPanelOutput = 2 };
 static void RunOutput(void* user, const char* bytes, int size, int stream);
 
 // What RunOutput hands to the main thread.
+// ---- Compiler Options: a tabbed dialog drawn from the bridge's table (src/options.h) ------------
+// One tab per compiler and one row per option, a configuration chosen at the top, the command line
+// the build will run at the foot. It edits the bridge's draft; OK commits it, Cancel drops it.
+@interface OptionsDialog : NSObject
+- (instancetype)initWithProject:(RIDEProject*)project config:(int)config arch:(NSString*)arch;
+- (BOOL)run:(NSWindow*)parent;
+- (void)selectTab:(int)tab;
+@end
+
+@implementation OptionsDialog {
+    RIDEProject* project_;
+    int config_;
+    NSString* arch_;
+    NSPanel* panel_;
+    NSTabView* tabs_;
+    NSPopUpButton* configPick_;
+    NSTextField* preview_;
+    NSMutableDictionary<NSString*, NSControl*>* controls_;
+    NSModalResponse answer_;
+}
+
+- (instancetype)initWithProject:(RIDEProject*)project config:(int)config arch:(NSString*)arch {
+    if ((self = [super init])) {
+        project_ = project;
+        config_ = config;
+        arch_ = arch;
+        controls_ = [NSMutableDictionary dictionary];
+        ride_options_begin(project_);
+        [self build];
+        [self push];
+    }
+    return self;
+}
+
+- (void)build {
+    const CGFloat width = 640, height = 520;
+    panel_ = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
+                                        styleMask:NSWindowStyleMaskTitled
+                                          backing:NSBackingStoreBuffered defer:NO];
+    panel_.title = @"Compiler Options";
+    NSView* content = panel_.contentView;
+
+    // Which configuration's options are edited - not which one builds, which is Build > Debug/Release.
+    NSTextField* configLabel = [NSTextField labelWithString:@"Edit options for:"];
+    configLabel.frame = NSMakeRect(20, height - 40, 120, 20);
+    [content addSubview:configLabel];
+    configPick_ = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(140, height - 44, 130, 26) pullsDown:NO];
+    [configPick_ addItemsWithTitles:@[ @"Debug", @"Release" ]];
+    [configPick_ selectItemAtIndex:config_];
+    configPick_.target = self;
+    configPick_.action = @selector(configChosen:);
+    [content addSubview:configPick_];
+    NSTextField* target = [NSTextField labelWithString:[NSString stringWithFormat:@"Target: %@  (the Target menu)", arch_]];
+    target.frame = NSMakeRect(290, height - 40, 330, 20);
+    [content addSubview:target];
+
+    tabs_ = [[NSTabView alloc] initWithFrame:NSMakeRect(14, 110, width - 28, height - 164)];
+    NSSize page = NSMakeSize(width - 56, height - 210);
+    for (int t = 0; t < ride_option_tab_count(); ++t) {
+        NSString* name = Str(ride_option_tab_name(t));
+        NSView* view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, page.width, page.height)];
+        CGFloat y = page.height - 10;
+        for (int i = 0; i < ride_option_count(); ++i) {
+            if (![Str(ride_option_tab(i)) isEqualToString:name]) continue;
+            NSString* identifier = Str(ride_option_id(i));
+            NSString* label = Str(ride_option_label(i));
+            int control = ride_option_control(i);
+            NSControl* made = nil;
+            y -= 26;
+            if (control == RIDE_OPTION_CHECK) {
+                NSButton* box = [NSButton checkboxWithTitle:label target:self action:@selector(changed:)];
+                box.frame = NSMakeRect(10, y, page.width - 20, 22);
+                made = box;
+            } else {
+                NSTextField* title = [NSTextField labelWithString:label];
+                title.frame = NSMakeRect(10, y + 2, 200, 20);
+                [view addSubview:title];
+                if (control == RIDE_OPTION_CHOICE) {
+                    NSPopUpButton* pick = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(215, y - 2, 200, 26) pullsDown:NO];
+                    [pick addItemsWithTitles:[Str(ride_option_choices(i)) componentsSeparatedByString:@"|"]];
+                    pick.target = self;
+                    pick.action = @selector(changed:);
+                    made = pick;
+                } else {
+                    NSTextField* field = [[NSTextField alloc] initWithFrame:NSMakeRect(215, y, page.width - 230, 22)];
+                    field.target = self;
+                    field.action = @selector(changed:);
+                    field.delegate = (id<NSTextFieldDelegate>)self;
+                    made = field;
+                }
+            }
+            made.identifier = identifier;
+            [view addSubview:made];
+            controls_[identifier] = made;
+            // No line under a control: what it does, or why it is greyed here, is its tooltip.
+            NSString* why = Str(ride_options_why(Utf8(identifier), Utf8(arch_)));
+            BOOL usable = ride_options_available(Utf8(identifier), Utf8(arch_)) != 0;
+            made.enabled = usable;
+            NSString* tip = usable ? Str(ride_option_hint(i)) : [@"Unavailable: " stringByAppendingString:why];
+            if (tip.length > 0) made.toolTip = tip;
+            y -= 10;
+        }
+        NSTabViewItem* item = [[NSTabViewItem alloc] initWithIdentifier:name];
+        item.label = name;
+        item.view = view;
+        [tabs_ addTabViewItem:item];
+    }
+    tabs_.delegate = (id<NSTabViewDelegate>)self;
+    [content addSubview:tabs_];
+
+    NSTextField* heading = [NSTextField labelWithString:@"Command line:"];
+    heading.frame = NSMakeRect(20, 84, 200, 18);
+    [content addSubview:heading];
+    preview_ = [NSTextField wrappingLabelWithString:@""];
+    preview_.selectable = YES;
+    preview_.font = [NSFont userFixedPitchFontOfSize:[NSFont smallSystemFontSize]];
+    preview_.frame = NSMakeRect(20, 50, width - 40, 34);
+    [content addSubview:preview_];
+
+    NSButton* reset = [NSButton buttonWithTitle:@"Restore Defaults" target:self action:@selector(restoreDefaults:)];
+    reset.frame = NSMakeRect(14, 12, 150, 30);
+    [content addSubview:reset];
+    NSButton* cancel = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
+    cancel.frame = NSMakeRect(width - 214, 12, 96, 30);
+    cancel.keyEquivalent = @"\e";
+    [content addSubview:cancel];
+    NSButton* ok = [NSButton buttonWithTitle:@"OK" target:self action:@selector(ok:)];
+    ok.frame = NSMakeRect(width - 110, 12, 96, 30);
+    ok.keyEquivalent = @"\r";
+    [content addSubview:ok];
+}
+
+// The draft's values for the configuration shown, into the controls; and back.
+- (void)push {
+    for (NSString* identifier in controls_) {
+        NSControl* control = controls_[identifier];
+        NSString* value = Str(ride_options_value(project_, config_, Utf8(identifier)));
+        if ([control isKindOfClass:NSPopUpButton.class]) [(NSPopUpButton*)control selectItemWithTitle:value];
+        else if ([control isKindOfClass:NSButton.class]) ((NSButton*)control).state = [value isEqualToString:@"1"] ? NSControlStateValueOn : NSControlStateValueOff;
+        else control.stringValue = value;
+    }
+    [self showPreview];
+}
+
+- (void)pull {
+    for (NSString* identifier in controls_) {
+        NSControl* control = controls_[identifier];
+        NSString* value;
+        if ([control isKindOfClass:NSPopUpButton.class]) value = ((NSPopUpButton*)control).titleOfSelectedItem ?: @"";
+        else if ([control isKindOfClass:NSButton.class]) value = ((NSButton*)control).state == NSControlStateValueOn ? @"1" : @"0";
+        else value = control.stringValue;
+        ride_options_set(project_, config_, Utf8(identifier), Utf8(value));
+    }
+}
+
+- (void)showPreview {
+    NSInteger tab = tabs_.selectedTabViewItem ? [tabs_ indexOfTabViewItem:tabs_.selectedTabViewItem] : 0;
+    preview_.stringValue = Str(ride_options_preview(project_, config_, (int)tab, Utf8(arch_)));
+}
+
+- (void)changed:(id)sender { (void)sender; [self pull]; [self showPreview]; }
+- (void)controlTextDidChange:(NSNotification*)note { (void)note; [self pull]; [self showPreview]; }
+- (void)tabView:(NSTabView*)view didSelectTabViewItem:(NSTabViewItem*)item { (void)view; (void)item; [self showPreview]; }
+
+- (void)configChosen:(id)sender {
+    (void)sender;
+    [self pull];
+    config_ = (int)configPick_.indexOfSelectedItem;
+    [self push];
+}
+
+- (void)restoreDefaults:(id)sender { (void)sender; ride_options_reset(project_, config_); [self push]; }
+- (void)cancel:(id)sender { (void)sender; answer_ = NSModalResponseCancel; [NSApp stopModal]; }
+- (void)ok:(id)sender { (void)sender; [self pull]; answer_ = NSModalResponseOK; [NSApp stopModal]; }
+
+- (BOOL)run:(NSWindow*)parent {
+    (void)parent;
+    [panel_ center];
+    [NSApp runModalForWindow:panel_];
+    [panel_ orderOut:nil];
+    return answer_ == NSModalResponseOK && ride_options_commit(project_) != 0;
+}
+
+- (void)selectTab:(int)tab { if (tab >= 0 && tab < tabs_.numberOfTabViewItems) [tabs_ selectTabViewItemAtIndex:tab]; [self showPreview]; }
+@end
+
 @interface WindowController ()
 - (void)runSaid:(const std::string&)piece stream:(int)stream;
 - (void)runEnded;
@@ -1980,6 +2166,27 @@ static NSColor* ColourOf(unsigned char kind) {
     [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:target] ]];
 }
 
+// Option > Compiler Options: the tabbed dialog, opened on the configuration the window builds with
+// and on the tab of the compiler that builds the file in front; what OK keeps, the next build uses.
+- (void)compilerOptions:(id)sender {
+    (void)sender;
+    // Opened once the menu has closed: run from inside the menu's action, the modal loop starts
+    // while the menu is still fading, which leaves its image traced over the window.
+    [self performSelector:@selector(openCompilerOptions) withObject:nil afterDelay:0];
+}
+
+- (void)openCompilerOptions {
+    int kind = ride_resolve(toolKind_, [self languageNow]);
+    int tab = kind == RIDE_TOOL_CC1 ? 1 : kind == RIDE_TOOL_CXX1 ? 2 : kind == RIDE_TOOL_SHC ? 3 : 0;
+    OptionsDialog* dialog = [[OptionsDialog alloc] initWithProject:project_ config:config_ arch:arch_];
+    [dialog selectTab:tab];
+    if ([dialog run:self.window])
+        [self say:ride_project_loaded(project_) ? @"compiler options written to the project"
+                                                 : @"compiler options written to settings.json"];
+    else
+        [self say:@"compiler options unchanged"];
+}
+
 - (void)projectIncludes:(id)sender {
     (void)sender;
     if (!ride_project_loaded(project_)) {
@@ -3168,6 +3375,7 @@ static void RunOutput(void* user, const char* bytes, int size, int stream) {
         action == @selector(addFiles:) || action == @selector(projectIncludes:) ||
         action == @selector(projectLibraries:))
         return project && !busy_;
+    if (action == @selector(compilerOptions:)) return !busy_;
     // Nothing that loads, replaces or changes the project while a build reads it (H1).
     if (action == @selector(addCurrentFile:)) return project && file && current_.path != nil && !busy_ &&
                                                     !ride_project_holds(project_, Utf8(current_.path));
@@ -3409,6 +3617,7 @@ static NSString* Key(unichar c) { return [NSString stringWithCharacters:&c lengt
     [self add:@"TI Compiler for tms6747..." to:option action:@selector(locateTi:) key:@""];
     [self add:@"Linker for tms6747..." to:option action:@selector(locateTiLinker:) key:@""];
     [option addItem:[NSMenuItem separatorItem]];
+    [self add:@"Compiler Options..." to:option action:@selector(compilerOptions:) key:@""];
     [self add:@"Show Tools in Use" to:option action:@selector(showCompilers:) key:@""];
 
     // Window, which macOS expects and fills with the open windows.

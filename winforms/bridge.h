@@ -111,6 +111,30 @@ const char* ride_project_libraries(RIDEProject* project);
 int ride_project_set_includes(RIDEProject* project, const char* line);
 int ride_project_set_libraries(RIDEProject* project, const char* line);
 
+// **Compiler Options** (src/options.h): the table both windows draw their tabbed dialog from, and a
+// draft the dialog edits - begun from the open project's options, or the installation's where none
+// is open; commit writes the draft to the .pro or settings.json, and a dialog cancelled just drops it.
+enum { RIDE_OPTION_CHECK = 0, RIDE_OPTION_CHOICE, RIDE_OPTION_TEXT };
+int ride_option_count(void);
+const char* ride_option_id(int index);
+const char* ride_option_tab(int index);
+const char* ride_option_label(int index);
+int ride_option_control(int index);
+const char* ride_option_choices(int index);   // a choice's values, '|' between them
+const char* ride_option_hint(int index);
+int ride_option_tab_count(void);
+const char* ride_option_tab_name(int tab);
+void ride_options_begin(RIDEProject* project);
+const char* ride_options_value(RIDEProject* project, int config, const char* id);
+void ride_options_set(RIDEProject* project, int config, const char* id, const char* value);
+void ride_options_reset(RIDEProject* project, int config);
+// Whether the option means anything for this target; ride_options_why says why not.
+int ride_options_available(const char* id, const char* arch);
+const char* ride_options_why(const char* id, const char* arch);
+// The compiler and flags a tab's compiler is given for this configuration and target, from the draft.
+const char* ride_options_preview(RIDEProject* project, int config, int tab, const char* arch);
+int ride_options_commit(RIDEProject* project);
+
 // The installation's settings.json, above bin/: where cxx1's headers (include) and cc1's (lib) are, and the vcvars64.bat named there if any.
 const char* ride_install_file(void);
 // Writes that file with the installer's defaults where there is none - on macOS ~/.ride/settings.json; 0 only when it is missing and cannot be written.

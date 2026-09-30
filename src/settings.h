@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "json.h"
+
 namespace editor {
 
 namespace settings {
@@ -75,6 +77,9 @@ std::string namedTilinker();
 // front end asks and a yes builds again through the vendor's; false never asks. The user's design, 2026-09-20: ours by default, the vendor's by consent.
 bool askNative();
 bool rememberAskNative(bool ask);
+// The Compiler Options the installation sets, used where no project is open (options.h).
+Json compilerOptions();
+bool rememberCompilerOptions(const Json& options);
 // For the build a yes was given to: the four above answer as if nothing of
 // the project's own were named, so every recipe reaches for the vendor's.
 void forceNative(bool on);

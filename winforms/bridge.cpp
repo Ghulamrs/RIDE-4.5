@@ -38,6 +38,7 @@
 #include "symbols.h"
 #include "syntax.h"
 #include "settings.h"
+#include "options.h"
 #include "workspace.h"
 
 namespace {
@@ -227,6 +228,7 @@ std::vector<std::string> splitList(const char* line) {
 
 struct RIDEProject {
     editor::Project project;
+    editor::options::Store draft;       // what the Compiler Options dialog is editing
     std::string answer;
     editor::Outcome last;
 
@@ -1896,4 +1898,80 @@ int ride_build_stopped(RIDEBuild* built) { return built && built->stopped ? 1 : 
 int ride_ran_stopped(RIDERan* ran) { return ran && ran->stopped ? 1 : 0; }
 int ride_conversion_stopped(RIDEConversion* made) { return made && made->stopped ? 1 : 0; }
 
+}
+
+
+// ---- Compiler Options (options.h) ----------------------------------------------------------------
+
+int ride_option_count(void) { return static_cast<int>(editor::options::count()); }
+static const editor::options::Def* optionAt(int index) {
+    return index >= 0 && static_cast<size_t>(index) < editor::options::count() ? &editor::options::at(index) : 0;
+}
+const char* ride_option_id(int index) { const editor::options::Def* d = optionAt(index); return d ? d->id : ""; }
+const char* ride_option_tab(int index) { const editor::options::Def* d = optionAt(index); return d ? d->tab : ""; }
+const char* ride_option_label(int index) { const editor::options::Def* d = optionAt(index); return d ? d->label : ""; }
+int ride_option_control(int index) { const editor::options::Def* d = optionAt(index); return d ? static_cast<int>(d->control) : 0; }
+const char* ride_option_choices(int index) { const editor::options::Def* d = optionAt(index); return d ? d->choices : ""; }
+const char* ride_option_hint(int index) { const editor::options::Def* d = optionAt(index); return d ? d->hint : ""; }
+int ride_option_tab_count(void) { return static_cast<int>(editor::options::tabCount()); }
+const char* ride_option_tab_name(int tab) { return tab >= 0 ? editor::options::tabName(static_cast<size_t>(tab)) : ""; }
+
+static editor::Configuration configOf(int config) {
+    return config == RIDE_CONFIG_RELEASE ? editor::ConfigRelease : editor::ConfigDebug;
+}
+
+// The draft a window with no RIDEProject at all edits: the installation's. A pointer, like every
+// native global the window links (settings.cpp).
+static editor::options::Store& draftOf(RIDEProject* project) {
+    static editor::options::Store* alone = new editor::options::Store();
+    return project ? project->draft : *alone;
+}
+
+void ride_options_begin(RIDEProject* project) {
+    draftOf(project) = project && project->project.loaded() ? project->project.compilerOptions()
+                                                            : editor::options::installation();
+}
+
+const char* ride_options_value(RIDEProject* project, int config, const char* id) {
+    scratch() = id ? draftOf(project).value(configOf(config), id) : std::string();
+    return scratch().c_str();
+}
+
+void ride_options_set(RIDEProject* project, int config, const char* id, const char* value) {
+    if (id) draftOf(project).set(configOf(config), id, value ? value : "");
+}
+
+void ride_options_reset(RIDEProject* project, int config) {
+    draftOf(project).reset(configOf(config));
+}
+
+int ride_options_available(const char* id, const char* arch) {
+    std::string why;
+    return id && arch && editor::options::available(id, arch, why) ? 1 : 0;
+}
+
+const char* ride_options_why(const char* id, const char* arch) {
+    std::string why;
+    if (id && arch) editor::options::available(id, arch, why);
+    scratch() = why;
+    return scratch().c_str();
+}
+
+const char* ride_options_preview(RIDEProject* project, int config, int tab, const char* arch) {
+    const editor::ToolchainKind kinds[] = { editor::ToolCxx1, editor::ToolCc1, editor::ToolCxx1, editor::ToolShc };
+    const char* const names[] = { "cpp11", "c90", "cpp11", "shalimar" };
+    std::string a = arch ? arch : "";
+    int t = tab >= 0 && tab < 4 ? tab : 0;
+    std::string line = std::string(names[t]) + (kinds[t] == editor::ToolShc ? " --target=" : " -arch ") + a;
+    line += editor::options::flags(draftOf(project), kinds[t], configOf(config), a);
+    scratch() = line + " <sources>";
+    return scratch().c_str();
+}
+
+int ride_options_commit(RIDEProject* project) {
+    if (!project || !project->project.loaded())
+        return editor::settings::rememberCompilerOptions(draftOf(project).toJson()) ? 1 : 0;
+    project->project.setCompilerOptions(project->draft);
+    project->last = editor::saveProject(project->project);
+    return project->last.ok ? 1 : 0;
 }

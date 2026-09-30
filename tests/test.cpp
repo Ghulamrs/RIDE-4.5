@@ -16,6 +16,7 @@
 #include "path.h"
 #include "process.h"
 #include "settings.h"
+#include "options.h"
 #include "product.h"
 #include "workspace.h"
 #include "debugger.h"
@@ -2409,7 +2410,7 @@ void stoppingTheHostsOwnCompiler() {
 
     // Built the way the editor builds it, so the flags that carry the debug
     // information are the editor's own rather than this test's idea of them.
-    editor::prepareFor(kind);
+    editor::prepareFor(kind, editor::ConfigDebug);
     editor::Recipe recipe = editor::programRecipe(tool, kind, source, editor::LangCpp,
                                                   editor::hostArch(), editor::ConfigDebug);
     if (std::system(shellCommand(recipe.command + kNowhere).c_str()) != 0 ||
@@ -5226,7 +5227,54 @@ void theSeamsSmallPromises() {
     check(editor::path::onPath("no-such-tool-ride-test").empty(), "and one that is not, is not");
 }
 
+// Compiler Options (options.h): the defaults are the flags RIDE passed before the dialog, a value
+// set reaches the command line, one set back to its default is not written, and the JSON round-trips.
+static void compilerOptions() {
+    using namespace editor;
+    options::Store store;
+    checkEqual(options::flags(store, ToolCxx1, ConfigRelease, "x86_64-linux"), " -O2 -DNDEBUG=1", "cpp11 release defaults");
+    checkEqual(options::flags(store, ToolCc1, ConfigDebug, "x86_64-linux"), " -g -D_DEBUG=1", "c90 debug defaults");
+    checkEqual(options::flags(store, ToolCxx1, ConfigDebug, "tms6747"), " -D_DEBUG=1", "no -g where there is no line table");
+    checkEqual(options::flags(store, ToolShc, ConfigDebug, "x86_64-linux"), " --debug", "shalimar debug runtime");
+    checkEqual(options::flags(store, ToolShc, ConfigDebug, "tms6747"), "", "no debug runtime on the emulator");
+    checkEqual(options::flags(store, ToolShc, ConfigRelease, "x86_64-linux"), "", "shalimar release defaults");
+    store.set(ConfigRelease, "cpp11.opt", "-O1");
+    store.set(ConfigRelease, "cpp11.defines", "NDEBUG=1; TRACE");
+    store.set(ConfigRelease, "general.nologo", "1");
+    store.set(ConfigRelease, "general.jobs", "4");
+    checkEqual(options::flags(store, ToolCxx1, ConfigRelease, "x86_64-windows"),
+               " -O1 -DNDEBUG=1 -DTRACE -nologo -j4", "cpp11 options set");
+    store.set(ConfigDebug, "shc.search", "0");
+    checkEqual(options::flags(store, ToolShc, ConfigDebug, "x86_64-linux"),
+               " --debug --no-search", "shalimar options set");
+    store.set(ConfigDebug, "cpp11.compress", "0");
+    checkEqual(options::flags(store, ToolCxx1, ConfigDebug, "tms6747"), " --no_compress -D_DEBUG=1",
+               "cpp11 without compact instructions on the C6000");
+    checkEqual(options::flags(store, ToolCxx1, ConfigDebug, "x86_64-linux"), " -g -D_DEBUG=1",
+               "no --no_compress where there are no compact instructions");
+    store.set(ConfigDebug, "cpp11.compress", "1");
+    options::Store back;
+    back.fromJson(store.toJson());
+    checkEqual(back.toJson().write(), store.toJson().write(), "options round-trip through JSON");
+    store.set(ConfigRelease, "cpp11.opt", "-O2");
+    check(store.toJson().get("release").has("cpp11.opt") == false, "a default is not written");
+    store.set(ConfigDebug, "cpp11.declines", "1");
+    checkEqual(options::environment(store, ConfigDebug)["CPP11_DECLINES"], "1", "CPP11_DECLINES asked for");
+    checkEqual(options::environment(store, ConfigRelease)["CPP11_DECLINES"], "", "CPP11_DECLINES removed");
+    std::string why;
+    check(!options::available("c90.g", "tms6747", why) && !why.empty(), "-g unavailable on tms6747, with a reason");
+    check(options::find("cpp11.masm") == 0 && options::find("shc.with") == 0, "what a menu decides is not an option");
+    size_t onTabs = 0;
+    for (size_t t = 0; t < options::tabCount(); ++t)
+        for (size_t i = 0; i < options::count(); ++i) if (std::string(options::at(i).tab) == options::tabName(t)) ++onTabs;
+    checkEqual(std::to_string(onTabs), std::to_string(options::count()), "every option is on a tab");
+}
+
 int main(int argc, char** argv) {
+    // The flags the suite expects are the defaults, not what this machine's settings.json has chosen
+    // in Compiler Options: an empty store stands in for the installation's for the whole run.
+    editor::options::Store* none = new editor::options::Store();
+    editor::options::setFallback(none);
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
     whatTheDebuggerHeard();
@@ -5238,6 +5286,7 @@ int main(int argc, char** argv) {
     namedProjectFiles();
     whereAFileBelongs();
     jsonIsALanguage();
+    compilerOptions();
     talkingToAChild();
     aProgramThatReads();
     theSeamsSmallPromises();

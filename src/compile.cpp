@@ -425,7 +425,7 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
             LineSink sink, void* context) {
     Build result;
 
-    if (!prepareFor(kind)) {
+    if (!prepareFor(kind, config)) {
         result.output = "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools\n";
         if (sink) sink(context, "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools");
         return result;
@@ -486,7 +486,7 @@ Built buildProgramOnce(const Toolchain& tool, ToolchainKind kind, const std::str
                        LineSink sink, void* context) {
     Built result;
 
-    if (!prepareFor(kind)) {
+    if (!prepareFor(kind, config)) {
         result.output = "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools\n";
         if (sink) sink(context, "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools");
         return result;
@@ -716,7 +716,7 @@ Built buildTargetOnce(const Toolchain& tool, ToolchainKind kind,
     }
     if (refusedUnwritable(program, result, sink, context)) return result;
 
-    if (!prepareFor(kind)) {
+    if (!prepareFor(kind, config)) {
         result.output = "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools\n";
         if (sink) sink(context, "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools");
         return result;
@@ -794,7 +794,7 @@ Built buildPartsOnce(const Toolchain& tool, const std::vector<Part>& parts,
     bool withCpp = false;
     for (size_t i = 0; i < parts.size(); ++i) {
         ToolchainKind kind = toolchainOf(tool, parts[i]);
-        if (!prepareFor(kind)) {
+        if (!prepareFor(kind, config)) {
             result.output = "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools\n";
             if (sink) sink(context, "no Visual Studio found - cl, ml64 and link cannot be run; name its vcvars64.bat under Tools");
             return result;

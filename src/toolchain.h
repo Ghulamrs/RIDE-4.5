@@ -134,7 +134,7 @@ std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
                                 const std::string& arch, Configuration config);
 
 // " -masm=masm" for cpp11 on x86_64-windows when settings name an assembler.
-std::string assemblerFlag(ToolchainKind kind, const std::string& arch);
+std::string assemblerFlag(ToolchainKind kind, const std::string& arch, Configuration config);
 Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
                     const std::vector<std::string>& sources, Language lang,
                     const std::string& arch, Configuration config,
@@ -151,7 +151,7 @@ Recipe linkRecipe(const Toolchain& tool, const std::vector<std::string>& objects
 
 std::string linkerName(bool withCpp);
 
-bool prepareFor(ToolchainKind kind);
+bool prepareFor(ToolchainKind kind, Configuration config);
 // Whether the vendor's tools for a target are here, found as a build finds them and never by PATH: Visual Studio through vswhere or "vcvars", TI's lnk6x under "ti". The native question is put only when this says yes.
 bool nativeToolsAvailable(const std::string& arch);
 

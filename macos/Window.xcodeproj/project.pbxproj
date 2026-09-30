@@ -28,6 +28,7 @@
 		A08C3F3E10AA938EFD4B96A7 /* process.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1B3F27F20DFF0F38A0980EFB /* process.cpp */; };
 		D02C3B8D2773734C094887CF /* debugger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 95980CE5F7CDAFC5817324B7 /* debugger.cpp */; };
 		A14BC55EADA33B5AD7400CFF /* settings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3E0080087BC1460F66AF910A /* settings.cpp */; };
+		1DD7A4E1D6ED022D516B8343 /* options.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5ACCE61EDF45C2CBF4C75B98 /* options.cpp */; };
 		7569C83B02CD43F1D6CF779C /* about.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3AA0DCBCBD28BDD17CE4B762 /* about.cpp */; };
 		83ACF32D4DEE929C2C31F2CE /* channel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 93AE13615387F689377864EB /* channel.cpp */; };
 		DB18F031C6B0E086C313D7B9 /* session.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 918EEAF9AA1BE04310008519 /* session.cpp */; };
@@ -62,6 +63,7 @@
 		1B3F27F20DFF0F38A0980EFB /* process.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = process.cpp; path = "../src/process.cpp"; sourceTree = "<group>"; };
 		95980CE5F7CDAFC5817324B7 /* debugger.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = debugger.cpp; path = "../src/debugger.cpp"; sourceTree = "<group>"; };
 		3E0080087BC1460F66AF910A /* settings.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = settings.cpp; path = "../src/settings.cpp"; sourceTree = "<group>"; };
+		5ACCE61EDF45C2CBF4C75B98 /* options.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = options.cpp; path = "../src/options.cpp"; sourceTree = "<group>"; };
 		3AA0DCBCBD28BDD17CE4B762 /* about.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = about.cpp; path = "../src/about.cpp"; sourceTree = "<group>"; };
 		93AE13615387F689377864EB /* channel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = channel.cpp; path = "../src/shalimar/channel.cpp"; sourceTree = "<group>"; };
 		918EEAF9AA1BE04310008519 /* session.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = session.cpp; path = "../src/shalimar/session.cpp"; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				1B3F27F20DFF0F38A0980EFB /* process.cpp */,
 				95980CE5F7CDAFC5817324B7 /* debugger.cpp */,
 				3E0080087BC1460F66AF910A /* settings.cpp */,
+				5ACCE61EDF45C2CBF4C75B98 /* options.cpp */,
 				3AA0DCBCBD28BDD17CE4B762 /* about.cpp */,
 				93AE13615387F689377864EB /* channel.cpp */,
 				918EEAF9AA1BE04310008519 /* session.cpp */,
@@ -254,6 +257,7 @@
 				A08C3F3E10AA938EFD4B96A7 /* process.cpp in Sources */,
 				D02C3B8D2773734C094887CF /* debugger.cpp in Sources */,
 				A14BC55EADA33B5AD7400CFF /* settings.cpp in Sources */,
+				1DD7A4E1D6ED022D516B8343 /* options.cpp in Sources */,
 				7569C83B02CD43F1D6CF779C /* about.cpp in Sources */,
 				83ACF32D4DEE929C2C31F2CE /* channel.cpp in Sources */,
 				DB18F031C6B0E086C313D7B9 /* session.cpp in Sources */,

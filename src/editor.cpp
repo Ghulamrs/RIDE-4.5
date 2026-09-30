@@ -1000,6 +1000,8 @@ void Editor::drawMessage(std::string& out) const {
 
 void Editor::openMenu() {
     std::vector<Action> unavailable;
+    // A dialog of tabs and drop-downs, which the windows draw and the terminal does not.
+    unavailable.push_back(ActionCompilerOptions);
 
     if (debuggingShalimar()) {
         unavailable.push_back(ActionFrameUp);
@@ -3295,6 +3297,7 @@ void Editor::perform(Action action) {
         case ActionProjectLibraries: editProjectLibraries(); break;
         case ActionOwnIncludes:  editOwnIncludes(); break;
         case ActionOwnLibraries: editOwnLibraries(); break;
+        case ActionCompilerOptions: say("Compiler options are set in the window (RIDEGui): Tools > Compiler options"); break;
         case ActionHeaderDirs:   editHeaderDirs(); break;
         case ActionLocateVcvars: locateVcvars(); break;
         case ActionLocateAssembler: locateAssembler(); break;

@@ -1,10 +1,13 @@
 #include "toolchain.h"
 
+#include "options.h"
+
 #include "path.h"
 #include "product.h"
 #include "settings.h"
 
 #include <cstdio>
+#include <map>
 #include <cstdlib>
 #include <cstring>
 
@@ -345,10 +348,11 @@ bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
 std::string configFlags(ToolchainKind kind, Configuration config,
                         const std::string& arch) {
 
-    // No --debug on the emulator: it is not a debugger, the runtime beside
-    // it is the release one, and the debug runtime's names would be undefined.
-    if (kind == ToolShc)
-        return config == ConfigDebug && !isEmulated(arch) ? std::string(" --debug") : std::string();
+    // **c90, cpp11 and shalimar take what Compiler Options set** (options.h), whose defaults are
+    // the flags this function wrote before the dialog: -O2 -DNDEBUG=1 or -g -D_DEBUG=1, and --debug
+    // for shalimar off the emulator, where the runtime beside it is the release one.
+    if (kind == ToolShc || kind == ToolCc1 || kind == ToolCxx1)
+        return options::flags(options::active(), kind, config, arch);
 
     // **cxx1's own -O2, not cl's.** This line passed -O2 while cxx1 had no -O flag at all, so every
     // Release C++ build failed, unseen because the editor defaults to Debug; cxx1 implements -O1
@@ -533,8 +537,12 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
 
     if (kind == ToolShc && !isEmulated(arch)) {
 
+        // The project's and the installation's libraries, which shalimar links by --with= in the
+        // order given - the ones its `uses` declarations need - where c90 and cpp11 leave them to the link.
+        std::string with;
+        for (size_t i = 0; i < tool.libraries.size(); ++i) with += " --with=" + quote(tool.libraries[i]);
         recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program) +
-                         configFlags(kind, config, arch);
+                         configFlags(kind, config, arch) + with;
         return recipe;
     }
 
@@ -568,7 +576,7 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
 
     recipe.command = quote(programOf(tool, kind)) + languageFlag(kind, lang) +
                      named + " -o " + quote(program) + configFlags(kind, config, arch) +
-                     assemblerFlag(kind, arch) + includeFlags(tool, kind);
+                     assemblerFlag(kind, arch, config) + includeFlags(tool, kind);
     return recipe;
 }
 
@@ -653,7 +661,7 @@ Recipe objectRecipe(const Toolchain& tool, ToolchainKind kind,
     recipe.command = "cd " + quote(objectDir) + " && " +
                      quote(programOf(tool, kind)) + " -c" +
                      languageFlag(kind, lang) + named +
-                     configFlags(kind, config, arch) + assemblerFlag(kind, arch) +
+                     configFlags(kind, config, arch) + assemblerFlag(kind, arch, config) +
                      includeFlags(tool, kind);
 
     for (size_t i = 0; i < sources.size(); ++i)
@@ -735,7 +743,7 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
     // GNU spelling and hands masm.exe clang's command line - "usage: asm -t x64 ..." in the first 4.0 install.
     recipe.command = quote(program) + " " + quote(source) + " -o " +
                      quote(recipe.assemblyPath) + configFlags(kind, config, arch) +
-                     assemblerFlag(kind, arch) + includeFlags(tool, kind) +
+                     assemblerFlag(kind, arch, config) + includeFlags(tool, kind) +
                      (kind == ToolCxx ? libraryArguments(tool) : std::string());
     return recipe;
 }
@@ -755,7 +763,7 @@ std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
                configFlags(kind, config, arch) + includeFlags(tool, kind) +
                " /Fe" + productNamed("run") + " " + source + libraryArguments(tool);
     return program + " " + source + " -o " + productNamed("run") + configFlags(kind, config, arch) +
-           assemblerFlag(kind, arch) + includeFlags(tool, kind) +
+           assemblerFlag(kind, arch, config) + includeFlags(tool, kind) +
            (kind == ToolCxx ? libraryArguments(tool) : std::string());
 }
 
@@ -809,7 +817,22 @@ std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
            configFlags(kind, config, arch) + includeFlags(tool, kind);
 }
 
-bool prepareFor(ToolchainKind kind) {
+// The environment Compiler Options asks for (options.h): set where it has a value, removed where it
+// is empty - cpp11 reads a variable that is set but empty as set.
+static void optionEnvironment(Configuration config) {
+    std::map<std::string, std::string> env = options::environment(options::active(), config);
+    for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it) {
+#ifdef _WIN32
+        _putenv_s(it->first.c_str(), it->second.c_str());
+#else
+        if (it->second.empty()) unsetenv(it->first.c_str());
+        else setenv(it->first.c_str(), it->second.c_str(), 1);
+#endif
+    }
+}
+
+bool prepareFor(ToolchainKind kind, Configuration config) {
+    optionEnvironment(config);
 #ifdef _WIN32
     if (kind == ToolMsvc) return importMsvcEnvironment();
 
@@ -847,7 +870,8 @@ bool nativeToolsAvailable(const std::string& arch) {
     return false;
 }
 
-std::string assemblerFlag(ToolchainKind kind, const std::string& arch) {
+std::string assemblerFlag(ToolchainKind kind, const std::string& arch, Configuration config) {
+    (void)config;
     if (kind == ToolCxx1 && arch == "x86_64-windows" && !settings::assembler().empty())
         return " -masm=masm";
     return std::string();

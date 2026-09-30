@@ -21,7 +21,7 @@
 #     file on that side is a stale build with a green suite in front of it.
 #
 # cxx1 travels with the editor since 3.0. RIDE.sln builds it from
-# ..\Compiler-Cpp\cxx1.vcxproj, which is written by tools/make-projects.py at
+# ..\VM6747\Compiler-Cppi\ide\cxx1.vcxproj (the root copies moved to ide/ on 2026-09-30), written at
 # the root of the C++ checkout here; the sources, headers, msvc\compat and
 # that project go over together, laid over the tree there - never wiping it,
 # since that directory also holds hand-run experiments that are not ours.
@@ -76,9 +76,9 @@ tar --no-mac-metadata \
 # The parts its Visual Studio project compiles and includes, and nothing of
 # its own build tree.
 ( cd ../VM6747/Compiler-Ci && tar --no-mac-metadata --exclude '* 2.*' --exclude 'obj' --exclude '*.exe' --exclude 'out-*' \
-    -czf "$TMP/c90-src.tgz" src lib msvc tests examples Makefile README.md ) || exit 2
+    -czf "$TMP/c90-src.tgz" src lib msvc tests examples Makefile ide README.md ) || exit 2
 ( cd ../VM6747/Compiler-Cppi && tar --no-mac-metadata --exclude '* 2.*' --exclude 'obj' --exclude '*.exe' --exclude 'out-*' \
-    -czf "$TMP/cxx1-src.tgz" src include lib msvc tests Makefile cxx1.vcxproj README.md ) || exit 2
+    -czf "$TMP/cxx1-src.tgz" src include lib msvc tests Makefile ide README.md ) || exit 2
 ( cd ../VM6747/Emulator && tar --no-mac-metadata --exclude '* 2.*' --exclude '*.exe' \
     -czf "$TMP/vm6747-src.tgz" src msvc tests Makefile vm6747.vcxproj README.md ) || exit 2
 # asm6x: the C6000 assembler, beside this checkout as ../ASM6x, its own repository.

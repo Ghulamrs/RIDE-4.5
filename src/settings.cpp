@@ -8,8 +8,60 @@
 #include "path.h"
 #include "product.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace editor {
 namespace settings {
+
+namespace {
+
+// **A settings file is replaced whole or not at all**: written beside itself and renamed over, so a
+// crash or a full disk mid-write leaves the old file and never an empty one. Windows's rename will
+// not replace a file, so MoveFileEx does it there.
+bool replaceFile(const std::string& file, const std::string& text) {
+    std::string temporary = file + ".tmp";
+    FILE* out = std::fopen(temporary.c_str(), "wb");
+    if (!out) return false;
+    bool ok = std::fwrite(text.data(), 1, text.size(), out) == text.size();
+    if (std::fclose(out) != 0) ok = false;
+    if (ok) {
+#ifdef _WIN32
+        int n = MultiByteToWideChar(CP_UTF8, 0, temporary.c_str(), -1, 0, 0);
+        int m = MultiByteToWideChar(CP_UTF8, 0, file.c_str(), -1, 0, 0);
+        std::wstring from(n > 0 ? n : 1, L'\0'), to(m > 0 ? m : 1, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, temporary.c_str(), -1, &from[0], n);
+        MultiByteToWideChar(CP_UTF8, 0, file.c_str(), -1, &to[0], m);
+        ok = MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        ok = std::rename(temporary.c_str(), file.c_str()) == 0;
+#endif
+    }
+    if (!ok) std::remove(temporary.c_str());
+    return ok;
+}
+
+// Whether a file holds text that is not a JSON object - one a hand edit broke, say. Writing over it
+// would lose every setting in it, so the write is refused and the file left for its owner to mend.
+bool unreadable(const std::string& file) {
+    FILE* in = std::fopen(file.c_str(), "rb");
+    if (!in) return false;
+    std::string text;
+    char chunk[1024];
+    size_t got;
+    while ((got = std::fread(chunk, 1, sizeof chunk, in)) > 0) text.append(chunk, got);
+    std::fclose(in);
+    bool anything = false;
+    for (size_t i = 0; i < text.size() && !anything; ++i)
+        if (!std::isspace(static_cast<unsigned char>(text[i]))) anything = true;
+    if (!anything) return false;
+    std::string why;
+    Json root = Json::parse(text, why);
+    return !why.empty() || !root.is(Json::Object);
+}
+
+}
 
 // The per-user state, ~/.ride/state.json: what was opened last and the choices
 // made in the window. The configuration is settings.json, beside the programs.
@@ -78,12 +130,7 @@ bool writeAll(const Json& root) {
 
     path::makeDirectories(path::parent(where));
 
-    FILE* out = std::fopen(where.c_str(), "wb");
-    if (!out) return false;
-    std::string text = root.write();
-    std::fwrite(text.data(), 1, text.size(), out);
-    std::fclose(out);
-    return true;
+    return replaceFile(where, root.write());
 }
 
 }
@@ -189,13 +236,9 @@ bool writeInstall(const Json& root) {
     else if (!path::exists(file) &&
         (!path::isDirectory(path::join(base, "include")) || !path::isDirectory(path::join(base, "lib"))))
         return false;
-    FILE* out = std::fopen(file.c_str(), "wb");
-    if (!out) return false;
-    std::string text = root.write() + "\n";
-    size_t written = std::fwrite(text.data(), 1, text.size(), out);
-    bool ok = written == text.size();
-    if (std::fclose(out) != 0) ok = false;
-    return ok;
+    // What was read of a file that would not parse was nothing, so writing now would keep one key.
+    if (unreadable(file)) return false;
+    return replaceFile(file, root.write() + "\n");
 }
 
 // A directory named in the file, made absolute against it; else the
@@ -273,6 +316,14 @@ bool askNative() {
 bool rememberAskNative(bool ask) {
     Json root = readInstall();
     root.set("askNative", Json::fromBool(ask));
+    return writeInstall(root);
+}
+
+// The compiler options a build uses when no project is open (options.h), kept as the dialog wrote them.
+Json compilerOptions() { return readInstall().get("options"); }
+bool rememberCompilerOptions(const Json& options) {
+    Json root = readInstall();
+    root.set("options", options);
     return writeInstall(root);
 }
 
