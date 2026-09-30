@@ -65,6 +65,10 @@ changes nothing - edit it in CCS. Only C6000 C674x devices open; any other is
 refused with its device named. The sources are every file in the folder by
 extension, the linked files from `.project`, minus what `.cproject` excludes.
 
+Three sample CCS 7.4 projects come with RIDE, in `examples/ccs` of the
+install - a C one, a C++ one and one with a subfolder and an excluded file -
+and its `README.md` says what each prints in Debug and in Release.
+
 ## One kind of project file
 
 A project is a `.pro` file and nothing else. Older releases also read a

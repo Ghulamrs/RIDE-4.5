@@ -1,4 +1,4 @@
-# RIDE 4.5 — Express Help
+# RIDE 4.51 — Express Help
 
 Three languages, four targets, one editor on three systems - a window on
 Windows and on macOS, a console editor on all three, and the project's own
@@ -10,9 +10,9 @@ quick reference; the full pages are under `help/`.
 
 | System  | Installer                          | Window (GUI)        | Console editor              |
 |---------|------------------------------------|---------------------|-----------------------------|
-| Windows | `RIDE-4.5-setup.exe`               | `RIDE.exe`          | `RIDEConsole.exe`           |
-| macOS   | `RIDE-4.5-macos.pkg` (macOS 12+, Apple silicon) | **RIDE** in Applications | `ride` (in `/usr/local/bin`) |
-| Linux   | `RIDE-4.5-linux-x86_64.run` (Ubuntu 22.04+, Debian 12, RHEL 9, Amazon Linux 2023) | - | `ride` |
+| Windows | `RIDE-4.51-setup.exe`               | `RIDE.exe`          | `RIDEConsole.exe`           |
+| macOS   | `RIDE-4.51-macos.pkg` (macOS 12+, Apple silicon) | **RIDE 4.51** in Applications | `ride-4.51` and `ride` (in `/usr/local/bin`) |
+| Linux   | `RIDE-4.51-linux-x86_64.run` (Ubuntu 22.04+, Debian 12, RHEL 9, Amazon Linux 2023) | - | `ride-4.51` and `ride` |
 
 The programs RIDE drives, the same on all three:
 
@@ -28,9 +28,14 @@ The programs RIDE drives, the same on all three:
 | `vm6747`    | the TMS320C6747 emulator                                |
 | `c2s`       | C-to-Shalimar converter                                 |
 
-On Windows they are `.exe` files in `bin\`; on macOS and Linux they are in
-`/usr/local/ride/bin` (`/opt/ride/bin` on Linux) and on `PATH` by name. RIDE.app
-on macOS carries its own copy of every one inside the app.
+On Windows they are `.exe` files in `bin\`; on macOS they are in
+`/usr/local/ride-4.51/bin` and on Linux in `/opt/ride-4.51/bin`, on `PATH` by
+name twice: `cpp11-4.51` always, and `cpp11` pointing at 4.51 as the newest
+installed. RIDE 4.51.app on macOS carries its own copy of every one inside the
+app. 4.51 installs beside 4.5 and leaves it where it was.
+
+The sample CCS 7.4 projects - K6747c, K6747cpp and P7misc - are in
+`examples/ccs`; its README says how RIDE opens one and what each prints.
 
 --------------------------------------------------------------------------
 ## 2. Languages and targets
@@ -114,7 +119,7 @@ Project, Debug / Release Configuration, Convert C ⇄ Shalimar, Jump to Next
 Issue, Clear Issues.
 
 The bottom panel shows **Errors**, **Progress** and **Output**. The title bar
-shows `RIDE 4.5 - <project> - <file>`, the status bar the language, the
+shows `RIDE 4.51 - <project> - <file>`, the status bar the language, the
 configuration, the compiler (`*` when the file chose it) and the target.
 
 On macOS the menus are in the menu bar at the top of the screen **and** in a

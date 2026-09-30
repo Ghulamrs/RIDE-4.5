@@ -4,17 +4,19 @@
 # Debian 12, RHEL/Rocky/Alma 9 and Amazon Linux 2023: the programs need glibc
 # 2.34 and libstdc++ from GCC 11 or newer, and nothing else of the distribution.
 #
-#   sudo sh RIDE-@VER@-linux-x86_64.run                    into /opt/ride, commands in /usr/local/bin
+#   sudo sh RIDE-@VER@-linux-x86_64.run                    into /opt/ride-@VER@, commands in /usr/local/bin
 #   sh RIDE-@VER@-linux-x86_64.run --prefix ~/ride         no root: commands in ~/.local/bin
 #   sh RIDE-@VER@-linux-x86_64.run --help
 #
-# /opt/ride/uninstall.sh takes it all away again.
+# /opt/ride-@VER@/uninstall.sh takes it all away again. Its own directory, so it
+# installs beside an earlier RIDE (4.5 is /opt/ride) and leaves that one alone.
 set -eu
 
 VER=@VER@
-PREFIX=/opt/ride
+PREFIX=/opt/ride-$VER
 LINKDIR=
 LINKS=1
+PLAIN=1
 USERPREFIX=0
 say() { printf '%s\n' "$*"; }
 die() { printf 'RIDE installer: %s\n' "$*" >&2; exit 1; }
@@ -26,12 +28,14 @@ while [ $# -gt 0 ]; do
     --bindir) [ $# -ge 2 ] || die "--bindir needs a directory"; LINKDIR=$2; shift 2 ;;
     --bindir=*) LINKDIR=${1#--bindir=}; shift ;;
     --no-links) LINKS=0; shift ;;
+    --no-plain-links) PLAIN=0; shift ;;
     -h|--help)
         say "RIDE $VER installer for Linux x86-64"
-        say "  --prefix DIR   install into DIR (default /opt/ride, which needs root)"
+        say "  --prefix DIR   install into DIR (default /opt/ride-$VER, which needs root)"
         say "  --bindir DIR   put the command links there (default /usr/local/bin as root,"
         say "                 ~/.local/bin otherwise)"
         say "  --no-links     make no command links"
+        say "  --no-plain-links  make only the versioned ones (cpp11-$VER), not cpp11 and the rest"
         exit 0 ;;
     *) die "unknown option '$1' - see --help" ;;
     esac
@@ -81,17 +85,24 @@ if [ "$LINKS" = 1 ]; then
     # link is left out: coreutils already has /usr/bin/link, and PATH order would decide.
     for t in ride:RIDE c90 cpp11 shalimar c2s vm6747 asm6x masm lnk6x; do
         name=${t%%:*}; file=${t#*:}; [ "$file" = "$t" ] && file=$t
-        dest=$LINKDIR/$name
-        if [ -e "$dest" ] && [ ! -L "$dest" ]; then say "  kept $dest - it is not ours"; continue; fi
-        ln -sf "$PREFIX/bin/$file.exe" "$dest"
-        MADE="$MADE $dest"
+        for dest in "$LINKDIR/$name-$VER" "$LINKDIR/$name"; do
+            [ "$PLAIN" = 0 ] && [ "$dest" = "$LINKDIR/$name" ] && continue
+            if [ -e "$dest" ] && [ ! -L "$dest" ]; then say "  kept $dest - it is not ours"; continue; fi
+            ln -sf "$PREFIX/bin/$file.exe" "$dest"
+            MADE="$MADE $dest"
+        done
     done
+    [ "$PLAIN" = 1 ] && say "  the plain command names (ride, cpp11, ...) now point at RIDE $VER - --no-plain-links keeps them where they were"
 fi
 
 cat > "$PREFIX/uninstall.sh" <<EOF
 #!/bin/sh
-# Removes RIDE $VER from $PREFIX and the command links it made.
-for l in$MADE; do [ -L "\$l" ] && rm -f "\$l"; done
+# Removes RIDE $VER from $PREFIX and the command links it made - a link only
+# while it still points into $PREFIX, so a later RIDE's plain names survive.
+for l in$MADE; do
+    [ -L "\$l" ] || continue
+    case "\$(readlink "\$l")" in "$PREFIX"/*) rm -f "\$l" ;; esac
+done
 rm -rf "$PREFIX"
 [ "\${1:-}" = --quiet ] || echo "RIDE removed from $PREFIX"
 EOF
@@ -114,7 +125,7 @@ done
 
 # ---- does it work --------------------------------------------------------------
 say "RIDE $VER is in $PREFIX"
-[ -n "$MADE" ] && say "  commands in $LINKDIR: ride c90 cpp11 shalimar c2s vm6747 asm6x masm lnk6x"
+[ -n "$MADE" ] && say "  commands in $LINKDIR: ride c90 cpp11 shalimar c2s vm6747 asm6x masm lnk6x, each also as <name>-$VER"
 case ":$PATH:" in *":$LINKDIR:"*) ;; *) [ -n "$MADE" ] && say "  add $LINKDIR to your PATH to use them by name" ;; esac
 
 if command -v cc >/dev/null 2>&1 && command -v c++ >/dev/null 2>&1; then

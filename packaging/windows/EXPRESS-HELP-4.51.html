@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.5 — Express Help</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.51 — Express Help</title><style>
 :root{--bg:#fff;--fg:#1a1a1a;--muted:#5a5a5a;--rule:#e2e2e2;--accent:#6a4a2a;
 --codebg:#f5f3ef;--codefg:#3a2a1a;--tableh:#f0ece6;--link:#8a5a2a}
 @media (prefers-color-scheme:dark){:root{--bg:#1b1b1b;--fg:#e6e6e6;--muted:#a5a5a5;
@@ -36,7 +36,7 @@ nav.toc a{color:var(--fg)}
 @media print{body{font-size:11pt}.wrap{max-width:none;padding:0}
 nav.toc{break-after:page}h1,h2{break-after:avoid}pre,table,blockquote{break-inside:avoid}
 a{color:inherit;text-decoration:none}}
-</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.5 — Express Help</h1><div class="sub">Windows, macOS and Linux</div></div><nav class="toc"><div class="t">Contents</div><ul>
+</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.51 — Express Help</h1><div class="sub">Quick reference</div></div><nav class="toc"><div class="t">Contents</div><ul>
 <li class="l2"><a href="#1-what-is-installed-and-where">1. What is installed, and where</a></li>
 <li class="l2"><a href="#2-languages-and-targets">2. Languages and targets</a></li>
 <li class="l2"><a href="#3-debug-and-release-optimization">3. Debug and Release: optimization</a></li>
@@ -51,10 +51,11 @@ a{color:inherit;text-decoration:none}}
 </ul></nav><p>Three languages, four targets, one editor on three systems - a window on Windows and on macOS, a console editor on all three, and the project's own compilers, assemblers, linkers and C6000 emulator behind them. This is the quick reference; the full pages are under <code>help/</code>.</p>
 <hr>
 <h2 id="1-what-is-installed-and-where">1. What is installed, and where</h2>
-<table><thead><tr><th>System</th><th>Installer</th><th>Window (GUI)</th><th>Console editor</th></tr></thead><tbody><tr><td>Windows</td><td><code>RIDE-4.5-setup.exe</code></td><td><code>RIDE.exe</code></td><td><code>RIDEConsole.exe</code></td></tr><tr><td>macOS</td><td><code>RIDE-4.5-macos.pkg</code> (macOS 12+, Apple silicon)</td><td><strong>RIDE</strong> in Applications</td><td><code>ride</code> (in <code>/usr/local/bin</code>)</td></tr><tr><td>Linux</td><td><code>RIDE-4.5-linux-x86_64.run</code> (Ubuntu 22.04+, Debian 12, RHEL 9, Amazon Linux 2023)</td><td>-</td><td><code>ride</code></td></tr></tbody></table>
+<table><thead><tr><th>System</th><th>Installer</th><th>Window (GUI)</th><th>Console editor</th></tr></thead><tbody><tr><td>Windows</td><td><code>RIDE-4.51-setup.exe</code></td><td><code>RIDE.exe</code></td><td><code>RIDEConsole.exe</code></td></tr><tr><td>macOS</td><td><code>RIDE-4.51-macos.pkg</code> (macOS 12+, Apple silicon)</td><td><strong>RIDE 4.51</strong> in Applications</td><td><code>ride-4.51</code> and <code>ride</code> (in <code>/usr/local/bin</code>)</td></tr><tr><td>Linux</td><td><code>RIDE-4.51-linux-x86_64.run</code> (Ubuntu 22.04+, Debian 12, RHEL 9, Amazon Linux 2023)</td><td>-</td><td><code>ride-4.51</code> and <code>ride</code></td></tr></tbody></table>
 <p>The programs RIDE drives, the same on all three:</p>
 <table><thead><tr><th>Program</th><th>What it is</th></tr></thead><tbody><tr><td><code>c90</code></td><td>the C compiler - ISO C 90</td></tr><tr><td><code>cpp11</code></td><td>the C++ compiler - ISO C++ 11 (the subset in <code>docs/EXCLUSIONS.md</code>)</td></tr><tr><td><code>shalimar</code></td><td>the Shalimar compiler - Shalimar 1.2</td></tr><tr><td><code>masm</code></td><td>x86-64 assembler (answers ml64's command line too)</td></tr><tr><td><code>asm6x</code></td><td>TMS320C6000 assembler</td></tr><tr><td><code>link</code></td><td>x86-64 linker (Windows objects)</td></tr><tr><td><code>lnk6x</code></td><td>TMS320C6000 linker</td></tr><tr><td><code>vm6747</code></td><td>the TMS320C6747 emulator</td></tr><tr><td><code>c2s</code></td><td>C-to-Shalimar converter</td></tr></tbody></table>
-<p>On Windows they are <code>.exe</code> files in <code>bin\</code>; on macOS and Linux they are in <code>/usr/local/ride/bin</code> (<code>/opt/ride/bin</code> on Linux) and on <code>PATH</code> by name. RIDE.app on macOS carries its own copy of every one inside the app.</p>
+<p>On Windows they are <code>.exe</code> files in <code>bin\</code>; on macOS they are in <code>/usr/local/ride-4.51/bin</code> and on Linux in <code>/opt/ride-4.51/bin</code>, on <code>PATH</code> by name twice: <code>cpp11-4.51</code> always, and <code>cpp11</code> pointing at 4.51 as the newest installed. RIDE 4.51.app on macOS carries its own copy of every one inside the app. 4.51 installs beside 4.5 and leaves it where it was.</p>
+<p>The sample CCS 7.4 projects - K6747c, K6747cpp and P7misc - are in <code>examples/ccs</code>; its README says how RIDE opens one and what each prints.</p>
 <hr>
 <h2 id="2-languages-and-targets">2. Languages and targets</h2>
 <table><thead><tr><th>Language</th><th>Files</th><th>Compiler</th><th>Debug info</th></tr></thead><tbody><tr><td>C</td><td><code>.c</code> <code>.h</code></td><td><code>c90</code></td><td>DWARF on Linux and macOS</td></tr><tr><td>C++</td><td><code>.cpp</code> <code>.hpp</code></td><td><code>cpp11</code></td><td>DWARF on Linux and macOS</td></tr><tr><td>Shalimar</td><td><code>.shl</code></td><td><code>shalimar</code></td><td>none; its debugger stops by line</td></tr></tbody></table>
@@ -84,7 +85,7 @@ a{color:inherit;text-decoration:none}}
 <h2 id="5-making-and-building-a-project">5. Making and building a project</h2>
 <p><strong>Project</strong> menu: New Project…, Open Project…, Recent Projects, Save Project As…, Close Project, New File…, Add Current File, Add Files…, Remove File from Project, Rename File…, Move File to Group…, Delete File…, Project Include Paths…, Project Libraries….</p>
 <p><strong>Build</strong> menu: Compile File (Ctrl-B), Run File (F5), Build Project (F4), Run Project, Debug / Release Configuration, Convert C ⇄ Shalimar, Jump to Next Issue, Clear Issues.</p>
-<p>The bottom panel shows <strong>Errors</strong>, <strong>Progress</strong> and <strong>Output</strong>. The title bar shows <code>RIDE 4.5 - &lt;project&gt; - &lt;file&gt;</code>, the status bar the language, the configuration, the compiler (<code>*</code> when the file chose it) and the target.</p>
+<p>The bottom panel shows <strong>Errors</strong>, <strong>Progress</strong> and <strong>Output</strong>. The title bar shows <code>RIDE 4.51 - &lt;project&gt; - &lt;file&gt;</code>, the status bar the language, the configuration, the compiler (<code>*</code> when the file chose it) and the target.</p>
 <p>On macOS the menus are in the menu bar at the top of the screen <strong>and</strong> in a row inside the window; About RIDE is in the RIDE menu, as on every Mac app.</p>
 <hr>
 <h2 id="6-the-project-file-pro">6. The project file (<code>.pro</code>)</h2>

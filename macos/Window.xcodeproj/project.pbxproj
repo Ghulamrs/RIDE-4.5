@@ -30,6 +30,9 @@
 		A14BC55EADA33B5AD7400CFF /* settings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3E0080087BC1460F66AF910A /* settings.cpp */; };
 		1DD7A4E1D6ED022D516B8343 /* options.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5ACCE61EDF45C2CBF4C75B98 /* options.cpp */; };
 		7569C83B02CD43F1D6CF779C /* about.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3AA0DCBCBD28BDD17CE4B762 /* about.cpp */; };
+		2A623B64F21FC5CF618D6E9A /* ccsproject.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1049745E08E5CD9A09083C3 /* ccsproject.cpp */; };
+		C6793654D5304DBB1C5212C9 /* ccsoptions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 817A73279C46E2F67BF41496 /* ccsoptions.cpp */; };
+		763B16418BD01FA3E462650C /* ccsxml.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DC36FBFD733031A0993BAAD1 /* ccsxml.cpp */; };
 		83ACF32D4DEE929C2C31F2CE /* channel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 93AE13615387F689377864EB /* channel.cpp */; };
 		DB18F031C6B0E086C313D7B9 /* session.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 918EEAF9AA1BE04310008519 /* session.cpp */; };
 		E1508A0CE98C207EE9D93680 /* bridge.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F80F66892DBDBEFEE6E25237 /* bridge.cpp */; };
@@ -65,6 +68,9 @@
 		3E0080087BC1460F66AF910A /* settings.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = settings.cpp; path = "../src/settings.cpp"; sourceTree = "<group>"; };
 		5ACCE61EDF45C2CBF4C75B98 /* options.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = options.cpp; path = "../src/options.cpp"; sourceTree = "<group>"; };
 		3AA0DCBCBD28BDD17CE4B762 /* about.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = about.cpp; path = "../src/about.cpp"; sourceTree = "<group>"; };
+		E1049745E08E5CD9A09083C3 /* ccsproject.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ccsproject.cpp; path = "../src/ccs/ccsproject.cpp"; sourceTree = "<group>"; };
+		817A73279C46E2F67BF41496 /* ccsoptions.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ccsoptions.cpp; path = "../src/ccs/ccsoptions.cpp"; sourceTree = "<group>"; };
+		DC36FBFD733031A0993BAAD1 /* ccsxml.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ccsxml.cpp; path = "../src/ccs/ccsxml.cpp"; sourceTree = "<group>"; };
 		93AE13615387F689377864EB /* channel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = channel.cpp; path = "../src/shalimar/channel.cpp"; sourceTree = "<group>"; };
 		918EEAF9AA1BE04310008519 /* session.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = session.cpp; path = "../src/shalimar/session.cpp"; sourceTree = "<group>"; };
 		F80F66892DBDBEFEE6E25237 /* bridge.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bridge.cpp; path = "../winforms/bridge.cpp"; sourceTree = "<group>"; };
@@ -132,6 +138,9 @@
 				3E0080087BC1460F66AF910A /* settings.cpp */,
 				5ACCE61EDF45C2CBF4C75B98 /* options.cpp */,
 				3AA0DCBCBD28BDD17CE4B762 /* about.cpp */,
+				E1049745E08E5CD9A09083C3 /* ccsproject.cpp */,
+				817A73279C46E2F67BF41496 /* ccsoptions.cpp */,
+				DC36FBFD733031A0993BAAD1 /* ccsxml.cpp */,
 				93AE13615387F689377864EB /* channel.cpp */,
 				918EEAF9AA1BE04310008519 /* session.cpp */,
 				F80F66892DBDBEFEE6E25237 /* bridge.cpp */,
@@ -259,6 +268,9 @@
 				A14BC55EADA33B5AD7400CFF /* settings.cpp in Sources */,
 				1DD7A4E1D6ED022D516B8343 /* options.cpp in Sources */,
 				7569C83B02CD43F1D6CF779C /* about.cpp in Sources */,
+				2A623B64F21FC5CF618D6E9A /* ccsproject.cpp in Sources */,
+				C6793654D5304DBB1C5212C9 /* ccsoptions.cpp in Sources */,
+				763B16418BD01FA3E462650C /* ccsxml.cpp in Sources */,
 				83ACF32D4DEE929C2C31F2CE /* channel.cpp in Sources */,
 				DB18F031C6B0E086C313D7B9 /* session.cpp in Sources */,
 				E1508A0CE98C207EE9D93680 /* bridge.cpp in Sources */,
@@ -326,7 +338,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ghulamrs.ride;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ghulamrs.ride451;
 				PRODUCT_NAME = RIDE;
 			};
 			name = Debug;
@@ -339,7 +351,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ghulamrs.ride;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ghulamrs.ride451;
 				PRODUCT_NAME = RIDE;
 			};
 			name = Release;

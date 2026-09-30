@@ -12,7 +12,7 @@
 # install-header.sh, checks the machine, installs and links the commands.
 set -eu
 
-VER=${1:-4.5}
+VER=${1:-4.51}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 CPP=${CPP:-$ROOT/../VM6747/Compiler-Cppi}
@@ -40,6 +40,7 @@ cp -rp "$ROOT/help" "$STAGE/help"
 cp -rp "$ROOT/projects" "$STAGE/projects"
 cp -rp "$ROOT/programs" "$STAGE/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$STAGE/examples/" 2>/dev/null || true; done
+cp -rp "$ROOT/examples/ccs" "$STAGE/examples/ccs"
 cat > "$STAGE/settings.json" <<'EOF'
 {
   "include": "include",

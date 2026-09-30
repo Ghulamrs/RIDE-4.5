@@ -1,15 +1,19 @@
 #!/bin/sh
 # The macOS installer: one .pkg holding the window and the console.
 #
-#   /Applications/RIDE.app      the AppKit window, with every tool it drives
-#                               and their headers and runtime inside it
-#   /usr/local/ride/            the console editor and the same tools, laid
+#   /Applications/RIDE <ver>.app   the AppKit window, with every tool it
+#                               drives and their headers and runtime inside it
+#   /usr/local/ride-<ver>/      the console editor and the same tools, laid
 #                               out as the Windows install is: bin include
-#                               lib help examples
-#   /usr/local/bin/<tool>       symbolic links into /usr/local/ride/bin, so
-#                               ride, c90, cpp11, shalimar and the rest are
-#                               on PATH - all but link, which macOS already
+#                               lib help examples (examples/ccs: CCS samples)
+#   /usr/local/bin/<tool>-<ver> symbolic links into /usr/local/ride-<ver>/bin,
+#   /usr/local/bin/<tool>       and the plain names pointed at this version as
+#                               the newest - all but link, which macOS already
 #                               has as /usr/bin/link
+#
+# Its own package identifier, app name and directory: 4.51 installs beside
+# 4.5 (com.ghulamrs.ride, /Applications/RIDE.app, /usr/local/ride) and touches
+# none of it but the plain command names, which now point here.
 #
 #   packaging/macos/build-pkg.sh [version]        -> dist/RIDE-<ver>-macos.pkg
 #
@@ -23,7 +27,7 @@
 # Mac asks the user to open it from Finder's context menu the first time.
 set -eu
 
-VER=${1:-4.5}
+VER=${1:-4.51}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 CPP=${CPP:-$ROOT/../VM6747/Compiler-Cppi}
@@ -47,12 +51,15 @@ XC=$(mktemp -d "${TMPDIR:-/tmp}/ride-xcode.XXXXXX")
 xcodebuild -quiet -project "$ROOT/macos/Window.xcodeproj" -scheme RIDE -configuration Release \
     -derivedDataPath "$XC" build
 APPSRC=$XC/Build/Products/Release/RIDE.app
+APPNAME="RIDE $VER.app"
+RDIR=ride-$VER
+PKGID=com.ghulamrs.ride$(echo "$VER" | tr -d .)
 
 say "[3/6] Staging"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/Applications" "$STAGE/usr/local/ride" "$STAGE/usr/local/bin"
-ditto "$APPSRC" "$STAGE/Applications/RIDE.app"
-APP=$STAGE/Applications/RIDE.app/Contents
+mkdir -p "$STAGE/Applications" "$STAGE/usr/local/$RDIR" "$STAGE/usr/local/bin"
+ditto "$APPSRC" "$STAGE/Applications/$APPNAME"
+APP=$STAGE/Applications/$APPNAME/Contents
 TOOLS="c90 cpp11 shalimar c2s vm6747 asm6x masm link lnk6x"
 
 # The window: the macOS-12 tools beside it, and what they read in Resources -
@@ -69,11 +76,11 @@ ln -s ../Resources/include "$APP/MacOS/include"
 ln -s ../Resources/lib "$APP/MacOS/lib"
 # Copies made under ~/Documents carry provenance and Finder attributes codesign refuses.
 xattr -cr "$STAGE"
-codesign --force --deep --sign - "$STAGE/Applications/RIDE.app"
-codesign --verify --deep "$STAGE/Applications/RIDE.app"
+codesign --force --deep --sign - "$STAGE/Applications/$APPNAME"
+codesign --verify --deep "$STAGE/Applications/$APPNAME"
 
 # The console, as the Windows install lays itself out.
-R=$STAGE/usr/local/ride
+R=$STAGE/usr/local/$RDIR
 mkdir -p "$R/bin" "$R/examples"
 cp -p "$MAC/bin/RIDE.exe" "$R/bin/"
 for t in $TOOLS; do cp -p "$MAC/bin/$t.exe" "$R/bin/"; done
@@ -85,11 +92,13 @@ ditto "$ROOT/help" "$R/help"
 ditto "$ROOT/projects" "$R/projects"
 ditto "$ROOT/programs" "$R/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$R/examples/" 2>/dev/null || true; done
+ditto "$ROOT/examples/ccs" "$R/examples/ccs"
 for f in "$R"/bin/*.exe; do codesign --force --sign - "$f"; done
-ln -s ../ride/bin/RIDE.exe "$STAGE/usr/local/bin/ride"
-for t in $TOOLS; do
-    [ "$t" = link ] && continue
-    ln -s "../ride/bin/$t.exe" "$STAGE/usr/local/bin/$t"
+for n in ride:RIDE $TOOLS; do
+    name=${n%%:*}; file=${n#*:}
+    [ "$name" = link ] && continue
+    ln -s "../$RDIR/bin/$file.exe" "$STAGE/usr/local/bin/$name-$VER"
+    ln -s "../$RDIR/bin/$file.exe" "$STAGE/usr/local/bin/$name"
 done
 
 say "[4/6] Checking the staged compilers find their own headers"
@@ -122,7 +131,7 @@ for b in bundles: b['BundleIsRelocatable'] = False
 with open(p, 'wb') as f: plistlib.dump(bundles, f)
 print('  %d bundle(s), none relocatable: %s' % (len(bundles), ', '.join(b['RootRelativeBundlePath'] for b in bundles)))
 PY
-pkgbuild --root "$STAGE" --component-plist "$COMP" --identifier com.ghulamrs.ride \
+pkgbuild --root "$STAGE" --component-plist "$COMP" --identifier "$PKGID" \
     --version "$VER" --install-location / "$MAC/RIDE-component.pkg" >/dev/null
 productbuild --package "$MAC/RIDE-component.pkg" "$OUT/RIDE-$VER-macos.pkg" >/dev/null
 if lsbom -s "$(pkgutil --bom "$MAC/RIDE-component.pkg" | head -1)" | grep -q '/\._'; then

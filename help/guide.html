@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.5 — User Guide</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RIDE 4.51 — User Guide</title><style>
 :root{--bg:#fff;--fg:#1a1a1a;--muted:#5a5a5a;--rule:#e2e2e2;--accent:#6a4a2a;
 --codebg:#f5f3ef;--codefg:#3a2a1a;--tableh:#f0ece6;--link:#8a5a2a}
 @media (prefers-color-scheme:dark){:root{--bg:#1b1b1b;--fg:#e6e6e6;--muted:#a5a5a5;
@@ -36,7 +36,7 @@ nav.toc a{color:var(--fg)}
 @media print{body{font-size:11pt}.wrap{max-width:none;padding:0}
 nav.toc{break-after:page}h1,h2{break-after:avoid}pre,table,blockquote{break-inside:avoid}
 a{color:inherit;text-decoration:none}}
-</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.5 — User Guide</h1><div class="sub">Using the editor</div></div><nav class="toc"><div class="t">Contents</div><ul>
+</style></head><body><div class="wrap"><div class="masthead"><h1 style="border:none;margin-top:0">RIDE 4.51 — User Guide</h1><div class="sub">Using the editor</div></div><nav class="toc"><div class="t">Contents</div><ul>
 <li class="l1"><a href="#1-what-it-is">1. What it is</a></li>
 <li class="l2"><a href="#three-variants-one-core">Three variants, one core</a></li>
 <li class="l2"><a href="#releases">Releases</a></li>
@@ -66,6 +66,7 @@ a{color:inherit;text-decoration:none}}
 <li class="l2"><a href="#replacing">Replacing</a></li>
 <li class="l2"><a href="#finding-across-the-project">Finding across the project</a></li>
 <li class="l1"><a href="#6-the-project">6. The project</a></li>
+<li class="l2"><a href="#a-ccs-project-opened-as-it-is">A CCS project, opened as it is</a></li>
 <li class="l2"><a href="#one-kind-of-project-file">One kind of project file</a></li>
 <li class="l2"><a href="#groups">Groups</a></li>
 <li class="l2"><a href="#build-what-the-project-makes"><code>&quot;build&quot;</code> — what the project makes</a></li>
@@ -312,6 +313,12 @@ RIDE.exe --project some/dir       open a directory as the project</code></pre>
 <p><strong>Debug or release is not in here.</strong> Which of the two you are building is what <em>you</em> are doing today, not a property of the program — and a project file travels, so one arriving with a configuration in it would put everyone who opened it into release. It lives in <code>~/.ride/state.json</code> with the rest of what this machine had, <code>--config</code> overrides it for one run, and a <code>&quot;config&quot;</code> key left in a project file is read by nothing.</p>
 <p><strong>A directory may hold several.</strong> <code>prime.pro</code> and <code>sums.pro</code> side by side is the case the naming is for: opening the directory takes the first by name and says so, and <code>Project ▸ Open</code> lists them to choose from. Whichever you opened is the one reopened next time.</p>
 <p><strong><code>Project ▸ Save as...</code></strong> writes one out under a name of its own. That is the only thing that converts a project — see below.</p>
+<h2 id="a-ccs-project-opened-as-it-is">A CCS project, opened as it is</h2>
+<p>A Code Composer Studio 7.4 or 5.5 project for the TMS320C6747 opens without being converted, once <code>settings.json</code> says so:</p>
+<pre><code>&quot;ccs&quot;: { &quot;enabled&quot;: true, &quot;root&quot;: &quot;C:/ti/ccsv7&quot; }</code></pre>
+<p><code>Project ▸ Open...</code> then also takes a folder holding <code>.project</code> and <code>.ccsproject</code>. RIDE reads those and <code>.cproject</code> afresh every time the project is opened or built, so an edit made in CCS is seen at once, and it writes nothing into them: the file it opens with and the configuration it builds go into <code>settings.json</code> under the project's path. <code>root</code> resolves <code>${CG_TOOL_ROOT}</code>; it may be left out on a machine with no CCS, and the TI compiler directory a tms6747 build already links against stands in. <code>--ccs</code> on the console does the same for one run.</p>
+<p>CCS's Debug and Release are RIDE's. What of the project's options RIDE's own toolchain can honour is applied - the optimisation level (-O3 as -O2), <code>-g</code>, defines, undefines, include paths, <code>--no_compress</code>, and for the link the project's <code>.cmd</code> file, heap and stack sizes, <code>-i</code> paths, <code>-l</code> libraries (<code>libc.a</code>, TI's index, becomes <code>rts6740_elf_eh.lib</code>) and <code>--rom_model</code>. Every other option takes RIDE's default, and one line in the Messages pane names them: <code>CCS project K6747c (Release): 1 option not supported, using RIDE&#x27;s defaults: --opt_for_speed=5; ...</code>. The Compiler Options dialog shows what was read and changes nothing - edit it in CCS. Only C6000 C674x devices open; any other is refused with its device named. The sources are every file in the folder by extension, the linked files from <code>.project</code>, minus what <code>.cproject</code> excludes.</p>
+<p>Three sample CCS 7.4 projects come with RIDE, in <code>examples/ccs</code> of the install - a C one, a C++ one and one with a subfolder and an excluded file - and its <code>README.md</code> says what each prints in Debug and in Release.</p>
 <h2 id="one-kind-of-project-file">One kind of project file</h2>
 <p>A project is a <code>.pro</code> file and nothing else. Older releases also read a whole-directory project file under two earlier names; RIDE 4.0 reads neither. Its configuration is <code>settings.json</code> beside the programs, and what it remembers between sessions is <code>state.json</code> in <code>.ride</code> under your home directory.</p>
 <p>With no project at all, the pane on the left shows the files you have open, and nothing at all when none are.</p>
