@@ -5437,9 +5437,11 @@ void ccsProjectsAsTheyAre() {
               "the Messages line names the option and the project: " + line);
         check(line.find("; RIDE's own instead of: -mv6740, --diag_warning=225") != std::string::npos, "and then what RIDE decides for itself");
         checkEqual(editor::ccs::report(r, editor::ConfigDebug).substr(0, 54), "CCS project K6747c (Debug): no unsupported options; RI", "Debug's line says nothing is unsupported");
+        // The linked file is the Windows box's; there it is present and the line is empty.
+        const bool linkedHere = editor::path::exists("C:/cxx1/ccsref/src/util.c");
         std::string sources = editor::ccs::sourceReport(r);
-        check(sources.find("linked file not on this machine: C:/cxx1/ccsref/src/util.c") != std::string::npos,
-              "the sources line says the linked file is not here: " + sources);
+        check(linkedHere ? sources.empty() : sources.find("linked file not on this machine: C:/cxx1/ccsref/src/util.c") != std::string::npos,
+              "the sources line says the linked file is not here, or nothing where it is: " + sources);
         std::string text = editor::ccs::mappingText(r, editor::ConfigRelease);
         check(text.find("--define=c6747 --define=NDEBUG --define=LEVEL=2 -> -Dc6747 -DNDEBUG -DLEVEL=2") != std::string::npos &&
                   text.find("edit them in CCS") != std::string::npos, "the dialog's text has each mapping and says where to edit");
@@ -5579,8 +5581,10 @@ void ccsProjectsAsTheyAre() {
         check(link.given && link.stack == "0x1000" && link.cmdFiles.size() == 1, "the link is handed the project's");
         check(!editor::Project().tiLink(editor::ConfigRelease).given, "and a .pro project hands nothing");
         std::vector<std::string> report = project.ccsReport(editor::ConfigRelease);
-        check(report.size() == 2 && report[0].compare(0, 28, "CCS project K6747c (Release)") == 0 && report[1].find("linked file") != std::string::npos,
-              "the Messages lines are the options line and the sources line");
+        const bool linkedHere = editor::path::exists("C:/cxx1/ccsref/src/util.c");
+        check(report.size() == (linkedHere ? 1u : 2u) && report[0].compare(0, 28, "CCS project K6747c (Release)") == 0 &&
+                  (linkedHere || report[1].find("linked file") != std::string::npos),
+              "the Messages lines are the options line and, where the linked file is missing, the sources line");
         check(project.ccsMapping(editor::ConfigDebug).find("Debug - what CCS set") != std::string::npos, "the dialog's text is per configuration");
         std::string program = project.targetProgram();
         check(program.compare(0, project.root().size(), project.root()) != 0 && program.find("ride-ccs-K6747c") != std::string::npos,
