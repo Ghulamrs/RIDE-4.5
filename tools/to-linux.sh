@@ -61,13 +61,13 @@ SSH=(ssh -n -i "$KEY" "$BOX")
 say() { printf '%s\n' "$*"; }
 
 # ---- the editor -----------------------------------------------------------
-# help/ goes because tests/test.cpp checks Help > Contents against it, and
-# tools/ because --check of the projects is one of the things `make check`
-# can ask for.
+# help/ goes for tests/test.cpp's Help > Contents check, and tools/ for `make check`'s --check of the
+# projects. shc's runtime goes as 'shmrt-*' and not 'lib', which matched every lib/ at any depth and
+# dropped examples/ccs/P7misc/lib/util.c and its docs/ccs-reference twin.
 tar --no-mac-metadata \
     --exclude 'obj' --exclude '*.o' --exclude '*.d' --exclude '*.exe' \
     --exclude 'tests/test' --exclude 'tests/session' --exclude '* 2.*' \
-    --exclude 'lib' --exclude 'x64' --exclude 'DerivedData' --exclude 'bin' \
+    --exclude 'shmrt-*' --exclude 'x64' --exclude 'DerivedData' --exclude 'bin' \
     -czf "$TMP/ride-src.tgz" \
     src tests winforms examples help tools docs packaging projects programs Makefile workspace.mk README.md 2>/dev/null || exit 2
 

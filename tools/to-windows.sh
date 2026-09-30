@@ -59,14 +59,13 @@ trap 'rm -rf "$TMP"' EXIT
 say() { printf '%s\n' "$*"; }
 
 # ---- the editor -----------------------------------------------------------
-# Built things are left out by name as well as by suffix: a Mach-O RIDE.exe
-# or tests/test that travels over is "newer" than its source there and reads
-# as a broken machine. help/ goes because tests/test.cpp checks Help > Contents
-# against it, and that check would otherwise run on one machine in three.
+# Built things go by name and suffix: a Mach-O RIDE.exe or tests/test sent over is "newer" than its
+# source there. help/ goes for tests/test.cpp's Help > Contents check. shc's runtime goes as 'shmrt-*'
+# and not 'lib', which matched every lib/ and dropped examples/ccs/P7misc/lib/util.c and its docs twin.
 tar --no-mac-metadata \
     --exclude 'obj' --exclude '*.o' --exclude '*.d' --exclude '*.exe' \
     --exclude 'tests/test' --exclude 'tests/session' --exclude '* 2.*' \
-    --exclude 'lib' --exclude 'x64' --exclude 'DerivedData' \
+    --exclude 'shmrt-*' --exclude 'x64' --exclude 'DerivedData' \
     -czf "$TMP/ride-src.tgz" \
     src tests winforms examples help tools docs packaging projects programs \
     Makefile workspace.mk build.bat clean.cmd README.md RIDE.pro \
