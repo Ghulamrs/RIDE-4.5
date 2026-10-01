@@ -128,7 +128,7 @@ a{color:inherit;text-decoration:none}}
 <pre><code>cpp11 -S -masm=masm hello.cpp -o hello.asm
 masm -t x64 hello.asm -o hello.obj          (or masm /c /nologo /Fo hello.obj hello.asm)</code></pre>
 <p>A <code>.s</code> from plain <code>cpp11 -S</code> is clang's spelling and <code>masm</code> will not read it.</p>
-<p><strong>The link</strong>: <code>link</code> and <code>lnk6x</code> are RIDE's own. When one of them fails a build the source did not cause, RIDE asks whether to use Visual Studio's <code>link.exe</code> (or TI's <code>lnk6x</code>) for that build - found through vswhere or the directory <strong>Option ▸ Linker for tms6747…</strong> names; <code>&quot;askNative&quot;: false</code> in <code>settings.json</code> never asks.</p>
+<p><strong>The link</strong>: <code>link</code> and <code>lnk6x</code> are RIDE's own. When one of them itself fails a build - not for the program's own link error, such as a missing <code>main</code> - RIDE asks whether to use Visual Studio's <code>link.exe</code> (or TI's <code>lnk6x</code>) for that build - found through vswhere or the directory <strong>Option ▸ Linker for tms6747…</strong> names; <code>&quot;askNative&quot;: false</code> in <code>settings.json</code> never asks.</p>
 <p><strong>Real C674x silicon (.out / .hex)</strong>: <code>bin\ti\ti-build.cmd &lt;program&gt;</code> builds a linked <code>.out</code> and Intel <code>.hex</code> with a Texas Instruments Code Generation Tools install already on the machine (none of TI's tools ship with RIDE); see <code>bin\ti\TI-BUILD.txt</code>.</p>
 <hr>
 <h2 id="9-where-things-are">9. Where things are</h2>

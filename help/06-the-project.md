@@ -38,36 +38,81 @@ That is the only thing that converts a project — see below.
 ## A CCS project, opened as it is
 
 A Code Composer Studio 7.4 or 5.5 project for the TMS320C6747 opens without
-being converted, once `settings.json` says so:
+being converted. RIDE reads it, builds it with its own tools and writes nothing
+into its folder, so the same folder still opens in CCS.
+
+**1. Turn the CCS switch on.** In `settings.json` beside the programs:
 
 ```json
 "ccs": { "enabled": true, "root": "C:/ti/ccsv7" }
 ```
 
-`Project ▸ Open...` then also takes a folder holding `.project` and
-`.ccsproject`. RIDE reads those and `.cproject` afresh every time the project is
-opened or built, so an edit made in CCS is seen at once, and it writes nothing
-into them: the file it opens with and the configuration it builds go into
-`settings.json` under the project's path. `root` resolves `${CG_TOOL_ROOT}`; it
-may be left out on a machine with no CCS, and the TI compiler directory a
-tms6747 build already links against stands in. `--ccs` on the console does the
-same for one run.
+`root` is the CCS install, used to resolve `${CG_TOOL_ROOT}` in the project's
+paths. It may be left out on a machine with no CCS; the TI compiler directory a
+tms6747 build already links against stands in. On the console, `--ccs` does the
+same for one run, and `--ccs-root dir` names the install.
 
-CCS's Debug and Release are RIDE's. What of the project's options RIDE's own
-toolchain can honour is applied - the optimisation level (-O3 as -O2), `-g`,
-defines, undefines, include paths, `--no_compress`, and for the link the
-project's `.cmd` file, heap and stack sizes, `-i` paths, `-l` libraries
-(`libc.a`, TI's index, becomes `rts6740_elf_eh.lib`) and `--rom_model`. Every
-other option takes RIDE's default, and one line in the Messages pane names them:
-`CCS project K6747c (Release): 1 option not supported, using RIDE's defaults:
---opt_for_speed=5; ...`. The Compiler Options dialog shows what was read and
-changes nothing - edit it in CCS. Only C6000 C674x devices open; any other is
-refused with its device named. The sources are every file in the folder by
-extension, the linked files from `.project`, minus what `.cproject` excludes.
+**2. Open the folder.** `Project ▸ Open...` and choose the folder that holds
+`.project`, `.ccsproject` and `.cproject` - the folder, not a file in it. On the
+console, give the folder: `ride Sample --ccs --run`. RIDE reads the three files
+afresh every time the project is opened or built, so an edit made in CCS is
+seen at once. What it remembers - which configuration you built last - goes
+into `settings.json` under the project's path, never into the project.
 
-Four sample CCS 7.4 projects come with RIDE, in `examples/ccs` of the
-install - a C one, two C++ ones and one with a subfolder and an excluded file -
-and its `README.md` says what each prints in Debug and in Release.
+**3. Pick Debug or Release.** CCS's two configurations are RIDE's two:
+`Ctrl-D` or **Build ▸ Debug / Release**, `--config debug|release` on the
+console. Each takes its own defines, optimisation level and link options from
+`.cproject`.
+
+**4. Build and run** - `F4` builds, **Build ▸ Run project** builds and runs,
+as `--build` and `--run` do on the console. The target is tms6747 whatever the
+editor was set to. RIDE compiles with cpp11 (C++) or c90 (C), assembles with
+asm6x, and runs the program on vm6747, the C6747 emulator, in the console pane.
+
+**What the first lines say.** Before anything is compiled, one line names every
+option of the project that RIDE's tools do not take, and that RIDE's default
+stands in for:
+
+    CCS project Sample (Debug): no unsupported options; RIDE's own instead of:
+    -mv6740, --abi=eabi, -o${ProjName}.out, -m${ProjName}.map, ...
+
+*No unsupported options* means every option that changes the program was
+honoured; the list after it is options RIDE's tools already behave as - the
+device, the ABI, the output and map file names, the diagnostic format. What is
+honoured: the optimisation level (`-O3` as `-O2`), `-g`, defines, undefines,
+include paths, `--no_compress`, and for the link the project's `.cmd` file,
+heap and stack sizes, `-i` paths, `-l` libraries (`libc.a`, TI's index, becomes
+`rts6740_elf_eh.lib`) and the memory model. Anything else is named there as
+*not supported* - `--opt_for_speed=5`, say - and takes RIDE's default.
+
+    CCS project Sample: TI's option definitions are not here - lib/ccs beside the program, ...
+
+means RIDE could not find TI's option definitions, which give an option the
+project never stored its CCS default. They ship in `docs/ccs-reference` of the
+install; this line means that folder is missing, and the build goes on with
+RIDE's defaults - reinstall to put it back.
+
+**A `.out` for the board.** The emulator runs the assembly; a file CCS can load
+onto a C6747 needs a link against TI's runtime. Name TI's compiler directory
+under **Tools ▸ TI compiler for tms6747...** (`ti-cgt-c6000_x.y.z`, the one with
+`bin/lnk6x`) and a directory holding `rts6740_elf_eh.lib` - CCS ships only the
+build without exceptions; `bin/ti/ti-build` makes the other - or pass
+`--ti dir --tilib dir` on the console. Release builds then end with
+`[linked <program>.out]`. The installed `settings.json` links with RIDE's own
+lnk6x; with TI's, RIDE passes `--rom_model`, CCS's default, where the project
+does not say.
+
+**What does not open.** Only C6000 C674x devices: any other is refused with its
+device named. The sources are every file in the folder by extension, the linked
+files from `.project`, minus what `.cproject` excludes. The **Compiler Options**
+dialog shows what was read and changes nothing - edit the project in CCS.
+
+**The four samples** in `examples/ccs` of the install - a C one, two C++ ones,
+one with a subfolder and an excluded file - say in their `README.md` what each
+prints in Debug and in Release. `Sample` prints through `std::cout`: built by
+CCS itself and run on TI's simulator it prints nothing, because TI's
+`<iostream>` writes no console output there; its values are CCS's all the same,
+and its `-D_STD_IO_` switch prints them through `printf`.
 
 ## One kind of project file
 

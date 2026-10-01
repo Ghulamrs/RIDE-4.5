@@ -188,10 +188,11 @@ host's tools for that. Three jobs go to native tools:
    project's own masm and link did not build it. Use Visual Studio's ml64 and
    link.exe for this build instead?"* - and a Yes builds again through the
    vendor's, found as always (vswhere, never PATH); `"askNative": false` in
-   `settings.json` never asks and lets the build fail. Today that question
-   comes up on every real Windows link: LINK does not yet read Microsoft's C
-   runtime (`LIB`, COMDAT folding, the default entry point);
-   on Linux the host driver (`cc`/`gcc`) or, for C++, `clang++`/`g++`; on macOS
+   `settings.json` never asks and lets the build fail. It is asked only when
+   masm or link itself failed: not for a program's own link error - a missing
+   `main`, an unresolved or duplicate symbol, a library made for another
+   platform, which Microsoft's tools refuse the same way - and never for a `cl`
+   build, which links with its own. On Linux the linker is the host driver (`cc`/`gcc`) or, for C++, `clang++`/`g++`; on macOS
    `clang++`. A link of C++ objects goes through the C++ driver so the C++
    runtime is pulled in.
 

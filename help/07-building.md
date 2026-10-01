@@ -70,14 +70,18 @@ differs, and the editor says which rather than pretending they are the same:
 
 | | debug | release |
 | --- | --- | --- |
-| `cl` | `/Od /Zi /D_DEBUG` | `/O2 /DNDEBUG` |
+| `cl` | `/Od /Zi /D_DEBUG /MTd` | `/O2 /DNDEBUG /MT` |
 | `clang++`, `g++` | `-g -D_DEBUG=1` | `-O2 -DNDEBUG=1` |
-| `c90`, `cpp11` | `-g -D_DEBUG=1`, and the define alone where there is no line table | `-DNDEBUG=1` |
+| `c90`, `cpp11` | `-g -D_DEBUG=1`, and the define alone where there is no line table | `-O2 -DNDEBUG=1` |
 | `shalimar` | `--debug` | nothing |
 
-**c90 has no optimiser**, so release for it is the define and nothing else. The
-status bar says `- c90 has no -O` when you switch, rather than letting you
-believe otherwise.
+These are the defaults; **Project ▸ Compiler Options** changes them per
+configuration. c90 optimises the x86-64 targets only, and its `-O2` is its
+`-O1` today. cpp11 optimises every target: on tms6747 `-O1` keeps locals in
+registers, schedules execute packets and fills delay slots, and `-O2` adds
+software pipelining, loop-invariant hoisting and inlining. The status bar names
+a toolchain that has no `-O` when you switch, rather than letting you believe
+otherwise.
 
 **`shalimar --debug` does not change the code.** The assembly is byte-identical
 between the two; what changes is which runtime archive is linked, and only the

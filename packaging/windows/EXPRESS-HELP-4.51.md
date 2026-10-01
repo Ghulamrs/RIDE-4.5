@@ -194,8 +194,8 @@ To use `masm` yourself, ask for its spelling:
 
 A `.s` from plain `cpp11 -S` is clang's spelling and `masm` will not read it.
 
-**The link**: `link` and `lnk6x` are RIDE's own. When one of them fails a build
-the source did not cause, RIDE asks whether to use Visual Studio's `link.exe`
+**The link**: `link` and `lnk6x` are RIDE's own. When one of them itself fails a
+build - not for the program's own link error, such as a missing `main` - RIDE asks whether to use Visual Studio's `link.exe`
 (or TI's `lnk6x`) for that build - found through vswhere or the directory
 **Option ▸ Linker for tms6747…** names; `"askNative": false` in
 `settings.json` never asks.

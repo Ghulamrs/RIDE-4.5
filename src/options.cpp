@@ -18,7 +18,7 @@ static const Def kDefs[] = {
     { "c90.g", "C (c90)", "Debug line table (-g)", Check, "", "" },
     { "c90.defines", "C (c90)", "Defines (-D)", Text, "", "';' between them: NAME or NAME=value" },
     { "c90.undefines", "C (c90)", "Undefines (-U)", Text, "", "';' between them" },
-    { "cpp11.opt", "C++ (cpp11)", "Optimization", Choice, "-O0|-O1|-O2", "-O2 adds inlining and loop alignment to -O1" },
+    { "cpp11.opt", "C++ (cpp11)", "Optimization", Choice, "-O0|-O1|-O2", "tms6747: -O1 schedules packets and keeps locals in registers, -O2 adds pipelining; x86_64: -O2 adds inlining" },
     { "cpp11.g", "C++ (cpp11)", "Debug line table (-g)", Check, "", "" },
     { "cpp11.defines", "C++ (cpp11)", "Defines (-D)", Text, "", "';' between them: NAME or NAME=value" },
     { "cpp11.undefines", "C++ (cpp11)", "Undefines (-U)", Text, "", "';' between them" },
