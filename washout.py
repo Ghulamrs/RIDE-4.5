@@ -12,8 +12,10 @@ projects compile against, lib/ and include/. Three more because the projects nam
 them: msvc/compat (the <unistd.h> MSVC lacks, for cc1 and cxx1), Shalimar's
 runtime/ (its projects build the runtime from it) and, for RIDE, macos/ and
 winforms/ (its two windows), product.props, and help/, projects/ and programs/,
-which the macOS window's project copies into RIDE.app and cannot build without. Nothing else goes: no Makefile,
-README, doc, test, example, help, script or seal. A source directory keeps only
+which the macOS window's project copies into RIDE.app and cannot build without.
+RIDE's examples/, projects/ and programs/ go as their sources (2026-10-02), the CCS
+samples' .project, .cproject and .ccsproject with them, and the installers'
+settings.json. Nothing else goes: no Makefile, README, doc, test, script or seal. A source directory keeps only
 source and project files; ide/, lib/, include/ and msvc/compat are whole.
 
 What was measured: every path the solutions, projects and workspaces name was
@@ -30,9 +32,11 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # (project, whole directories, source directories, named files): what compiling needs.
 # help/, projects/ and programs/ because the macOS window's project copies them into
 # RIDE.app as it builds, and fails without them; the Windows projects do not use them.
-RIDE_PLAN = ("RIDE-4.5", ["Editor.xcodeproj", "RIDE.xcworkspace", "help", "projects", "programs"],
+RIDE_PLAN = ("RIDE-4.5", ["Editor.xcodeproj", "RIDE.xcworkspace", "help", "projects", "programs",
+                         "examples"],
              ["src", "macos", "winforms"],
-             ["RIDE.sln", "RIDEConsole.vcxproj", "product.props"])
+             ["RIDE.sln", "RIDEConsole.vcxproj", "product.props",
+              "packaging/windows/settings.json", "packaging/linux/settings.json"])
 WORKSPACE = [
     ("../VM6747/Compiler-Ci", ["ide", "lib", "msvc/compat"], ["src"], []),
     ("../VM6747/Compiler-Cppi", ["ide", "lib", "include", "msvc/compat"], ["src"], []),
@@ -56,6 +60,8 @@ BINARY_EXT = {".exe", ".com", ".obj", ".o", ".lib", ".a", ".dll", ".dylib", ".so
               ".jar", ".pyc", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".pdf", ".res",
               ".tlog", ".lastbuildstate", ".suo", ".db", ".sdf", ".xcuserstate"}
 KEEP_BINARY_EXT = {".ico", ".icns"}
+# The dot-files that are a project's source: a CCS project is these three files and its sources.
+KEEP_DOTFILES = {".project", ".cproject", ".ccsproject"}
 SKIP_DIRS = {"build", "bin", "obj", "x64", "x86", "Debug", "Release", "DerivedData",
              "xcuserdata", ".vs", ".git", "dist", "tests", "test", "__pycache__"}
 
@@ -97,7 +103,7 @@ def candidates(project, dirs, files):
             subdirs[:] = sorted(s for s in subdirs if s not in SKIP_DIRS
                                 and not s.endswith(".dSYM") and not s.startswith("."))
             for n in sorted(names):
-                if not n.startswith("."):
+                if not n.startswith(".") or n in KEEP_DOTFILES:
                     out.append(os.path.relpath(os.path.join(where, n), project))
     for f in files:
         if os.path.isfile(os.path.join(project, f)):
