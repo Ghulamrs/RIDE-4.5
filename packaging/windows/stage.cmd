@@ -30,31 +30,9 @@ rem tools by default; when one of them fails a build and the compilers found
 rem no fault in the source, "askNative": true has the editor ask whether to
 rem use the vendor's (ml64 and link.exe, TI's lnk6x) for that build - false
 rem never asks, and the build fails as it failed. The user's design.
-set "ASM="
-if exist "%STAGE%\bin\masm.exe" set "ASM=bin/masm.exe"
-set "LD="
-if exist "%STAGE%\bin\link.exe" set "LD=bin/link.exe"
-set "TILD="
-if exist "%STAGE%\bin\lnk6x.exe" set "TILD=bin/lnk6x.exe"
-(
-  echo {
-  echo   "include": "include",
-  echo   "lib": "lib",
-  echo   "vcvars": "",
-  echo   "assembler": "%ASM%",
-  echo   "linker": "%LD%",
-  echo   "ti": "",
-  echo   "tilib": "",
-  echo   "tilinker": "%TILD%",
-  echo   "askNative": true,
-  echo   "compiler": "auto",
-  echo   "indent": 4,
-  echo   "tabs": false,
-  echo   "font": "",
-  echo   "includes": [],
-  echo   "libraries": []
-  echo }
-) > "%STAGE%\settings.json"
+rem settings.json is a file of the repository, packaging\windows\settings.json, so
+rem what is installed can be read and diffed before an installer ever runs.
+copy /y "%SRC%\packaging\windows\settings.json" "%STAGE%\settings.json" >nul
 for %%e in (c h cpp shl pro) do (
   if exist "%SRC%\examples\*.%%e" copy /y "%SRC%\examples\*.%%e" "%STAGE%\examples\" >nul
 )

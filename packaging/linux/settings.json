@@ -1,0 +1,12 @@
+{
+  "include": "include",
+  "lib": "lib",
+  "compiler": "auto",
+  "askNative": true,
+  "indent": 4,
+  "tabs": false,
+  "font": "",
+  "includes": [],
+  "libraries": [],
+  "ccs": { "enabled": false, "root": "" }
+}

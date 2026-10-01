@@ -41,19 +41,8 @@ cp -rp "$ROOT/projects" "$STAGE/projects"
 cp -rp "$ROOT/programs" "$STAGE/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$STAGE/examples/" 2>/dev/null || true; done
 cp -rp "$ROOT/examples/ccs" "$STAGE/examples/ccs"
-cat > "$STAGE/settings.json" <<'EOF'
-{
-  "include": "include",
-  "lib": "lib",
-  "compiler": "auto",
-  "askNative": true,
-  "indent": 4,
-  "tabs": false,
-  "font": "",
-  "includes": [],
-  "libraries": []
-}
-EOF
+# settings.json is the repository's own, packaging/linux/settings.json - read before any install.
+cp -p "$HERE/settings.json" "$STAGE/settings.json"
 
 # The staged compilers, before anything is packed: each must find its own
 # headers beside it, not the build tree's compiled into it.
