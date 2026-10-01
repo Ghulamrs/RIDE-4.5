@@ -1,6 +1,6 @@
 # Sample CCS 7.4 projects
 
-Three Code Composer Studio 7.4 projects for the TMS320C6747, made by CCS
+Four Code Composer Studio 7.4 projects for the TMS320C6747, made by CCS
 itself and shipped as CCS left them: `.project`, `.ccsproject`, `.cproject`,
 the linker command file and the sources. RIDE opens a CCS project folder as
 it is and writes nothing into it; they are here to try that on.
@@ -10,6 +10,7 @@ it is and writes nothing into it; they are here to try that on.
 | `K6747c`   | C: `main.c`, `inc/config.h`, and `util.c` linked from `../src`     |
 | `K6747cpp` | C++: `main.cpp` (a class and `printf`), built with exceptions     |
 | `P7misc`   | C: `lib/util.c` in a subfolder with its own options, and `extra.c` excluded from the build |
+| `Sample`   | C++: `Math.cpp` over class templates for a vector, a matrix and a quaternion (`Vector.h`, `Matrix.h`, `Quat.h`), printed with `std::cout` |
 
 ## Opening one
 
@@ -36,12 +37,19 @@ the build, with RIDE's default used instead.
 | `K6747c`   | `K6747c: level 0, twice(21) = 42`   | `K6747c: level 2, twice(21) = 42`   |
 | `K6747cpp` | `K6747cpp: level 0, counter 42`     | `K6747cpp: level 3, counter 42`     |
 | `P7misc`   | `K6747c: level 0, twice(21) = 42`   | `K6747c: level 0, twice(21) = 42`   |
+| `Sample`   | `Hello Math!`, then a unit quaternion `1 0 0 0`, a zero vector and a zero 3x3 matrix | the same |
 
 LEVEL comes from each configuration's defines in `.cproject`. P7misc says
 `K6747c` because it was made from that project's sources; its `extra.c`
 would not link if it were built, so a correct run is itself the check that
 the exclusion was read. Release builds also report the TI objects made: a
 `.out` for the real board needs TI's linker, named under Tools.
+
+Sample prints through `std::cout`, and RIDE's C++ library writes it the way
+`printf` does. Built by CCS 7.4 itself and run on TI's C6747 simulator, the
+same program prints nothing: TI's own `<iostream>` emits no console output
+there, though its `printf` does. Its values are CCS 7.4's all the same,
+checked through `printf`.
 
 The one change from the projects CCS wrote: K6747c's linked `util.c` was
 recorded with an absolute path on the machine that made it, and is written
