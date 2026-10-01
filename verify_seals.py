@@ -58,7 +58,7 @@ def read_seal(path):
 def unlisted(project, listed):
     """Files git tracks under the sealed directories that the seal leaves out."""
     conf = os.path.join(project, "tools", "seal.json")
-    dirs = json.load(open(conf))["dirs"] if os.path.exists(conf) else ["src", "include", "lib", "examples"]
+    dirs = json.load(open(conf))["dirs"] if os.path.exists(conf) else ["src", "include", "lib"]   # source code only, never examples
     try:
         out = subprocess.run(["git", "ls-files", "-z", "--"] + dirs, cwd=project,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
