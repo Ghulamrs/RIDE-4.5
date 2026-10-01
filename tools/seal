@@ -54,6 +54,9 @@ def files():
                     continue
                 out.append(os.path.relpath(os.path.join(where, n), ROOT).replace(os.sep, "/"))
     for pattern in CONF.get("files", []):
+        if "/" in pattern:   # a path, for a file the walk leaves out - a dot-file a sample ships
+            if os.path.isfile(os.path.join(ROOT, pattern)): out.append(pattern)
+            continue
         for n in sorted(os.listdir(ROOT)):
             if fnmatch.fnmatch(n, pattern) and os.path.isfile(os.path.join(ROOT, n)):
                 out.append(n)
