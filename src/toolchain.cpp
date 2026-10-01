@@ -516,9 +516,11 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
         path::makeDirectories(objects);
         std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
         std::string pdb = path::join(objects, productNamed("target") + ".pdb");
+        // As the object recipe: _DEBUG makes the headers ask for libcpmtd, which only /MTd links.
+        std::string crt = (config == ConfigDebug) ? " /MTd" : " /MT";
 
         recipe.command = quote(programOf(tool, kind)) + " /nologo /diagnostics:column" +
-                         forLanguage + configFlags(kind, config, arch) + includeFlags(tool, kind) +
+                         forLanguage + crt + configFlags(kind, config, arch) + includeFlags(tool, kind) +
                          (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
                          " /Fe" + quote(program) +
                          " /Fo" + quoteDirectory(objects + kSep) + named + libraryArguments(tool) +

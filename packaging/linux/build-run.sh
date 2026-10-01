@@ -41,6 +41,9 @@ cp -rp "$ROOT/projects" "$STAGE/projects"
 cp -rp "$ROOT/programs" "$STAGE/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$STAGE/examples/" 2>/dev/null || true; done
 cp -rp "$ROOT/examples/ccs" "$STAGE/examples/ccs"
+# TI's option definitions, which give a CCS project's unstored options - --rom_model among them - CCS's defaults.
+mkdir -p "$STAGE/docs"
+cp -rp "$ROOT/docs/ccs-reference" "$STAGE/docs/ccs-reference"
 # settings.json is the repository's own, packaging/linux/settings.json - read before any install.
 cp -p "$HERE/settings.json" "$STAGE/settings.json"
 

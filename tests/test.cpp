@@ -1349,61 +1349,74 @@ void projects() {
             std::string ours = editor::path::absolute((app / "settings.json").string());
             std::string tiDir = editor::path::join(dir.string(), "tibin");
             std::string q;
+            // What a run of our own lnk6x that failed leaves in the output.
+            const std::string failed = "lnk6x: something it could not do\nlnk6x did not link it - see its messages above\n";
             editor::settings::rememberTilinker(ours);
             editor::settings::rememberTi(std::string(), std::string());
             if (editor::settings::detectedTi().empty())
-                check(!editor::nativeFallbackWanted(false, false, "tms6747", q) &&
+                check(!editor::nativeFallbackWanted(false, false, "tms6747", failed, q) &&
                           q.find("not on this machine") != std::string::npos,
                       "with no TI directory named or installed, nothing asks - the line says TI's lnk6x is not here");
             else
-                check(editor::nativeFallbackWanted(false, false, "tms6747", q) &&
+                check(editor::nativeFallbackWanted(false, false, "tms6747", failed, q) &&
                           q.find("TI's lnk6x") != std::string::npos,
                       "with none named, the CCS installed here is found, and a failed build asks about it");
             editor::settings::rememberTi(tiDir, std::string());
             check(editor::nativeToolsAvailable("tms6747"), "TI's directory named, its lnk6x is the native tool");
-            check(editor::nativeFallbackWanted(false, false, "tms6747", q) &&
+            check(editor::nativeFallbackWanted(false, false, "tms6747", failed, q) &&
                       q.find("own lnk6x") != std::string::npos && q.find("TI's lnk6x") != std::string::npos,
                   "a tms6747 build ours failed asks, naming lnk6x and what would stand in");
-            check(!editor::nativeFallbackWanted(true, false, "tms6747", q) && q.empty(),
+            check(!editor::nativeFallbackWanted(true, false, "tms6747", failed, q) && q.empty(),
                   "a build that succeeded does not");
-            check(!editor::nativeFallbackWanted(false, true, "tms6747", q),
+            check(!editor::nativeFallbackWanted(false, true, "tms6747", failed, q),
                   "nor one the compiler found a fault in - the source is the user's");
-            check(!editor::nativeFallbackWanted(false, false, "arm64-darwin", q),
+            check(!editor::nativeFallbackWanted(false, false, "arm64-darwin", failed, q),
                   "nor a target none of ours serve");
+            check(!editor::nativeFallbackWanted(false, false, "tms6747",
+                                                "lnk6x: undefined symbol main\nlnk6x did not link it\n", q),
+                  "nor a link our lnk6x refused for the program's own undefined symbol");
+            check(!editor::nativeFallbackWanted(false, false, "x86_64-windows",
+                                                "a.exe : fatal error LNK1120: 7 unresolved externals\n", q) && q.empty(),
+                  "nor a cl build: cl ran its own link, and no tool of ours was in play");
+            check(!editor::nativeFallbackWanted(false, false, "x86_64-windows",
+                                                "link: unresolved external symbol:\n  main\ncpp11.exe: the assembler or linker failed\n", q),
+                  "nor a program with no main - Microsoft's link refuses it the same way");
+            check(!editor::nativeFallbackWanted(false, false, "x86_64-windows",
+                                                "link: libmathx.a: no symbol index\nc90.exe: the assembler or linker failed\n", q),
+                  "nor a library made for another platform");
             editor::settings::rememberTilinker(std::string());
-            check(!editor::nativeFallbackWanted(false, false, "tms6747", q) && q.empty(),
+            check(!editor::nativeFallbackWanted(false, false, "tms6747", failed, q) && q.empty(),
                   "tms6747 with no tilinker: nothing of ours in play, nothing to say");
             editor::settings::rememberTilinker(ours);
             editor::settings::forceNative(true);
             check(editor::settings::assembler().empty() && editor::settings::linker().empty() &&
                       editor::settings::tilinker().empty() && editor::settings::namedTilinker().empty(),
                   "a yes makes the four settings answer nothing, so every recipe reaches for the vendor's");
-            check(!editor::nativeFallbackWanted(false, false, "tms6747", q), "and the second build does not ask again");
+            check(!editor::nativeFallbackWanted(false, false, "tms6747", failed, q), "and the second build does not ask again");
             editor::settings::forceNative(false);
             check(editor::settings::rememberAskNative(false) && !editor::settings::askNative(),
                   "askNative false is kept");
-            check(!editor::nativeFallbackWanted(false, false, "tms6747", q), "and then nothing asks: the build fails as it failed");
+            check(!editor::nativeFallbackWanted(false, false, "tms6747", failed, q), "and then nothing asks: the build fails as it failed");
             editor::settings::rememberAskNative(true);
 #ifdef _WIN32
             editor::settings::rememberAssembler("bin/masm.exe");
             editor::settings::rememberLinker(ours);
             if (editor::nativeToolsAvailable("x86_64-windows")) {
-                check(editor::nativeFallbackWanted(false, false, "x86_64-windows", q) &&
+                check(editor::nativeFallbackWanted(false, false, "x86_64-windows", failed, q) &&
                           q.find("masm and link") != std::string::npos && q.find("ml64 and link.exe") != std::string::npos,
                       "a Windows build ours failed asks, naming masm and link and what would stand in");
                 editor::settings::rememberLinker(std::string());
-                check(editor::nativeFallbackWanted(false, false, "x86_64-windows", q) &&
+                check(editor::nativeFallbackWanted(false, false, "x86_64-windows", failed, q) &&
                           q.find("own masm ") != std::string::npos && q.find("link.exe") == std::string::npos,
                       "with only the assembler named, the question names only it");
             } else {
-                check(!editor::nativeFallbackWanted(false, false, "x86_64-windows", q) &&
+                check(!editor::nativeFallbackWanted(false, false, "x86_64-windows", failed, q) &&
                           q.find("no Visual Studio") != std::string::npos,
                       "with no Visual Studio, nothing asks - the line says so");
             }
 #endif
 
-            // Through a build: the tools missing, the question put, a yes
-            // building again - the wrapper, on every host.
+            // Through a build: a compiler that is not there is no fault of our lnk6x, and nothing asks.
             askedQuestion.clear(); askedAnswer = true;
             editor::setAskNative(rememberTheQuestion, 0);
             editor::Toolchain tool;
@@ -1411,6 +1424,20 @@ void projects() {
             std::vector<std::string> srcs(1, editor::path::join(dir.string(), "any.c"));
             writeSource(srcs[0], "int main(void) { return 0; }\n");
             std::string any = editor::path::join(dir.string(), "any.exe");
+            editor::Built missing = editor::buildTarget(tool, editor::ToolCc1, srcs, editor::LangC, "tms6747",
+                                                        editor::ConfigRelease, any);
+            check(askedQuestion.empty() && missing.output.find("did not build it") == std::string::npos,
+                  "a compiler that is not there asks nothing - our own tools were not what failed");
+            // The question put, a yes building again - the wrapper, on every host - with a stand-in
+            // compiler whose output is what our lnk6x leaves when it fails.
+#ifdef _WIN32
+            tool.cc1 = editor::path::join(dir.string(), "failing-lnk6x.cmd");
+            writeSource(tool.cc1, "@echo off\r\necho lnk6x did not link it - see its messages above\r\nexit /b 1\r\n");
+#else
+            tool.cc1 = editor::path::join(dir.string(), "failing-lnk6x.sh");
+            writeSource(tool.cc1, "#!/bin/sh\necho 'lnk6x did not link it - see its messages above'\nexit 1\n");
+            chmod(tool.cc1.c_str(), 0755);
+#endif
             editor::Built twice = editor::buildTarget(tool, editor::ToolCc1, srcs, editor::LangC, "tms6747",
                                                       editor::ConfigRelease, any);
             check(!askedQuestion.empty() && askedQuestion.find("lnk6x") != std::string::npos,

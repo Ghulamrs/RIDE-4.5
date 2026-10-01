@@ -41,7 +41,7 @@ void setAskNative(AskNative ask, void* context);
 // question holds the question when the answer is yes - and, when it is no
 // because the vendor's tools are not on this machine, the line that says so.
 bool nativeFallbackWanted(bool ok, bool sourceFault, const std::string& arch,
-                          std::string& question);
+                          const std::string& output, std::string& question);
 
 int runCaptured(const std::string& command, std::string& output,
                 LineSink sink = 0, void* context = 0);

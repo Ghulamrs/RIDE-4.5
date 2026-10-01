@@ -72,6 +72,7 @@ ditto "$CPP/include" "$APP/Resources/include"
 cp -p "$CPP"/lib/*.h "$APP/Resources/include/"
 ditto "$MAC/bin/lib" "$APP/Resources/lib"
 cp -p "$CC"/lib/*.h "$APP/Resources/lib/"
+ditto "$ROOT/docs/ccs-reference/ti-option-definitions" "$APP/Resources/lib/ccs"   # lib/ccs beside the window
 ln -s ../Resources/include "$APP/MacOS/include"
 ln -s ../Resources/lib "$APP/MacOS/lib"
 # Copies made under ~/Documents carry provenance and Finder attributes codesign refuses.
@@ -93,6 +94,8 @@ ditto "$ROOT/projects" "$R/projects"
 ditto "$ROOT/programs" "$R/programs"
 for e in c h cpp shl pro; do cp -p "$ROOT"/examples/*."$e" "$R/examples/" 2>/dev/null || true; done
 ditto "$ROOT/examples/ccs" "$R/examples/ccs"
+# TI's option definitions, read beside the program as on Windows and Linux.
+ditto "$ROOT/docs/ccs-reference" "$R/docs/ccs-reference"
 for f in "$R"/bin/*.exe; do codesign --force --sign - "$f"; done
 for n in ride:RIDE $TOOLS; do
     name=${n%%:*}; file=${n#*:}

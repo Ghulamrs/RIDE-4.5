@@ -355,10 +355,28 @@ void setAskNative(AskNative ask, void* context) {
 // Whether a failed build is one the native tools might make: it failed, the compilers found no
 // fault in the source (a fault of the user's is not the tools'), one of the project's own tools
 // was in play for this target, and the settings say to ask. The question names what was in play.
+// Whether the output says one of our own tools failed, and not the program: cpp11 and c90 name a
+// failed assembler or linker run, RIDE names lnk6x; an unresolved or duplicate symbol, or a library
+// for another platform, is the program's fault and the vendor's tools would refuse it the same way.
+bool ownToolFailed(const std::string& output, bool emulated) {
+    if (emulated ? output.find("lnk6x did not link it") == std::string::npos
+                 : output.find("the assembler or linker failed") == std::string::npos &&
+                       output.find("the assembler failed") == std::string::npos)
+        return false;
+    const char* program[] = {"unresolved external", "undefined symbol", "no symbol index",
+                             "LNK2001", "LNK2019", "LNK1120", "LNK2005", "already defined",
+                             "multiply defined", "redefined"};
+    for (size_t i = 0; i < sizeof program / sizeof *program; ++i)
+        if (output.find(program[i]) != std::string::npos) return false;
+    return true;
+}
+
 bool nativeFallbackWanted(bool ok, bool sourceFault, const std::string& arch,
-                          std::string& question) {
+                          const std::string& output, std::string& question) {
     question.clear();
     if (ok || sourceFault || settings::nativeForced() || !settings::askNative()) return false;
+    if ((isEmulated(arch) || arch == "x86_64-windows") && !ownToolFailed(output, isEmulated(arch)))
+        return false;
     std::string ours, theirs;
     if (isEmulated(arch)) {
         if (settings::tilinker().empty()) return false;
@@ -392,7 +410,7 @@ Built withNativeFallback(Built first, const std::string& arch, LineSink sink, vo
                          Again again) {
     std::string question;
     if (buildCancelled()) return first;
-    if (!nativeFallbackWanted(first.ok, first.diag.present, arch, question)) {
+    if (!nativeFallbackWanted(first.ok, first.diag.present, arch, first.output, question)) {
         if (!question.empty()) {
             first.output += question + "\n";
             if (sink) sink(context, question);
@@ -679,6 +697,9 @@ void makeTiProgram(Built& result, const Toolchain& tool, const std::string& prog
     if (given.given && !given.stack.empty()) link += " --stack_size=" + given.stack;
     if (given.given && given.romModel == 1) link += " --rom_model";
     if (given.given && given.romModel == 0) link += " --ram_model";
+    // TI's linker takes c_int00 from the library only under --rom_model, the model CCS defaults to.
+    if ((!given.given || given.romModel < 0) && lnk.compare(0, ti.size(), ti) == 0)
+        link += " --rom_model";
     for (size_t i = 0; i < objects.size(); ++i) link += " " + q(objects[i]);
     if (given.given && !given.libraries.empty()) {
         rts = given.libraries[0];
