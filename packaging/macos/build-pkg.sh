@@ -30,8 +30,8 @@ set -eu
 VER=${1:-4.51}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-CPP=${CPP:-$ROOT/../VM6747/Compiler-Cppi}
-CC=${CC:-$ROOT/../VM6747/Compiler-Ci}
+CPP=${CPP:-$ROOT/../C++Optimize}
+CC=${CC:-$ROOT/../Compiler-Ci}
 OUT=$ROOT/dist
 MAC=$OUT/mac
 # Staged outside ~/Documents: files written there carry provenance attributes,

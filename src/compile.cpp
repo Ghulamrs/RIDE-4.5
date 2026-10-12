@@ -571,7 +571,7 @@ bool copyText(const std::string& from, const std::string& to) {
 }
 
 // The linker command file lnk6x needs: one flat memory for the C6747 with every section the
-// compilers and TI's runtime write placed in it - the file VM6747/Emulator/tests/ti.sh links with.
+// compilers and TI's runtime write placed in it - the file VM6747/tests/ti.sh links with.
 // A function and not a std::string global: see debugger.cpp - a native global with a destructor killed the mixed-mode window before main.
 std::string tiLinkCmd() {
     return

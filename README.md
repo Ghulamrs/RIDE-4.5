@@ -1046,7 +1046,7 @@ error - just a smaller program - so nothing says so. That happened twice here
 in one day before the check existed.
 
 **Three are checked instead of written.** cc1's and cxx1's are the compilers'
-own, `VM6747/Compiler-Ci/ide/` and `VM6747/Compiler-Cppi/ide/`, written by each
+own, `Compiler-Ci/ide/` and `C++Optimize/ide/`, written by each
 one's `ide/generate.py` and asked with its `--check`; the solution and the
 workspace open them, and read cxx1's and cc1's GUIDs out of them so the two
 cannot disagree. `winforms/RIDEGui.vcxproj` is C++/CLI: one

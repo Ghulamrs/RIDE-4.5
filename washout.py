@@ -38,10 +38,10 @@ RIDE_PLAN = ("RIDE-4.5", ["Editor.xcodeproj", "RIDE.xcworkspace", "help", "proje
              ["RIDE.sln", "RIDEConsole.vcxproj", "product.props",
               "packaging/windows/settings.json", "packaging/linux/settings.json"])
 WORKSPACE = [
-    ("../VM6747/Compiler-Ci", ["ide", "lib", "msvc/compat"], ["src"], []),
-    ("../VM6747/Compiler-Cppi", ["ide", "lib", "include", "msvc/compat"], ["src"], []),
-    ("../VM6747/Compiler-Si", ["ide"], ["src", "runtime"], []),
-    ("../VM6747/Emulator", ["vm6747.xcodeproj"], ["src"], ["vm6747.vcxproj"]),
+    ("../Compiler-Ci", ["ide", "lib", "msvc/compat"], ["src"], []),
+    ("../C++Optimize", ["ide", "lib", "include", "msvc/compat"], ["src"], []),
+    ("../Compiler-Si", ["ide"], ["src", "runtime"], []),
+    ("../VM6747", ["vm6747.xcodeproj"], ["src"], ["vm6747.vcxproj"]),
     ("../Converter-C2S", ["c2s.xcodeproj"], ["src"], ["c2s.vcxproj"]),
     ("../ASM6x", ["asm6x.xcodeproj"], ["src"], ["asm6x.vcxproj"]),
     ("../MASM", ["masm.xcodeproj"], ["src"], ["masm.vcxproj"]),

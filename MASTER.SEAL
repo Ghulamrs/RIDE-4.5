@@ -5,11 +5,11 @@ Written by tools/master-seal; check it with `tools/master-seal check`.
 ------------------------------------------------------------------------
 program   seal     file CRC  files  seal file
 RIDE      51B8E957 63F73728     95  ride-4.51.dat
-c90       E6C9124C 0B557E62     63  ../VM6747/Compiler-Ci/c90-1.1.dat
-cpp11     2E8A4FF2 091BB817    154  ../VM6747/Compiler-Cppi/cxx1-1.4.dat
-shalimar  06C62676 5078B32E     64  ../VM6747/Compiler-Si/shalimar-1.2.dat
+c90       E6C9124C 0B557E62     63  ../Compiler-Ci/c90-1.1.dat
+cpp11     2E8A4FF2 091BB817    154  ../C++Optimize/cxx1-1.4.dat
+shalimar  06C62676 5078B32E     64  ../Compiler-Si/shalimar-1.2.dat
 c2s       7419F4D7 D1D448C0     48  ../Converter-C2S/c2s-1.2.dat
-vm6747    AB17FA8A D7C853E7     13  ../VM6747/Emulator/vm6747-1.0.dat
+vm6747    AB17FA8A D7C853E7     13  ../VM6747/vm6747-1.0.dat
 asm6x     2407E9D4 C7DE3FB9     13  ../ASM6x/asm6x-0.2.dat
 masm      306906C4 C8570D80     14  ../MASM/masm-1.0.dat
 link      588C5F1F 21F8CD18      9  ../LINK/link-1.0.dat
