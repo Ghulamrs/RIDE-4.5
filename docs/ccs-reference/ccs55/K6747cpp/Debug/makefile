@@ -115,7 +115,7 @@ all: K6747cpp.out
 K6747cpp.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: C6000 Linker'
-	"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/bin/cl6x" -mv6740 --abi=eabi -g --define=c6747 --display_error_number --diag_warning=225 --diag_wrap=off -z --stack_size=0x800 -m"K6747cpp.map" --heap_size=0x800 -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/lib" -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/include" -i"C:/cxx1/c6747-lib" --reread_libs --warn_sections --display_error_number --diag_wrap=off --xml_link_info="K6747cpp_linkInfo.xml" --rom_model -o "K6747cpp.out" $(ORDERED_OBJS)
+	"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/bin/cl6x" -mv6740 --abi=eabi -g --define=c6747 --display_error_number --diag_warning=225 --diag_wrap=off -z --stack_size=0x800 -m"K6747cpp.map" --heap_size=0x800 -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/lib" -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/include" -i"C:/ti/c6747-lib" --reread_libs --warn_sections --display_error_number --diag_wrap=off --xml_link_info="K6747cpp_linkInfo.xml" --rom_model -o "K6747cpp.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

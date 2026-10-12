@@ -4,7 +4,7 @@
 		<cconfiguration id="com.ti.ccstudio.buildDefinitions.C6000.Debug.2012549652">
 			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.ti.ccstudio.buildDefinitions.C6000.Debug.2012549652" moduleId="org.eclipse.cdt.core.settings" name="Debug">
 				<macros>
-					<stringMacro name="MYLIBDIR" type="VALUE_TEXT" value="C:/cxx1/c6747-lib"/>
+					<stringMacro name="MYLIBDIR" type="VALUE_TEXT" value="C:/ti/c6747-lib"/>
 				</macros>
 				<externalSettings/>
 				<extensions>
@@ -95,7 +95,7 @@
 		<cconfiguration id="com.ti.ccstudio.buildDefinitions.C6000.Release.984981816">
 			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.ti.ccstudio.buildDefinitions.C6000.Release.984981816" moduleId="org.eclipse.cdt.core.settings" name="Release">
 				<macros>
-					<stringMacro name="MYLIBDIR" type="VALUE_TEXT" value="C:/cxx1/c6747-lib"/>
+					<stringMacro name="MYLIBDIR" type="VALUE_TEXT" value="C:/ti/c6747-lib"/>
 				</macros>
 				<externalSettings/>
 				<extensions>

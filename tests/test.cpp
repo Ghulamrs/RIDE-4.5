@@ -5454,8 +5454,8 @@ void ccsProjectsAsTheyAre() {
         check(dbg.defines.size() == 1 && dbg.defines[0] == "c6747", "and c6747 its one define");
         checkEqual(dbg.link.stack, "0x800", "Debug's own stack");
         check(dbg.unsupported.empty(), "Debug has nothing unsupported");
-        check(r.linked.size() == 1 && r.linked[0] == "C:/cxx1/ccsref/src/util.c", "util.c is a linked resource, at its own absolute path");
-        check(rel.sources.size() == 2 && rel.sources[0] == r.dir + "/main.c" && rel.sources[1] == "C:/cxx1/ccsref/src/util.c",
+        check(r.linked.size() == 1 && r.linked[0] == "C:/Users/GRA/work/ccsref/src/util.c", "util.c is a linked resource, at its own absolute path");
+        check(rel.sources.size() == 2 && rel.sources[0] == r.dir + "/main.c" && rel.sources[1] == "C:/Users/GRA/work/ccsref/src/util.c",
               "the sources are the folder's main.c and the linked util.c");
         check(r.notBuilt.empty() && rel.excluded.empty(), "nothing is excluded and nothing is of a kind RIDE does not build");
 
@@ -5465,9 +5465,9 @@ void ccsProjectsAsTheyAre() {
         check(line.find("; RIDE's own instead of: -mv6740, --diag_warning=225") != std::string::npos, "and then what RIDE decides for itself");
         checkEqual(editor::ccs::report(r, editor::ConfigDebug).substr(0, 54), "CCS project K6747c (Debug): no unsupported options; RI", "Debug's line says nothing is unsupported");
         // The linked file is the Windows box's; there it is present and the line is empty.
-        const bool linkedHere = editor::path::exists("C:/cxx1/ccsref/src/util.c");
+        const bool linkedHere = editor::path::exists("C:/Users/GRA/work/ccsref/src/util.c");
         std::string sources = editor::ccs::sourceReport(r);
-        check(linkedHere ? sources.empty() : sources.find("linked file not on this machine: C:/cxx1/ccsref/src/util.c") != std::string::npos,
+        check(linkedHere ? sources.empty() : sources.find("linked file not on this machine: C:/Users/GRA/work/ccsref/src/util.c") != std::string::npos,
               "the sources line says the linked file is not here, or nothing where it is: " + sources);
         std::string text = editor::ccs::mappingText(r, editor::ConfigRelease);
         check(text.find("--define=c6747 --define=NDEBUG --define=LEVEL=2 -> -Dc6747 -DNDEBUG -DLEVEL=2") != std::string::npos &&
@@ -5512,7 +5512,7 @@ void ccsProjectsAsTheyAre() {
         check(rel.includes.size() == 1 && rel.includes[0] == r.dir + "/inc", "\"${PROJECT_ROOT}/inc\" loses its quotes and resolves; there is no bare ${PROJECT_ROOT} in 5.5");
         check(hasEntry(rel.ownInstead, "--abi=eabi"), "--abi=eabi is RIDE's own");
         check(rel.link.libraries.size() == 1 && rel.link.libraries[0] == "rts6740_elf_eh.lib", "\"libc.a\" and \"rts6740_elf_eh.lib\" are one runtime");
-        check(rel.link.searchPaths.size() == 1 && rel.link.searchPaths[0] == "C:/cxx1/c6747-lib", "the quoted -i path is unquoted");
+        check(rel.link.searchPaths.size() == 1 && rel.link.searchPaths[0] == "C:/ti/c6747-lib", "the quoted -i path is unquoted");
         checkEqual(rel.opt, "-O2", "Release is -O2 by 5.5's definition too");
         Reading cpp;
         check(editor::ccs::read(k55cpp, cpp, error) && cpp.configs[1].unsupported.size() == 1 && cpp.configs[1].unsupported[0] == "-ms3",
@@ -5524,9 +5524,9 @@ void ccsProjectsAsTheyAre() {
         Reading r;
         std::string error;
         check(editor::ccs::read(p7, r, error), "P7misc reads: " + error);
-        check(r.macros.count("MYLIBDIR") == 1 && r.macros["MYLIBDIR"] == "C:/cxx1/c6747-lib", "the build variable is read");
+        check(r.macros.count("MYLIBDIR") == 1 && r.macros["MYLIBDIR"] == "C:/ti/c6747-lib", "the build variable is read");
         const Config& dbg = r.configs[0];
-        check(dbg.link.searchPaths.size() == 1 && dbg.link.searchPaths[0] == "C:/cxx1/c6747-lib", "and ${MYLIBDIR} resolves in the search path");
+        check(dbg.link.searchPaths.size() == 1 && dbg.link.searchPaths[0] == "C:/ti/c6747-lib", "and ${MYLIBDIR} resolves in the search path");
         checkEqual(dbg.postbuild, "echo post-build P7misc.out", "the post-build step, ${BuildArtifactFileName} resolved");
         check(dbg.excluded.size() == 1 && dbg.excluded[0] == "extra.c", "extra.c is excluded");
         bool noExtra = true;
@@ -5589,8 +5589,8 @@ void ccsProjectsAsTheyAre() {
         check(project.groups().size() == 2 && project.groups()[0].name == "Sources" && project.groups()[1].name == "Linked",
               "Sources and Linked are its groups");
         check(project.groups()[0].files.size() == 1 && project.groups()[0].files[0] == "main.c", "main.c in Sources, by its relative name");
-        check(project.groups()[1].files.size() == 1 && project.groups()[1].files[0] == "C:/cxx1/ccsref/src/util.c", "util.c in Linked, by its absolute one");
-        checkEqual(project.absolute("C:/cxx1/ccsref/src/util.c"), "C:/cxx1/ccsref/src/util.c", "which absolute() leaves whole");
+        check(project.groups()[1].files.size() == 1 && project.groups()[1].files[0] == "C:/Users/GRA/work/ccsref/src/util.c", "util.c in Linked, by its absolute one");
+        checkEqual(project.absolute("C:/Users/GRA/work/ccsref/src/util.c"), "C:/Users/GRA/work/ccsref/src/util.c", "which absolute() leaves whole");
         check(project.builds() && project.target().groups.size() == 2, "and both groups are built");
         std::vector<std::string> includes = project.includes();
         check(includes.size() == 2 && includes[1] == project.root() + "/inc", "the include paths are the project's, resolved");
@@ -5611,7 +5611,7 @@ void ccsProjectsAsTheyAre() {
         check(link.given && link.stack == "0x1000" && link.cmdFiles.size() == 1, "the link is handed the project's");
         check(!editor::Project().tiLink(editor::ConfigRelease).given, "and a .pro project hands nothing");
         std::vector<std::string> report = project.ccsReport(editor::ConfigRelease);
-        const bool linkedHere = editor::path::exists("C:/cxx1/ccsref/src/util.c");
+        const bool linkedHere = editor::path::exists("C:/Users/GRA/work/ccsref/src/util.c");
         check(report.size() == (linkedHere ? 1u : 2u) && report[0].compare(0, 28, "CCS project K6747c (Release)") == 0 &&
                   (linkedHere || report[1].find("linked file") != std::string::npos),
               "the Messages lines are the options line and, where the linked file is missing, the sources line");
@@ -5668,7 +5668,7 @@ void ccsProjectsAsTheyAre() {
 
 // **The reference projects built and run through the console**, as RIDE --build does: K6747c and
 // K6747cpp copied out of the reference tree - the linked util.c pointed at the copy shipped beside
-// them, since C:/cxx1/ccsref is the Windows box's - built for tms6747 through c90 or cpp11, asm6x
+// them, since C:/Users/GRA/work/ccsref is the Windows box's - built for tms6747 through c90 or cpp11, asm6x
 // and lnk6x against the project's own C6747.cmd, and run on vm6747. Every tool is named outright
 // or found beside RIDE.exe; what is missing is said and the case is skipped.
 void ccsProjectsBuiltAndRun() {
@@ -5728,7 +5728,7 @@ void ccsProjectsBuiltAndRun() {
         std::string to = (dir / names[i]).string();
         copyTree(from, to);
         std::string project = readWholeFile(editor::path::join(to, ".project"));
-        size_t at = project.find("C:/cxx1/ccsref/src/util.c");
+        size_t at = project.find("C:/Users/GRA/work/ccsref/src/util.c");
         if (at != std::string::npos) project.replace(at, 25, util);
         writeSource(editor::path::join(to, ".project"), project.c_str());
         const std::string before = ccsFingerprint(to);

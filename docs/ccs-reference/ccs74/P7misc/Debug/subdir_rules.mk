@@ -8,7 +8,7 @@ SHELL = cmd.exe
 main.obj: ../main.c $(GEN_OPTS) | $(GEN_HDRS)
 	@echo 'Building file: "$<"'
 	@echo 'Invoking: C6000 Compiler'
-	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 --include_path="C:/cxx1/ccsref/ws7/P7misc" --include_path="C:/cxx1/ccsref/ws7/P7misc/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 -g --diag_warning=225 --diag_wrap=off --display_error_number --preproc_with_compile --preproc_dependency="main.d_raw" $(GEN_OPTS__FLAG) "$<"
+	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 --include_path="C:/Users/GRA/work/ccsref/ws7/P7misc" --include_path="C:/Users/GRA/work/ccsref/ws7/P7misc/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 -g --diag_warning=225 --diag_wrap=off --display_error_number --preproc_with_compile --preproc_dependency="main.d_raw" $(GEN_OPTS__FLAG) "$<"
 	@echo 'Finished building: "$<"'
 	@echo ' '
 

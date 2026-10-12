@@ -8,7 +8,7 @@ CMD_SRCS += \
 
 C_SRCS += \
 ../main.c \
-C:/cxx1/ccsref/src/util.c 
+C:/Users/GRA/work/ccsref/src/util.c 
 
 OBJS += \
 ./main.obj \
@@ -28,6 +28,6 @@ OBJS__QUOTED += \
 
 C_SRCS__QUOTED += \
 "../main.c" \
-"C:/cxx1/ccsref/src/util.c" 
+"C:/Users/GRA/work/ccsref/src/util.c" 
 
 

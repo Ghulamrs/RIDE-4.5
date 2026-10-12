@@ -11,7 +11,7 @@ command line quoted is copied from a real `gmake` log in `logs/`.
 | compiler | `ti-cgt-c6000_8.2.2` | `c6000_7.4.4` |
 | create app | `com.ti.ccstudio.apps.createProject` | `com.ti.ccstudio.apps.projectCreate` |
 | build app | `com.ti.ccstudio.apps.buildProject` | `com.ti.ccstudio.apps.projectBuild` |
-| workspace | `C:\cxx1\ccsref\ws7` | `C:\cxx1\ccsref\ws55` |
+| workspace | `C:\Users\GRA\work\ccsref\ws7` | `C:\Users\GRA\work\ccsref\ws55` |
 
 ## What is in this directory
 
@@ -43,17 +43,17 @@ exclusion was added (it failed before, on purpose - see below).
 ## The commands that worked
 
 Create, CCS 7.4 (CCS 5.5 is the same with `projectCreate`, `ccsv5`, `ws55`,
-`7.4.4` and `C:/cxx1/c6747-lib`; see `logs/create55.cmd`):
+`7.4.4` and `C:/ti/c6747-lib`; see `logs/create55.cmd`):
 
 ```
-C:\ti\ccsv7\eclipse\eclipsec.exe -noSplash -data C:\cxx1\ccsref\ws7
+C:\ti\ccsv7\eclipse\eclipsec.exe -noSplash -data C:\Users\GRA\work\ccsref\ws7
   -application com.ti.ccstudio.apps.createProject
   -ccs.name K6747c -ccs.device TMS320C67XX.TMS320C6747 -ccs.cgtVersion 8.2.2
   -ccs.outputFormat ELF -ccs.template com.ti.common.project.core.emptyProjectTemplate
   -ccs.configurations Debug Release
-  -ccs.copyFile C:\cxx1\ccsref\src\main.c -ccs.cmd C:\cxx1\ccsref\src\C6747.cmd
-  -ccs.copyFile C:\cxx1\ccsref\src\inc\config.h @dir inc
-  -ccs.linkFile C:\cxx1\ccsref\src\util.c
+  -ccs.copyFile C:\Users\GRA\work\ccsref\src\main.c -ccs.cmd C:\Users\GRA\work\ccsref\src\C6747.cmd
+  -ccs.copyFile C:\Users\GRA\work\ccsref\src\inc\config.h @dir inc
+  -ccs.linkFile C:\Users\GRA\work\ccsref\src\util.c
   -ccs.setCompilerOptions "--include_path=${PROJECT_ROOT}/inc"
   -ccs.setCompilerOptions "-O2 --opt_for_speed=5 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --no_compress --symdebug:none" @configurations Release
   -ccs.setLinkerOptions "--heap_size=0x800 --stack_size=0x1000 -i C:/Users/GRA/Documents/VM6747/tilib -l rts6740_elf_eh.lib" @configurations Release
@@ -68,7 +68,7 @@ C:\ti\ccsv7\eclipse\eclipsec.exe -noSplash -data C:\cxx1\ccsref\ws7
 Build (each project x each configuration):
 
 ```
-eclipsec.exe -noSplash -data C:\cxx1\ccsref\ws7 -application com.ti.ccstudio.apps.buildProject
+eclipsec.exe -noSplash -data C:\Users\GRA\work\ccsref\ws7 -application com.ti.ccstudio.apps.buildProject
   -ccs.projects K6747c -ccs.configuration Release -ccs.buildType full
 ```
 
@@ -80,9 +80,9 @@ Things that did not work, and why:
   `-ccs.copyFile` says `cannot be located`; `-ccs.cmd` says nothing, copies
   nothing and records the name anyway, and the build then links with **no**
   command file (`#10247-D creating output section ... without a SECTIONS
-  specification`). The task's `C:\cxx1\split\cpp4\C6747.cmd` does not exist on
+  specification`). The task's `C:\Users\GRA\work\split\cpp4\C6747.cmd` does not exist on
   the box (only `C6747-ddr.cmd` is there), so the repo's `tools/c6747/C6747.cmd`
-  was copied to `C:\cxx1\ccsref\src\` and used. **It is byte-identical to TI's
+  was copied to `C:\Users\GRA\work\ccsref\src\` and used. **It is byte-identical to TI's
   own `C:\ti\ccsv7\ccs_base\c6000\include\C6747.cmd`** (and to CCS 5.5's), which
   is what CCS copies in when `-ccs.cmd` is not given.
 - Without `-ccs.cmd` CCS copies the device default in first, so a later
@@ -101,7 +101,7 @@ A standard Eclipse project description. What a reader needs:
 | `/projectDescription/natures/nature` | `com.ti.ccstudio.core.ccsNature` marks a CCS project; `org.eclipse.cdt.core.cnature`, `...ccnature` (present even in the C project), `org.eclipse.cdt.managedbuilder.core.managedBuildNature`, `...ScannerConfigNature` |
 | `/projectDescription/buildSpec/buildCommand/name` | `org.eclipse.cdt.managedbuilder.core.genmakebuilder` - makefiles are generated |
 | `/projectDescription/projects/project` | referenced projects (none here) |
-| `/projectDescription/linkedResources/link` | files that live outside the folder: `name` (project-relative path), `type` (`1` file, `2` folder), `location` (absolute, `C:/cxx1/ccsref/src/util.c` here) or, in hand-made/imported projects, `locationURI` with a path variable (`PROJECT_LOC/...`, `PARENT-1-PROJECT_LOC/...`) - not produced by these runs |
+| `/projectDescription/linkedResources/link` | files that live outside the folder: `name` (project-relative path), `type` (`1` file, `2` folder), `location` (absolute, `C:/Users/GRA/work/ccsref/src/util.c` here) or, in hand-made/imported projects, `locationURI` with a path variable (`PROJECT_LOC/...`, `PARENT-1-PROJECT_LOC/...`) - not produced by these runs |
 
 ## `.ccsproject` - the creation record
 
@@ -227,7 +227,7 @@ Ids are tails after `com.ti.ccstudio.buildDefinitions.C6000_8.2.` (7.4) or
 | code size | `compilerID.OPT_FOR_SPACE` | enum `...OPT_FOR_SPACE.{0..3}` | `-ms3` |
 | define | `compilerID.DEFINE` | definedSymbols list: `c6747`, `NDEBUG`, `LEVEL=2`, and `"GREETING=hi there"` **with the quotes inside the value** | `--define=c6747 --define=NDEBUG --define=LEVEL=2 --define="GREETING=hi there"` - values emitted verbatim |
 | undefine | `compilerID.UNDEFINE` | stringList `OLDAPI` | `--undefine=OLDAPI` |
-| include path | `compilerID.INCLUDE_PATH` | includePath list, macros unresolved: 7.4 `${PROJECT_ROOT}`, `${PROJECT_ROOT}/inc`, `${CG_TOOL_ROOT}/include`; 5.5 `"${CG_TOOL_ROOT}/include"`, `"${PROJECT_ROOT}/inc"` (quoted, and **no** `${PROJECT_ROOT}` by default) | `--include_path="C:/cxx1/ccsref/ws7/K6747c/inc"` - resolved to absolute, quoted, in list order |
+| include path | `compilerID.INCLUDE_PATH` | includePath list, macros unresolved: 7.4 `${PROJECT_ROOT}`, `${PROJECT_ROOT}/inc`, `${CG_TOOL_ROOT}/include`; 5.5 `"${CG_TOOL_ROOT}/include"`, `"${PROJECT_ROOT}/inc"` (quoted, and **no** `${PROJECT_ROOT}` by default) | `--include_path="C:/Users/GRA/work/ccsref/ws7/K6747c/inc"` - resolved to absolute, quoted, in list order |
 | debug model | `compilerID.DEBUGGING_MODEL` | enum `...SYMDEBUG__DWARF` (Debug, stored), `...SYMDEBUG__NONE` | `-g`, `--symdebug:none`; Release stores none and emits none |
 | no compress | `compilerID.NO_COMPRESS` | boolean | `--no_compress` |
 | C++ exceptions | `compilerID.EXCEPTIONS` | boolean | `--exceptions` (on the compile line only, not the link line) |
@@ -239,7 +239,7 @@ Compile line shape (7.4 Release, `logs/build7-K6747c-Release.txt`):
 
 ```
 "C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 -O2 --opt_for_speed=5
-  --include_path="C:/cxx1/ccsref/ws7/K6747c" --include_path="C:/cxx1/ccsref/ws7/K6747c/inc"
+  --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c" --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c/inc"
   --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include"
   --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --symdebug:none
   --diag_warning=225 --diag_wrap=off --display_error_number --no_compress
@@ -349,13 +349,13 @@ cl6x -mv6740 -O3 ... --define=c6747 --define=PERFILE=1 -g ... --obj_directory="l
 | macro | resolved to (measured) | where it appears |
 | --- | --- | --- |
 | `${ProjName}` | `K6747c` | `artifactName`, `OUTPUT_FILE`, `MAP_FILE`, `XML_LINK_INFO` |
-| `${PROJECT_ROOT}` | the project folder, `C:/cxx1/ccsref/ws7/K6747c` | include paths |
+| `${PROJECT_ROOT}` | the project folder, `C:/Users/GRA/work/ccsref/ws7/K6747c` | include paths |
 | `${CG_TOOL_ROOT}` | the compiler install for `OPT_CODEGEN_VERSION`: `C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2`, `C:/ti/ccsv5/tools/compiler/c6000_7.4.4` (also written as `CG_TOOL_ROOT :=` in the makefile) | include and search paths |
 | `${CG_TOOL_CL}` | `"${CG_TOOL_ROOT}/bin/cl6x"` | tool command (definition) |
 | `${CG_CLEAN_CMD}` | `DEL /F` | `cleanCommand` |
 | `${BuildDirectory}` | `<project>/<Config>` | `builder/@buildPath` |
 | `${BuildArtifactFileName}` | `P7misc.out` (the post-build step printed it) | build steps |
-| user build variable | `MYLIBDIR` -> `C:/cxx1/c6747-lib`; `-ccs.defineBuildVariable ... @scope project` wrote a `macros/stringMacro` into **each** configuration | anywhere, e.g. `-i"C:/cxx1/c6747-lib"` from `${MYLIBDIR}` |
+| user build variable | `MYLIBDIR` -> `C:/ti/c6747-lib`; `-ccs.defineBuildVariable ... @scope project` wrote a `macros/stringMacro` into **each** configuration | anywhere, e.g. `-i"C:/ti/c6747-lib"` from `${MYLIBDIR}` |
 
 Not produced here but common in imported projects: `${PROJECT_LOC}`,
 `${workspace_loc:/Proj/path}`, `${COM_TI_..._INSTALL_DIR}` product paths,

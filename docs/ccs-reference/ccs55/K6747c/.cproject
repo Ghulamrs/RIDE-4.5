@@ -140,7 +140,7 @@
 								<option id="com.ti.ccstudio.buildDefinitions.C6000_7.4.linkerID.SEARCH_PATH.334382654" superClass="com.ti.ccstudio.buildDefinitions.C6000_7.4.linkerID.SEARCH_PATH" valueType="libPaths">
 									<listOptionValue builtIn="false" value="&quot;${CG_TOOL_ROOT}/lib&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${CG_TOOL_ROOT}/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:/cxx1/c6747-lib&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:/ti/c6747-lib&quot;"/>
 								</option>
 								<option id="com.ti.ccstudio.buildDefinitions.C6000_7.4.linkerID.LIBRARY.1232515241" superClass="com.ti.ccstudio.buildDefinitions.C6000_7.4.linkerID.LIBRARY" valueType="libs">
 									<listOptionValue builtIn="false" value="&quot;libc.a&quot;"/>

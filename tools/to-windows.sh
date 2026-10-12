@@ -156,7 +156,7 @@ BIN="$DIR\\bin"
   # linker beside the compilers, and the box's exception-handling runtime, which CCS does not ship.
   printf 'set ASM6X=%s\\asm6x.exe\r\n' "$BIN"
   printf 'set LNK6X=%s\\lnk6x.exe\r\n' "$BIN"
-  printf 'set C6747_EHLIB=C:\\cxx1\\c6747-lib\r\n'
+  printf 'set C6747_EHLIB=C:\\ti\\c6747-lib\r\n'
   case "$WHAT" in
     build)
       printf 'call build.bat\r\n' ;;

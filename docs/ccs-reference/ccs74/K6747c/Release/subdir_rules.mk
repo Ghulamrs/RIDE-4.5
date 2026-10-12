@@ -8,14 +8,14 @@ SHELL = cmd.exe
 main.obj: ../main.c $(GEN_OPTS) | $(GEN_HDRS)
 	@echo 'Building file: "$<"'
 	@echo 'Invoking: C6000 Compiler'
-	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 -O2 --opt_for_speed=5 --include_path="C:/cxx1/ccsref/ws7/K6747c" --include_path="C:/cxx1/ccsref/ws7/K6747c/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --symdebug:none --diag_warning=225 --diag_wrap=off --display_error_number --no_compress --preproc_with_compile --preproc_dependency="main.d_raw" $(GEN_OPTS__FLAG) "$<"
+	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 -O2 --opt_for_speed=5 --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c" --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --symdebug:none --diag_warning=225 --diag_wrap=off --display_error_number --no_compress --preproc_with_compile --preproc_dependency="main.d_raw" $(GEN_OPTS__FLAG) "$<"
 	@echo 'Finished building: "$<"'
 	@echo ' '
 
-util.obj: C:/cxx1/ccsref/src/util.c $(GEN_OPTS) | $(GEN_HDRS)
+util.obj: C:/Users/GRA/work/ccsref/src/util.c $(GEN_OPTS) | $(GEN_HDRS)
 	@echo 'Building file: "$<"'
 	@echo 'Invoking: C6000 Compiler'
-	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 -O2 --opt_for_speed=5 --include_path="C:/cxx1/ccsref/ws7/K6747c" --include_path="C:/cxx1/ccsref/ws7/K6747c/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --symdebug:none --diag_warning=225 --diag_wrap=off --display_error_number --no_compress --preproc_with_compile --preproc_dependency="util.d_raw" $(GEN_OPTS__FLAG) "$<"
+	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 -O2 --opt_for_speed=5 --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c" --include_path="C:/Users/GRA/work/ccsref/ws7/K6747c/inc" --include_path="C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --symdebug:none --diag_warning=225 --diag_wrap=off --display_error_number --no_compress --preproc_with_compile --preproc_dependency="util.d_raw" $(GEN_OPTS__FLAG) "$<"
 	@echo 'Finished building: "$<"'
 	@echo ' '
 

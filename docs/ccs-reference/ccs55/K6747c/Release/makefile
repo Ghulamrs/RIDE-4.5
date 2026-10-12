@@ -117,7 +117,7 @@ all: K6747c.out
 K6747c.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: C6000 Linker'
-	"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/bin/cl6x" -mv6740 --abi=eabi -O2 --symdebug:none --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --display_error_number --diag_warning=225 --diag_wrap=off --no_compress --opt_for_speed=5 -z --stack_size=0x1000 -m"K6747c.map" --heap_size=0x800 -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/lib" -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/include" -i"C:/cxx1/c6747-lib" --reread_libs --warn_sections --display_error_number --diag_wrap=off --xml_link_info="K6747c_linkInfo.xml" --rom_model -o "K6747c.out" $(ORDERED_OBJS)
+	"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/bin/cl6x" -mv6740 --abi=eabi -O2 --symdebug:none --define=c6747 --define=NDEBUG --define=LEVEL=2 --undefine=OLDAPI --display_error_number --diag_warning=225 --diag_wrap=off --no_compress --opt_for_speed=5 -z --stack_size=0x1000 -m"K6747c.map" --heap_size=0x800 -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/lib" -i"C:/ti/ccsv5/tools/compiler/c6000_7.4.4/include" -i"C:/ti/c6747-lib" --reread_libs --warn_sections --display_error_number --diag_wrap=off --xml_link_info="K6747c_linkInfo.xml" --rom_model -o "K6747c.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

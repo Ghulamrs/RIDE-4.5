@@ -143,7 +143,7 @@ all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 P7misc.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 	@echo 'Building target: "$@"'
 	@echo 'Invoking: C6000 Linker'
-	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 --define=c6747 -g --diag_warning=225 --diag_wrap=off --display_error_number -z -m"P7misc.map" --heap_size=0x800 --stack_size=0x800 -i"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/lib" -i"C:/cxx1/c6747-lib" -i"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --reread_libs --diag_wrap=off --display_error_number --warn_sections --xml_link_info="P7misc_linkInfo.xml" --rom_model -o "P7misc.out" $(ORDERED_OBJS)
+	"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/bin/cl6x" -mv6740 --define=c6747 -g --diag_warning=225 --diag_wrap=off --display_error_number -z -m"P7misc.map" --heap_size=0x800 --stack_size=0x800 -i"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/lib" -i"C:/ti/c6747-lib" -i"C:/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2/include" --reread_libs --diag_wrap=off --display_error_number --warn_sections --xml_link_info="P7misc_linkInfo.xml" --rom_model -o "P7misc.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 	@$(MAKE) --no-print-directory post-build
